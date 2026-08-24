@@ -19,7 +19,11 @@ export function DesktopSidebarNav({ role, className }: DesktopSidebarNavProps) {
   const items = NAV_ITEMS[role];
 
   return (
-    <nav className={cn("w-64 shrink-0 flex-col gap-1 overflow-y-auto border-r p-4", className)}>
+    // h-full: stretches to the AppShell's viewport-bounded height (its
+    // flex row parent). overflow-y-auto here is this sidebar's OWN
+    // internal scroll (for when the menu is longer than the viewport) —
+    // separate from and independent of <main>'s scroll in AppShell.
+    <nav className={cn("h-full w-64 shrink-0 flex-col gap-1 overflow-y-auto border-r p-4", className)}>
       <div className="mb-4 px-2 text-lg font-semibold">DigiDes</div>
       {items.map((item) => {
         const active = pathname === item.href;

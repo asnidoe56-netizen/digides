@@ -18,10 +18,20 @@ export function AppShell({ role, children }: AppShellProps) {
     <div className="min-h-screen bg-background lg:flex">
       <DesktopSidebarNav role={role} className="hidden lg:flex" />
 
-      <div className="flex min-h-screen flex-1 flex-col">
+      {/* min-w-0 is load-bearing: a flex item defaults to min-width:auto,
+          which refuses to shrink below its content's intrinsic width —
+          that's what was letting a wide table push this column (and the
+          whole page) into horizontal overflow instead of activating the
+          table wrapper's own overflow-x-auto. */}
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <TopAppBar className="lg:hidden" />
 
-        <main className="flex-1 p-4 pb-20 sm:p-6 lg:pb-6">{children}</main>
+        <main className="min-w-0 flex-1 p-4 pb-20 sm:p-6 lg:pb-6">
+          {/* Caps line/content length on very large monitors — an
+              unconstrained page just stretches edge-to-edge on a wide
+              screen, which reads as unfinished, not "responsive". */}
+          <div className="mx-auto w-full max-w-[1600px]">{children}</div>
+        </main>
 
         <MobileBottomNav role={role} className="lg:hidden" />
       </div>

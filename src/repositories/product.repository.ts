@@ -84,12 +84,13 @@ export interface ListProductsFilter {
   status?: ProductStatus;
   categoryId?: string;
   brandId?: string;
+  /** Matches against product_name or sku, case-insensitive. */
+  search?: string;
+  limit?: number;
+  offset?: number;
 }
 
-export async function listProducts(
-  filter: ListProductsFilter = {},
-  db: Queryable = pool,
-): Promise<Product[]> {
+function buildProductFilterConditions(filter: ListProductsFilter): { where: string; params: unknown[] } {
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -105,12 +106,49 @@ export async function listProducts(
     params.push(filter.brandId);
     conditions.push(`brand_id = $${params.length}`);
   }
+  if (filter.search) {
+    params.push(`%${filter.search}%`);
+    conditions.push(`(product_name ILIKE $${params.length} OR sku ILIKE $${params.length})`);
+  }
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };
+}
+
+export async function listProducts(
+  filter: ListProductsFilter = {},
+  db: Queryable = pool,
+): Promise<Product[]> {
+  const { where, params } = buildProductFilterConditions(filter);
+
+  const limit = filter.limit ?? 20;
+  const offset = filter.offset ?? 0;
+  params.push(limit, offset);
+
   const result = await db.query<Product>(
-    `SELECT * FROM products ${where} ORDER BY product_name ASC`,
+    `SELECT * FROM products ${where}
+     ORDER BY product_name ASC
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params,
   );
+  return result.rows;
+}
+
+export async function countProducts(
+  filter: ListProductsFilter = {},
+  db: Queryable = pool,
+): Promise<number> {
+  const { where, params } = buildProductFilterConditions(filter);
+  const result = await db.query<{ count: string }>(`SELECT COUNT(*) FROM products ${where}`, params);
+  return Number(result.rows[0].count);
+}
+
+export async function listCategories(db: Queryable = pool): Promise<Category[]> {
+  const result = await db.query<Category>(`SELECT * FROM categories ORDER BY name ASC`);
+  return result.rows;
+}
+
+export async function listBrands(db: Queryable = pool): Promise<Brand[]> {
+  const result = await db.query<Brand>(`SELECT * FROM brands ORDER BY name ASC`);
   return result.rows;
 }
 
@@ -154,17 +192,71 @@ export async function finishCatalogSyncLog(
   return result.rows[0];
 }
 
-// Credentials only — never returned to the browser. Callers must decrypt
-// `dev_key_encrypted`/`prod_key_encrypted` server-side before use.
-export async function getActiveDigiflazzSettings(
-  mode: DigiflazzMode,
-  db: Queryable = pool,
-): Promise<DigiflazzSettings | null> {
+// digiflazz_settings is a singleton — one row holds the account's
+// username, both dev and prod keys (still encrypted here), and a `mode`
+// column saying which key is currently in effect. This lets the Settings
+// UI be a single form ("username, dev key, prod key, which one is
+// active") instead of one row per mode. Callers must decrypt
+// `dev_key_encrypted`/`prod_key_encrypted` server-side before use, and
+// this raw row must never be returned from an API route as-is.
+export async function getDigiflazzSettings(db: Queryable = pool): Promise<DigiflazzSettings | null> {
   const result = await db.query<DigiflazzSettings>(
-    `SELECT * FROM digiflazz_settings WHERE mode = $1 AND is_active = true LIMIT 1`,
-    [mode],
+    `SELECT * FROM digiflazz_settings ORDER BY updated_at DESC LIMIT 1`,
   );
   return result.rows[0] ?? null;
+}
+
+export interface UpsertDigiflazzSettingsInput {
+  username: string;
+  base_url: string;
+  mode: DigiflazzMode;
+  /** Omit to leave the currently-stored encrypted key untouched. */
+  dev_key_encrypted?: string;
+  /** Omit to leave the currently-stored encrypted key untouched. */
+  prod_key_encrypted?: string;
+}
+
+export async function upsertDigiflazzSettings(
+  input: UpsertDigiflazzSettingsInput,
+  db: Queryable = pool,
+): Promise<DigiflazzSettings> {
+  const existing = await getDigiflazzSettings(db);
+
+  if (!existing) {
+    const result = await db.query<DigiflazzSettings>(
+      `INSERT INTO digiflazz_settings (username, base_url, mode, dev_key_encrypted, prod_key_encrypted, is_active)
+       VALUES ($1, $2, $3, $4, $5, true)
+       RETURNING *`,
+      [
+        input.username,
+        input.base_url,
+        input.mode,
+        input.dev_key_encrypted ?? null,
+        input.prod_key_encrypted ?? null,
+      ],
+    );
+    return result.rows[0];
+  }
+
+  const result = await db.query<DigiflazzSettings>(
+    `UPDATE digiflazz_settings
+     SET username = $2,
+         base_url = $3,
+         mode = $4,
+         dev_key_encrypted = COALESCE($5, dev_key_encrypted),
+         prod_key_encrypted = COALESCE($6, prod_key_encrypted)
+     WHERE id = $1
+     RETURNING *`,
+    [
+      existing.id,
+      input.username,
+      input.base_url,
+      input.mode,
+      input.dev_key_encrypted ?? null,
+      input.prod_key_encrypted ?? null,
+    ],
+  );
+  return result.rows[0];
 }
 
 export interface CreateMarkupRuleInput {

@@ -1,20 +1,130 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * Design tokens (M03.1 — Design System). Two layers:
+ *   1. shadcn/ui's standard neutral theme — background/foreground/card/
+ *      primary/secondary/muted/accent/destructive/border/input/ring —
+ *      required by every component in components/ui/.
+ *   2. DigiDes-specific additions: transaction/commission status colors
+ *      (issue M03 section 25 "Status System") consumed by <StatusBadge>.
+ *
+ * Dark mode follows the OS preference (prefers-color-scheme), matching the
+ * pattern already used before this file had a design system — there is no
+ * manual theme toggle yet, so a `.dark` class variant isn't needed until
+ * one exists.
+ */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --radius: 0.625rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+
+  /* Transaction / commission status colors — one pair (bg + fg) per
+     status in src/types/transaction.ts's TransactionStatus and
+     src/types/commission.ts's CommissionLedgerStatus, shared by
+     <StatusBadge> so every status reads the same everywhere. */
+  --status-pending: oklch(0.955 0.045 95);
+  --status-pending-foreground: oklch(0.45 0.13 75);
+  --status-processing: oklch(0.94 0.05 250);
+  --status-processing-foreground: oklch(0.45 0.15 260);
+  --status-success: oklch(0.94 0.09 155);
+  --status-success-foreground: oklch(0.4 0.13 155);
+  --status-failed: oklch(0.94 0.06 25);
+  --status-failed-foreground: oklch(0.5 0.2 25);
+  --status-refunded: oklch(0.94 0.03 280);
+  --status-refunded-foreground: oklch(0.45 0.1 285);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --destructive-foreground: oklch(0.985 0 0);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+
+    --status-pending: oklch(0.3 0.06 80);
+    --status-pending-foreground: oklch(0.85 0.12 85);
+    --status-processing: oklch(0.3 0.06 255);
+    --status-processing-foreground: oklch(0.82 0.1 250);
+    --status-success: oklch(0.32 0.08 155);
+    --status-success-foreground: oklch(0.82 0.13 155);
+    --status-failed: oklch(0.32 0.09 25);
+    --status-failed-foreground: oklch(0.82 0.14 25);
+    --status-refunded: oklch(0.3 0.05 285);
+    --status-refunded-foreground: oklch(0.82 0.07 285);
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-}
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-status-pending: var(--status-pending);
+  --color-status-pending-foreground: var(--status-pending-foreground);
+  --color-status-processing: var(--status-processing);
+  --color-status-processing-foreground: var(--status-processing-foreground);
+  --color-status-success: var(--status-success);
+  --color-status-success-foreground: var(--status-success-foreground);
+  --color-status-failed: var(--status-failed);
+  --color-status-failed-foreground: var(--status-failed-foreground);
+  --color-status-refunded: var(--status-refunded);
+  --color-status-refunded-foreground: var(--status-refunded-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 body {

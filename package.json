@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "db:migrate": "node --env-file=.env --experimental-strip-types scripts/migrate.ts",
+    "db:seed": "node --env-file=.env --experimental-strip-types scripts/seed.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

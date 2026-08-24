@@ -78,6 +78,16 @@ export async function getWalletByAccountId(
   return result.rows[0] ?? null;
 }
 
+// Sum of every wallet's available_balance — a platform-wide health number
+// for the Super Admin dashboard, not something any single wallet operation
+// needs, so it lives here rather than alongside postLedgerEntry().
+export async function getTotalPlatformBalance(db: Queryable = pool): Promise<string> {
+  const result = await db.query<{ sum: string | null }>(
+    `SELECT SUM(available_balance) AS sum FROM wallets`,
+  );
+  return result.rows[0]?.sum ?? "0";
+}
+
 export async function findWalletByOwner(
   ownerType: WalletAccountType,
   ownerId: string,

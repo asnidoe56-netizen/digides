@@ -39,6 +39,11 @@ export async function listBumdes(db: Queryable = pool): Promise<Bumdes[]> {
   return result.rows;
 }
 
+export async function countBumdes(db: Queryable = pool): Promise<number> {
+  const result = await db.query<{ count: string }>(`SELECT COUNT(*) FROM bumdes`);
+  return Number(result.rows[0].count);
+}
+
 export async function updateBumdesStatus(
   id: string,
   status: BumdesStatus,

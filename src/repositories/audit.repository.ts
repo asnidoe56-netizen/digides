@@ -44,6 +44,16 @@ export async function recordAuditLog(
   return result.rows[0];
 }
 
+// Platform-wide activity feed for the Super Admin dashboard — every other
+// list* function here is scoped to one entity or actor.
+export async function listRecentAuditLogs(limit = 10, db: Queryable = pool): Promise<AuditLog[]> {
+  const result = await db.query<AuditLog>(
+    `SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT $1`,
+    [limit],
+  );
+  return result.rows;
+}
+
 export async function listAuditLogsForEntity(
   entity: string,
   entityId: string,

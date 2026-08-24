@@ -42,6 +42,11 @@ export async function updateUserStatus(
   return result.rows[0] ?? null;
 }
 
+export async function countUsers(db: Queryable = pool): Promise<number> {
+  const result = await db.query<{ count: string }>(`SELECT COUNT(*) FROM users`);
+  return Number(result.rows[0].count);
+}
+
 export async function assignRole(userId: string, roleCode: RoleCode, db: Queryable = pool): Promise<void> {
   await db.query(
     `INSERT INTO user_roles (user_id, role_id)

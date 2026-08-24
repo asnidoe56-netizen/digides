@@ -23,6 +23,9 @@ const STATUS_STYLE: Record<string, string> = {
   BLOCKED: "bg-status-failed text-status-failed-foreground",
   SUSPENDED: "bg-status-failed text-status-failed-foreground",
   NEED_REVIEW: "bg-status-failed text-status-failed-foreground",
+  GANGGUAN: "bg-status-processing text-status-processing-foreground",
+  DISABLED: "bg-muted text-muted-foreground",
+  DELETED: "bg-muted text-muted-foreground",
   REFUNDED: "bg-status-refunded text-status-refunded-foreground",
   REVERSED: "bg-status-refunded text-status-refunded-foreground",
 };
@@ -44,6 +47,9 @@ const STATUS_LABEL: Record<string, string> = {
   BLOCKED: "Diblokir",
   SUSPENDED: "Ditangguhkan",
   NEED_REVIEW: "Perlu Ditinjau",
+  GANGGUAN: "Gangguan",
+  DISABLED: "Nonaktif",
+  DELETED: "Dihapus",
   REFUNDED: "Dikembalikan",
   REVERSED: "Dibalik",
 };

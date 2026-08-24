@@ -47,6 +47,80 @@ export async function countUsers(db: Queryable = pool): Promise<number> {
   return Number(result.rows[0].count);
 }
 
+export interface UserWithRoles extends User {
+  roles: RoleCode[];
+}
+
+export interface ListUsersFilter {
+  /** Matches against email or full_name, case-insensitive. */
+  search?: string;
+  status?: UserStatus;
+  role?: RoleCode;
+  limit?: number;
+  offset?: number;
+}
+
+function buildUserFilterConditions(filter: ListUsersFilter): { where: string; params: unknown[] } {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filter.search) {
+    params.push(`%${filter.search}%`);
+    conditions.push(`(u.full_name ILIKE $${params.length} OR u.email ILIKE $${params.length})`);
+  }
+  if (filter.status) {
+    params.push(filter.status);
+    conditions.push(`u.status = $${params.length}`);
+  }
+  if (filter.role) {
+    params.push(filter.role);
+    conditions.push(
+      `EXISTS (SELECT 1 FROM user_roles ur2 JOIN roles r2 ON r2.id = ur2.role_id WHERE ur2.user_id = u.id AND r2.code = $${params.length})`,
+    );
+  }
+
+  return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };
+}
+
+// One row per user with its role codes aggregated (a user usually has
+// exactly one role, but the schema allows more) — avoids an N+1 query for
+// the users list/table.
+export async function listUsers(
+  filter: ListUsersFilter = {},
+  db: Queryable = pool,
+): Promise<UserWithRoles[]> {
+  const { where, params } = buildUserFilterConditions(filter);
+
+  const limit = filter.limit ?? 20;
+  const offset = filter.offset ?? 0;
+  params.push(limit, offset);
+
+  const result = await db.query<UserWithRoles>(
+    `SELECT u.*, COALESCE(array_agg(r.code) FILTER (WHERE r.code IS NOT NULL), '{}') AS roles
+     FROM users u
+     LEFT JOIN user_roles ur ON ur.user_id = u.id
+     LEFT JOIN roles r ON r.id = ur.role_id
+     ${where}
+     GROUP BY u.id
+     ORDER BY u.created_at DESC
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+  );
+  return result.rows;
+}
+
+export async function countFilteredUsers(
+  filter: ListUsersFilter = {},
+  db: Queryable = pool,
+): Promise<number> {
+  const { where, params } = buildUserFilterConditions(filter);
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*) FROM users u ${where}`,
+    params,
+  );
+  return Number(result.rows[0].count);
+}
+
 export async function assignRole(userId: string, roleCode: RoleCode, db: Queryable = pool): Promise<void> {
   await db.query(
     `INSERT INTO user_roles (user_id, role_id)

@@ -25,3 +25,22 @@ export function formatMoney(amount: string | number): string {
   // strip it to match the exact "Rp100.000" format the app requires.
   return idrFormatter.format(value).replace(/\s/g, "");
 }
+
+/**
+ * Masks a Rupiah amount for a downline's balance in the Menu Mitra list —
+ * an upline can see roughly how much a downline holds without seeing the
+ * exact figure. Shows every thousands-group except the last (so
+ * `100.000` -> `100`, `0` -> `0`, `1.234.567` -> `1.234`) followed by a
+ * fixed 6-asterisk mask, regardless of how many digits were actually
+ * hidden — the mask's length is a constant visual convention, not a
+ * literal per-digit substitution.
+ */
+export function maskBalance(amount: string | number): string {
+  const value = typeof amount === "string" ? Number(amount) : amount;
+  if (!Number.isFinite(value)) return `0${"*".repeat(6)}`;
+
+  const formatted = Math.floor(value).toLocaleString("id-ID");
+  const lastGroupStart = formatted.lastIndexOf(".");
+  const leading = lastGroupStart === -1 ? formatted : formatted.slice(0, lastGroupStart);
+  return `${leading}${"*".repeat(6)}`;
+}

@@ -1,13 +1,18 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
+import { MitraBottomNav } from "@/features/mitra-home";
 import { getSession } from "@/lib/auth/session";
 
 // Real authorization check for every page under dashboard/bumdes/* — the
-// mobile bottom nav (rendered per top-level tab page, not here — see
-// mitra-home-view.tsx) only decides what's shown, never what's allowed
-// (same rule as the Super Admin layout). Drill-down flows like Pulsa are
-// full-screen with their own header and intentionally have no bottom nav,
-// matching the reference design.
+// mobile bottom nav only decides what's shown, never what's allowed
+// (same rule as the Super Admin layout).
+//
+// The nav is rendered once, here, as a global/shared shell — every page
+// under this layout (Beranda, Pulsa, and whatever follows) gets it for
+// free instead of each page rendering its own copy. It's `fixed`, so it
+// never moves when a page's own content scrolls; `pb-16` on the content
+// wrapper (exactly the nav's own h-16) is what keeps that content from
+// ever rendering underneath it.
 export default async function BumdesLayout({ children }: { children: ReactNode }) {
   const session = await getSession();
 
@@ -15,5 +20,10 @@ export default async function BumdesLayout({ children }: { children: ReactNode }
     redirect("/login");
   }
 
-  return <div className="mx-auto min-h-dvh max-w-lg bg-background">{children}</div>;
+  return (
+    <div className="mx-auto flex min-h-dvh max-w-lg flex-col bg-background">
+      <div className="flex flex-1 flex-col pb-16">{children}</div>
+      <MitraBottomNav homeHref="/dashboard/bumdes/dashboard" mitraHref="/dashboard/bumdes/mitra" />
+    </div>
+  );
 }

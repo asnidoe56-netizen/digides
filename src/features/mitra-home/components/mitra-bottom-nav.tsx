@@ -2,20 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileBarChart2, Home, QrCode, Receipt, User } from "lucide-react";
+import { FileBarChart2, Home, QrCode, User, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface MitraBottomNavProps {
   homeHref: string;
+  mitraHref: string;
 }
 
-// Only "Beranda" links anywhere real yet — Transaksi/Laporan/Akun and the
-// QRIS scan action are the next menus to build for this section (BUMDes/
+// "Beranda" and "Mitra" link somewhere real; Laporan/Akun and the QRIS
+// scan action are the next menus to build for this section (BUMDes/
 // Konter), so they're shown disabled rather than linking to a route with
 // no page behind it yet.
-export function MitraBottomNav({ homeHref }: MitraBottomNavProps) {
+export function MitraBottomNav({ homeHref, mitraHref }: MitraBottomNavProps) {
   const pathname = usePathname();
   const isHome = pathname === homeHref;
+  const isMitra = pathname === mitraHref;
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto flex h-16 max-w-lg items-stretch border-t bg-background">
@@ -30,15 +32,16 @@ export function MitraBottomNav({ homeHref }: MitraBottomNavProps) {
         Beranda
       </Link>
 
-      <button
-        type="button"
-        disabled
-        title="Segera hadir"
-        className="flex flex-1 flex-col items-center justify-center gap-1 text-xs text-muted-foreground/50"
+      <Link
+        href={mitraHref}
+        className={cn(
+          "flex flex-1 flex-col items-center justify-center gap-1 text-xs font-medium",
+          isMitra ? "text-red-600" : "text-muted-foreground",
+        )}
       >
-        <Receipt className="size-5" />
-        Transaksi
-      </button>
+        <Users className="size-5" />
+        Mitra
+      </Link>
 
       <div className="flex flex-1 items-center justify-center">
         <button

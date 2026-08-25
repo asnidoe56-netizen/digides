@@ -164,6 +164,43 @@ export async function createReferralRelationship(
   return result.rows[0];
 }
 
+export interface DirectDownline {
+  relationship_id: string;
+  user_id: string;
+  full_name: string;
+  email: string;
+  status: ReferralRelationship["status"];
+  joined_at: Date;
+  /** A user normally has exactly one role, but the schema allows more —
+   *  same aggregation as user.repository.ts's listUsers(). */
+  roles: string[];
+}
+
+// The Menu Mitra's downline list — every user this one directly referred
+// (level 1 only, not the whole sub-tree), with their role so the caller
+// can resolve which entity (bumdes/konter/plain user) owns their wallet.
+export async function listDirectDownlines(referrerId: string, db: Queryable = pool): Promise<DirectDownline[]> {
+  const result = await db.query<DirectDownline>(
+    `SELECT
+       rr.id AS relationship_id,
+       u.id AS user_id,
+       u.full_name,
+       u.email,
+       rr.status,
+       rr.created_at AS joined_at,
+       COALESCE(array_agg(r.code) FILTER (WHERE r.code IS NOT NULL), '{}') AS roles
+     FROM referral_relationships rr
+     JOIN users u ON u.id = rr.referred_id
+     LEFT JOIN user_roles ur ON ur.user_id = u.id
+     LEFT JOIN roles r ON r.id = ur.role_id
+     WHERE rr.referrer_id = $1
+     GROUP BY rr.id, u.id, u.full_name, u.email, rr.status, rr.created_at
+     ORDER BY rr.created_at DESC`,
+    [referrerId],
+  );
+  return result.rows;
+}
+
 export interface ReferrerChainEntry {
   /** The referral_relationships row this hop came from — commission_ledger.referral_relationship_id points here. */
   relationship_id: string;

@@ -3,12 +3,15 @@ import {
   createReferralCode,
   findReferralCodeByUserId,
   insertReferralCodeWithRetry,
+  listDirectDownlines,
   listReferralCodes,
   listReferralRelationships,
   setReferralCodeActive,
   setReferralRelationshipStatus as updateReferralRelationshipStatusRow,
 } from "@/repositories/referral.repository";
 import { findUserById } from "@/repositories/user.repository";
+import { getWalletForMitraSession } from "@/services/wallet.service";
+import { maskBalance } from "@/lib/formatting/money";
 import type { ReferralRelationshipStatus } from "@/types/referral";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I — avoids misreads when shared aloud
@@ -72,6 +75,51 @@ export async function generateReferralCode(input: GenerateReferralCodeInput) {
   });
 
   return code;
+}
+
+export interface DownlineWithMaskedBalance {
+  relationship_id: string;
+  full_name: string;
+  email: string;
+  status: ReferralRelationshipStatus;
+  joined_at: Date;
+  roleLabel: string;
+  maskedBalance: string;
+}
+
+const ROLE_LABEL: Record<string, string> = {
+  BUMDES_ADMIN: "Mitra",
+  KONTER: "Agen",
+  AFFILIATE: "Afiliasi",
+  SUPER_ADMIN: "Super Admin",
+};
+
+// Menu Mitra's own view: BUMDES_ADMIN/KONTER self-service — their own
+// referral code (created on first visit if they don't have one yet,
+// generateReferralCode() is idempotent) plus every direct downline's
+// balance, masked down to its thousands-group (money.ts's maskBalance) so
+// an upline can gauge activity without seeing a downline's exact figure.
+export async function getMitraOverview(userId: string) {
+  const referralCode = await generateReferralCode({ userId, actorUserId: userId });
+  const downlines = await listDirectDownlines(userId);
+
+  const withBalance: DownlineWithMaskedBalance[] = await Promise.all(
+    downlines.map(async (downline) => {
+      const wallet = await getWalletForMitraSession(downline.user_id, downline.roles);
+      const primaryRole = downline.roles[0];
+      return {
+        relationship_id: downline.relationship_id,
+        full_name: downline.full_name,
+        email: downline.email,
+        status: downline.status,
+        joined_at: downline.joined_at,
+        roleLabel: primaryRole ? (ROLE_LABEL[primaryRole] ?? primaryRole) : "-",
+        maskedBalance: maskBalance(wallet?.available_balance ?? "0"),
+      };
+    }),
+  );
+
+  return { referralCode, downlines: withBalance };
 }
 
 export async function setReferralCodeStatus(id: string, isActive: boolean, actorUserId: string) {

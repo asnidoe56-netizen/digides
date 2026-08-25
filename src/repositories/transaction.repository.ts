@@ -174,6 +174,7 @@ const OWNER_JOIN = `
   LEFT JOIN konters k ON k.id = wa.konter_id
   LEFT JOIN users u ON u.id = wa.user_id
   JOIN products p ON p.id = t.product_id
+  LEFT JOIN categories c ON c.id = p.category_id
 `;
 const OWNER_NAME_EXPR = `COALESCE(b.name, k.name, u.full_name)`;
 
@@ -181,6 +182,7 @@ export interface TransactionWithDetail extends Transaction {
   owner_name: string;
   product_name: string;
   product_sku: string;
+  category_name: string | null;
 }
 
 export interface ListTransactionsFilter {
@@ -188,6 +190,9 @@ export interface ListTransactionsFilter {
   search?: string;
   /** BUMDes/Konter/Affiliate(USER) — issue M18 §38's "Laporan" filter list. */
   ownerType?: WalletAccountType;
+  /** A wallet's own transaction history — Menu Histori (BUMDes/Konter's
+   *  own purchases), scoped server-side to their own wallet id. */
+  walletId?: string;
   dateFrom?: Date;
   dateTo?: Date;
   limit?: number;
@@ -212,6 +217,10 @@ function buildTransactionFilterConditions(filter: ListTransactionsFilter): { whe
     params.push(filter.ownerType);
     conditions.push(`wa.account_type = $${params.length}`);
   }
+  if (filter.walletId) {
+    params.push(filter.walletId);
+    conditions.push(`t.wallet_id = $${params.length}`);
+  }
   if (filter.dateFrom) {
     params.push(filter.dateFrom);
     conditions.push(`t.created_at >= $${params.length}`);
@@ -234,7 +243,7 @@ export async function listTransactionsWithDetail(
   params.push(limit, offset);
 
   const result = await db.query<TransactionWithDetail>(
-    `SELECT t.*, ${OWNER_NAME_EXPR} AS owner_name, p.product_name, p.sku AS product_sku
+    `SELECT t.*, ${OWNER_NAME_EXPR} AS owner_name, p.product_name, p.sku AS product_sku, c.name AS category_name
      FROM transactions t
      ${OWNER_JOIN}
      ${where}
@@ -262,7 +271,7 @@ export async function findTransactionWithDetailById(
   db: Queryable = pool,
 ): Promise<TransactionWithDetail | null> {
   const result = await db.query<TransactionWithDetail>(
-    `SELECT t.*, ${OWNER_NAME_EXPR} AS owner_name, p.product_name, p.sku AS product_sku
+    `SELECT t.*, ${OWNER_NAME_EXPR} AS owner_name, p.product_name, p.sku AS product_sku, c.name AS category_name
      FROM transactions t
      ${OWNER_JOIN}
      WHERE t.id = $1`,
@@ -285,6 +294,21 @@ export async function sumTransactionVolume(
   db: Queryable = pool,
 ): Promise<TransactionVolumeSummary> {
   const { where, params } = buildTransactionFilterConditions({ ...filter, status: "SUCCESS" });
+  const result = await db.query<{ count: string; total_value: string | null }>(
+    `SELECT COUNT(*) AS count, COALESCE(SUM(t.selling_price), 0) AS total_value
+     FROM transactions t
+     ${OWNER_JOIN}
+     ${where}`,
+    params,
+  );
+  return { count: Number(result.rows[0].count), total_value: result.rows[0].total_value ?? "0" };
+}
+
+// The Transaksi Tertahan page's headline metric — count and total selling
+// value of transactions still stuck in RESERVED (funds held but neither
+// debited nor released back to the wallet).
+export async function sumReservedTransactions(db: Queryable = pool): Promise<TransactionVolumeSummary> {
+  const { where, params } = buildTransactionFilterConditions({ status: "RESERVED" });
   const result = await db.query<{ count: string; total_value: string | null }>(
     `SELECT COUNT(*) AS count, COALESCE(SUM(t.selling_price), 0) AS total_value
      FROM transactions t

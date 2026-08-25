@@ -38,11 +38,15 @@ export interface SubmitDigiflazzTransactionParams {
   /** Our transactions.idempotency_key, reused as Digiflazz's own ref_id. */
   refId: string;
   /**
-   * Digiflazz's own flag for deliberately forcing a transaction to stay
-   * "Pending" forever, meant only for testing how an integrator's pending-
-   * state handling behaves — NOT how dev vs. production mode is selected
-   * (that's purely which API key signs the request). Leave false/omitted
-   * for a normal purchase, dev-mode included, so it resolves like a real one.
+   * Digiflazz's flag for routing a request through their test harness,
+   * which resolves deterministically off a fixed set of "magic"
+   * customer_no values (see their official Test Case docs) instead of
+   * touching real inventory. Confirmed empirically: a development-mode
+   * account rejects every /transaction call with a generic "Signature
+   * Anda salah" unless this is true, even with a correctly-computed
+   * signature — so transaction.service.ts sets this to
+   * `credentials.mode === "development"`, not left false/omitted.
+   * Production mode must never set it (real purchases, real delivery).
    */
   testing?: boolean;
 }

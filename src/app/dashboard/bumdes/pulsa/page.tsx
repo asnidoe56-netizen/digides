@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { PulsaFlow } from "@/features/mitra-pulsa";
+import { CategoryPurchaseFlow } from "@/features/mitra-purchase";
 import { getSession } from "@/lib/auth/session";
 import { getCategoryPurchaseCatalog } from "@/services/catalog.service";
 import { getWalletForMitraSession } from "@/services/wallet.service";
@@ -18,7 +18,8 @@ export default async function BumdesPulsaPage() {
   ]);
 
   return (
-    <PulsaFlow
+    <CategoryPurchaseFlow
+      categoryName="Pulsa"
       homeHref="/dashboard/bumdes/dashboard"
       brands={catalog.brands}
       products={catalog.products}

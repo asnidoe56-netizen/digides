@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { CategoryPurchaseFlow } from "@/features/mitra-purchase";
+import { CategoryPurchaseFlow, NUMERIC_ID_FIELD } from "@/features/mitra-purchase";
 import { getSession } from "@/lib/auth/session";
 import { getCategoryPurchaseCatalog } from "@/services/catalog.service";
 import { getWalletForMitraSession } from "@/services/wallet.service";
@@ -8,23 +8,28 @@ import { getWalletForMitraSession } from "@/services/wallet.service";
 // statically prerendered.
 export const dynamic = "force-dynamic";
 
-export default async function KonterPulsaPage() {
+// Pertagas token top-up is bought against the customer's ID Pelanggan/No.
+// Meter, never a phone number.
+const GAS_ID_FIELD = { ...NUMERIC_ID_FIELD, label: "ID Pelanggan / No. Meter" };
+
+export default async function BumdesGasPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
   const [catalog, wallet] = await Promise.all([
-    getCategoryPurchaseCatalog("Pulsa"),
+    getCategoryPurchaseCatalog("Gas"),
     getWalletForMitraSession(session.userId, session.roles),
   ]);
 
   return (
     <CategoryPurchaseFlow
-      categoryName="Pulsa"
-      homeHref="/dashboard/konter/dashboard"
+      categoryName="Gas"
+      homeHref="/dashboard/bumdes/dashboard"
       brands={catalog.brands}
       products={catalog.products}
       categoryMarkup={catalog.categoryMarkup}
       availableBalance={wallet?.available_balance ?? "0"}
+      customerIdField={GAS_ID_FIELD}
     />
   );
 }

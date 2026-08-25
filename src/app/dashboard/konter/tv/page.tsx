@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { CategoryPurchaseFlow } from "@/features/mitra-purchase";
+import { CategoryPurchaseFlow, NUMERIC_ID_FIELD } from "@/features/mitra-purchase";
 import { getSession } from "@/lib/auth/session";
 import { getCategoryPurchaseCatalog } from "@/services/catalog.service";
 import { getWalletForMitraSession } from "@/services/wallet.service";
@@ -8,23 +8,28 @@ import { getWalletForMitraSession } from "@/services/wallet.service";
 // statically prerendered.
 export const dynamic = "force-dynamic";
 
-export default async function KonterPulsaPage() {
+// Pay-TV top-up (K-Vision/GOL) is identified by the decoder's ID
+// pelanggan/nomor kartu, not a phone number.
+const TV_ID_FIELD = { ...NUMERIC_ID_FIELD, label: "ID Pelanggan / No. Kartu" };
+
+export default async function KonterTvPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
   const [catalog, wallet] = await Promise.all([
-    getCategoryPurchaseCatalog("Pulsa"),
+    getCategoryPurchaseCatalog("TV"),
     getWalletForMitraSession(session.userId, session.roles),
   ]);
 
   return (
     <CategoryPurchaseFlow
-      categoryName="Pulsa"
+      categoryName="TV"
       homeHref="/dashboard/konter/dashboard"
       brands={catalog.brands}
       products={catalog.products}
       categoryMarkup={catalog.categoryMarkup}
       availableBalance={wallet?.available_balance ?? "0"}
+      customerIdField={TV_ID_FIELD}
     />
   );
 }

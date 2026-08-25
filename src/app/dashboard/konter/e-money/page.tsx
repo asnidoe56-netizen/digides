@@ -8,18 +8,18 @@ import { getWalletForMitraSession } from "@/services/wallet.service";
 // statically prerendered.
 export const dynamic = "force-dynamic";
 
-export default async function KonterPulsaPage() {
+export default async function KonterEMoneyPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
   const [catalog, wallet] = await Promise.all([
-    getCategoryPurchaseCatalog("Pulsa"),
+    getCategoryPurchaseCatalog("E-Money"),
     getWalletForMitraSession(session.userId, session.roles),
   ]);
 
   return (
     <CategoryPurchaseFlow
-      categoryName="Pulsa"
+      categoryName="E-Money"
       homeHref="/dashboard/konter/dashboard"
       brands={catalog.brands}
       products={catalog.products}

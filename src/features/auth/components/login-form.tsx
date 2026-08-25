@@ -4,7 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Fingerprint, Lock, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/password-input";
@@ -56,33 +58,69 @@ export function LoginForm() {
 
       <div className="grid gap-2">
         <Label htmlFor="email">Email</Label>
-        <Input
-          id="email"
-          type="email"
-          autoComplete="email"
-          className="h-11"
-          aria-invalid={!!errors.email}
-          {...register("email")}
-        />
+        <div className="relative">
+          <Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            placeholder="nama@email.com"
+            className="h-12 pl-10"
+            aria-invalid={!!errors.email}
+            {...register("email")}
+          />
+        </div>
         {errors.email ? <p className="text-sm text-destructive">{errors.email.message}</p> : null}
       </div>
 
       <div className="grid gap-2">
         <Label htmlFor="password">Password</Label>
-        <PasswordInput
-          id="password"
-          autoComplete="current-password"
-          className="h-11"
-          aria-invalid={!!errors.password}
-          {...register("password")}
-        />
+        <div className="relative">
+          <Lock className="pointer-events-none absolute top-1/2 left-3 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
+          <PasswordInput
+            id="password"
+            autoComplete="current-password"
+            placeholder="Password"
+            className="h-12 pl-10"
+            aria-invalid={!!errors.password}
+            {...register("password")}
+          />
+        </div>
         {errors.password ? (
           <p className="text-sm text-destructive">{errors.password.message}</p>
         ) : null}
       </div>
 
-      <Button type="submit" disabled={isSubmitting} className="mt-2 h-11">
+      <div className="flex items-center justify-between">
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Checkbox defaultChecked />
+          Ingat saya
+        </label>
+        {/* Forgot-password isn't built yet — shown per design, intentionally
+            not a real link (no route to send it to) rather than a dead 404. */}
+        <span className="text-sm font-medium text-destructive">Lupa password?</span>
+      </div>
+
+      <Button type="submit" disabled={isSubmitting} className="h-12 rounded-full bg-red-600 hover:bg-red-700">
         {isSubmitting ? "Memproses..." : "Masuk"}
+      </Button>
+
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="h-px flex-1 bg-border" />
+        atau
+        <div className="h-px flex-1 bg-border" />
+      </div>
+
+      {/* Fingerprint login — shown per design, deliberately non-functional
+          (disabled) until the underlying biometric/WebAuthn flow exists. */}
+      <Button
+        type="button"
+        disabled
+        variant="outline"
+        className="h-12 gap-2 rounded-full border-red-600 text-red-600 hover:bg-red-50 disabled:opacity-100"
+      >
+        <Fingerprint className="size-4" />
+        Masuk dengan Sidik Jari
       </Button>
     </form>
   );

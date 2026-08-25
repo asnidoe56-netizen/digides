@@ -100,7 +100,18 @@ export async function fetchDigiflazzPriceList<
   const body = rawBody as DigiflazzPriceListSuccess<T> | null;
 
   if (!body || !Array.isArray(body.data)) {
-    throw new Error("Format respons Digiflazz tidak sesuai (data tidak ditemukan)");
+    // Digiflazz sometimes returns the error shape { rc, message } with a
+    // 2xx status too (e.g. rc "83" for hitting their price-list rate
+    // limit) — not just alongside a non-ok HTTP status. Surface their
+    // actual message here as well, instead of a generic "malformed
+    // response" that hides what really happened.
+    const errorBody = rawBody as DigiflazzErrorBody | null;
+    const digiflazzMessage = errorBody?.data?.message;
+    throw new Error(
+      digiflazzMessage
+        ? `Digiflazz menolak permintaan: ${digiflazzMessage}`
+        : "Format respons Digiflazz tidak sesuai (data tidak ditemukan)",
+    );
   }
 
   return body.data;

@@ -34,7 +34,9 @@ export type WalletLedgerType =
   | "REFUND"
   | "COMMISSION"
   | "PAYOUT"
-  | "ADJUSTMENT";
+  | "ADJUSTMENT"
+  | "TRANSFER_OUT"
+  | "TRANSFER_IN";
 
 // Where the mutation originated — issue M18 sections 11, 24, 25: every
 // channel shares the same wallet/ledger, this only records provenance for

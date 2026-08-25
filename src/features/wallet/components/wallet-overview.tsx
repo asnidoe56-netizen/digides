@@ -18,6 +18,8 @@ const LEDGER_TYPE_LABEL: Record<string, string> = {
   COMMISSION: "Komisi",
   PAYOUT: "Payout",
   ADJUSTMENT: "Adjustment",
+  TRANSFER_OUT: "Transfer Keluar",
+  TRANSFER_IN: "Transfer Masuk",
 };
 
 // Server Component — reads straight from wallet.service, no client fetch.

@@ -250,9 +250,11 @@ export async function postLedgerEntry(
       case "REFUND":
       case "TOPUP":
       case "COMMISSION":
+      case "TRANSFER_IN":
         availableDelta = amount;
         break;
       case "PAYOUT":
+      case "TRANSFER_OUT":
         availableDelta = -amount;
         break;
     }
@@ -322,8 +324,8 @@ export async function verifyLedgerConsistency(
   const ledgerResult = await db.query<{ sum: string | null }>(
     `SELECT SUM(
        CASE
-         WHEN type IN ('RESERVE', 'PAYOUT') THEN -amount
-         WHEN type IN ('RELEASE', 'REFUND', 'TOPUP', 'COMMISSION') THEN amount
+         WHEN type IN ('RESERVE', 'PAYOUT', 'TRANSFER_OUT') THEN -amount
+         WHEN type IN ('RELEASE', 'REFUND', 'TOPUP', 'COMMISSION', 'TRANSFER_IN') THEN amount
          WHEN type = 'ADJUSTMENT' THEN amount
          ELSE 0
        END
@@ -647,6 +649,8 @@ export async function sumLedgerAmountsByType(
     COMMISSION: "0",
     PAYOUT: "0",
     ADJUSTMENT: "0",
+    TRANSFER_OUT: "0",
+    TRANSFER_IN: "0",
   };
   for (const row of result.rows) {
     totals[row.type] = row.total;

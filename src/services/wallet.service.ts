@@ -7,16 +7,24 @@ import {
   listLedgerGlobal,
   getWalletByBumdesId,
   getWalletByKonterId,
+  findWalletByOwner,
 } from "@/repositories/wallet.repository";
 import { findBumdesByAdminUserId } from "@/repositories/bumdes.repository";
 import { findKonterByOperatorUserId } from "@/repositories/konter.repository";
 import { recordAuditLog } from "@/repositories/audit.repository";
+import { findRelationshipByReferredUser } from "@/repositories/referral.repository";
+import { findUserById, listRolesForUser } from "@/repositories/user.repository";
+import { verifyTransactionPin } from "@/services/auth.service";
 import type { Wallet, WalletAccountType } from "@/types/wallet";
 
-// Resolves "my own wallet" for a BUMDES_ADMIN or KONTER session — the
-// Beranda balance card and every purchase-flow price screen (Pulsa, and
-// whatever category screens follow it) all need this same lookup, done
-// server-side from the session rather than trusting a client-supplied id.
+// Resolves any user's own wallet from their id + roles — a BUMDES_ADMIN's
+// and a KONTER's wallet live on their bumdes/konter entity, not directly
+// on wallet_accounts.user_id, so those two need an extra lookup first;
+// every other role (AFFILIATE, and any other plain USER-type account)
+// resolves directly. Used both for "my own wallet" (Beranda, every
+// purchase-flow price screen — always called with the current session's
+// own id/roles there) and for "a downline's wallet" (Menu Mitra's
+// masked-balance list — called once per downline with their own id/roles).
 export async function getWalletForMitraSession(userId: string, roles: string[]): Promise<Wallet | null> {
   if (roles.includes("BUMDES_ADMIN")) {
     const bumdes = await findBumdesByAdminUserId(userId);
@@ -26,7 +34,7 @@ export async function getWalletForMitraSession(userId: string, roles: string[]):
     const konter = await findKonterByOperatorUserId(userId);
     return konter ? getWalletByKonterId(konter.id) : null;
   }
-  return null;
+  return findWalletByOwner("USER", userId);
 }
 
 export interface WalletOverviewSummary {
@@ -130,5 +138,103 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
     );
 
     return { wallet, ledgerEntry };
+  });
+}
+
+export interface TransferToDownlineInput {
+  senderUserId: string;
+  senderRoles: string[];
+  recipientUserId: string;
+  /** Rupiah, must be a positive whole number. */
+  amount: number;
+  pin: string;
+}
+
+// Menu Transfer: a BUMDes/Konter sending balance directly to one of their
+// own downlines — never to an arbitrary wallet in the system. Mirrors the
+// same PIN-gate as a real purchase (verifyTransactionPin), and both
+// ledger legs (TRANSFER_OUT on the sender, TRANSFER_IN on the recipient)
+// post inside one DB transaction so a mid-flight failure can never create
+// or destroy money.
+export async function transferToDownline(input: TransferToDownlineInput) {
+  if (!Number.isInteger(input.amount) || input.amount <= 0) {
+    throw new Error("Nominal transfer tidak valid");
+  }
+  if (input.recipientUserId === input.senderUserId) {
+    throw new Error("Tidak dapat transfer ke akun sendiri");
+  }
+
+  await verifyTransactionPin(input.senderUserId, input.pin);
+
+  // The recipient must be a direct, currently-ACTIVE downline of the
+  // sender — referral_relationships is the one source of truth for who's
+  // downline of whom, never a client-supplied claim.
+  const relationship = await findRelationshipByReferredUser(input.recipientUserId);
+  if (!relationship || relationship.referrer_id !== input.senderUserId || relationship.status !== "ACTIVE") {
+    throw new Error("Penerima bukan downline aktif Anda");
+  }
+
+  const [senderWallet, recipientUser, recipientRoles] = await Promise.all([
+    getWalletForMitraSession(input.senderUserId, input.senderRoles),
+    findUserById(input.recipientUserId),
+    listRolesForUser(input.recipientUserId).then((roles) => roles.map((role) => role.code)),
+  ]);
+  if (!senderWallet) {
+    throw new Error("Wallet Anda tidak ditemukan");
+  }
+  if (!recipientUser) {
+    throw new Error("Penerima tidak ditemukan");
+  }
+
+  const recipientWallet = await getWalletForMitraSession(input.recipientUserId, recipientRoles);
+  if (!recipientWallet) {
+    throw new Error("Wallet penerima tidak ditemukan");
+  }
+
+  // Shared reference linking both ledger legs — lets either side's mutasi
+  // list be traced back to the same transfer.
+  const reference = `transfer-${senderWallet.id}-${recipientWallet.id}-${Date.now()}`;
+
+  return withTransaction(async (client) => {
+    const outLeg = await postLedgerEntry(client, {
+      walletId: senderWallet.id,
+      type: "TRANSFER_OUT",
+      amount: input.amount,
+      channel: "WEB",
+      reference,
+      createdBy: input.senderUserId,
+    });
+
+    await postLedgerEntry(client, {
+      walletId: recipientWallet.id,
+      type: "TRANSFER_IN",
+      amount: input.amount,
+      channel: "WEB",
+      reference,
+      createdBy: input.senderUserId,
+    });
+
+    await recordAuditLog(
+      {
+        actor_user_id: input.senderUserId,
+        action: "WALLET_TRANSFER_TO_DOWNLINE",
+        entity: "wallets",
+        entity_id: senderWallet.id,
+        new_value: {
+          recipient_user_id: input.recipientUserId,
+          recipient_wallet_id: recipientWallet.id,
+          amount: input.amount,
+          reference,
+        },
+      },
+      client,
+    );
+
+    return {
+      senderWallet: outLeg.wallet,
+      recipientName: recipientUser.full_name,
+      amount: input.amount,
+      reference,
+    };
   });
 }

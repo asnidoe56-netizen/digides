@@ -34,7 +34,8 @@ export function DigiflazzSettingsForm({ initialSettings }: DigiflazzSettingsForm
     register,
     control,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    reset,
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<DigiflazzSettingsFormValues>({
     resolver: zodResolver(digiflazzSettingsServerSchema),
     defaultValues: {
@@ -43,6 +44,7 @@ export function DigiflazzSettingsForm({ initialSettings }: DigiflazzSettingsForm
       mode: initialSettings?.mode ?? "development",
       dev_key: "",
       prod_key: "",
+      webhook_secret: "",
     },
   });
 
@@ -51,8 +53,19 @@ export function DigiflazzSettingsForm({ initialSettings }: DigiflazzSettingsForm
     setSuccessMessage(null);
     setTestResult(null);
     try {
-      await saveDigiflazzSettings(values);
+      const saved = await saveDigiflazzSettings(values);
       setSuccessMessage("Kredensial Digiflazz berhasil disimpan.");
+      // Re-baseline the form against what was just saved so isDirty goes
+      // back to false — otherwise "Test Koneksi" would stay disabled even
+      // though the values on screen now match the database exactly.
+      reset({
+        username: saved.username,
+        base_url: saved.base_url,
+        mode: saved.mode,
+        dev_key: "",
+        prod_key: "",
+        webhook_secret: "",
+      });
     } catch (error) {
       setServerError(error instanceof ApiError ? error.message : "Gagal menyimpan. Coba lagi.");
     }
@@ -157,6 +170,29 @@ export function DigiflazzSettingsForm({ initialSettings }: DigiflazzSettingsForm
         </p>
       </div>
 
+      <div className="grid gap-2">
+        <Label htmlFor="webhook_secret">Webhook Secret</Label>
+        <Input
+          id="webhook_secret"
+          type="password"
+          autoComplete="off"
+          className="h-11"
+          placeholder={
+            initialSettings?.webhook_secret_masked
+              ? `Sudah diatur (${initialSettings.webhook_secret_masked})`
+              : "Belum diatur"
+          }
+          aria-invalid={!!errors.webhook_secret}
+          {...register("webhook_secret")}
+        />
+        <p className="text-xs text-muted-foreground">
+          Isi nilai yang sama persis dengan kolom &quot;Secret&quot; di halaman Atur Koneksi → Webhook milik Digiflazz
+          — dipakai untuk memverifikasi bahwa notifikasi transaksi benar-benar berasal dari Digiflazz. Kosongkan jika
+          tidak ingin mengubah yang sudah tersimpan.
+        </p>
+        {errors.webhook_secret ? <p className="text-sm text-destructive">{errors.webhook_secret.message}</p> : null}
+      </div>
+
       <div className="mt-2 flex flex-wrap items-center gap-3">
         <Button type="submit" disabled={isSubmitting} className="h-11 w-fit">
           {isSubmitting ? "Menyimpan..." : "Simpan Kredensial"}
@@ -164,13 +200,20 @@ export function DigiflazzSettingsForm({ initialSettings }: DigiflazzSettingsForm
         <Button
           type="button"
           variant="outline"
-          disabled={isTesting}
+          disabled={isTesting || isDirty}
           onClick={onTestConnection}
           className="h-11 w-fit"
         >
           {isTesting ? "Menguji..." : "Test Koneksi"}
         </Button>
       </div>
+
+      {isDirty ? (
+        <p className="text-xs text-muted-foreground">
+          Ada perubahan yang belum disimpan — Test Koneksi selalu menguji kredensial yang tersimpan di database, bukan
+          isian di layar ini. Klik &quot;Simpan Kredensial&quot; terlebih dahulu.
+        </p>
+      ) : null}
 
       {testResult ? (
         <p

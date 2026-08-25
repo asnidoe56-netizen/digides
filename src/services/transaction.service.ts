@@ -1,6 +1,7 @@
 import { withTransaction } from "@/lib/db/transaction";
-import { getActiveDigiflazzCredentials } from "@/services/digiflazz.service";
+import { getActiveDigiflazzCredentials, getDigiflazzWebhookSecret } from "@/services/digiflazz.service";
 import { submitDigiflazzTransaction, type DigiflazzTransactionResult } from "@/lib/digiflazz/transaction";
+import { verifyDigiflazzWebhookSignature } from "@/lib/digiflazz/webhook";
 import { verifyTransactionPin } from "@/services/auth.service";
 import { awardCommissionForTransaction } from "@/services/commission.service";
 import {
@@ -13,11 +14,13 @@ import { postLedgerEntry } from "@/repositories/wallet.repository";
 import {
   createTransaction,
   findTransactionById,
+  findTransactionByIdempotencyKey,
   listTransactionEvents,
   listTransactionsWithDetail,
   countTransactionsWithDetail,
   findTransactionWithDetailById,
   recordTransactionEvent,
+  sumReservedTransactions,
   transitionTransactionStatus,
   type ListTransactionsFilter,
 } from "@/repositories/transaction.repository";
@@ -35,6 +38,10 @@ export async function getTransactionCount(filter: ListTransactionsFilter = {}) {
 export async function getTransactionDetail(id: string) {
   const [transaction, events] = await Promise.all([findTransactionWithDetailById(id), listTransactionEvents(id)]);
   return { transaction, events };
+}
+
+export async function getReservedTransactionsSummary() {
+  return sumReservedTransactions();
 }
 
 export interface ExecuteTransactionInput {
@@ -130,9 +137,13 @@ export async function executeTransaction(input: ExecuteTransactionInput): Promis
 // Resolves a transaction still stuck in RESERVED (provider never
 // responded, or responded "Pending") by asking Digiflazz again with the
 // same ref_id — their API treats a repeat ref_id as a status check, not a
-// new purchase. The one real action the Transaksi monitoring page offers
-// beyond viewing.
-export async function checkTransactionStatus(transactionId: string, actorUserId: string): Promise<Transaction> {
+// new purchase. Called both by an admin's "Cek Status" click (real
+// actorUserId) and by the automated pending-transaction-check job (null —
+// no human initiated it).
+export async function checkTransactionStatus(
+  transactionId: string,
+  actorUserId: string | null,
+): Promise<Transaction> {
   const transaction = await findTransactionById(transactionId);
   if (!transaction) {
     throw new Error("Transaksi tidak ditemukan");
@@ -149,7 +160,11 @@ export async function checkTransactionStatus(transactionId: string, actorUserId:
   return settleWithProvider(transaction, product.sku, actorUserId);
 }
 
-async function settleWithProvider(transaction: Transaction, buyerSkuCode: string, actorUserId: string): Promise<Transaction> {
+async function settleWithProvider(
+  transaction: Transaction,
+  buyerSkuCode: string,
+  actorUserId: string | null,
+): Promise<Transaction> {
   const credentials = await getActiveDigiflazzCredentials();
   if (!credentials) {
     return releaseTransaction(transaction, actorUserId, "Digiflazz belum dikonfigurasi");
@@ -164,6 +179,12 @@ async function settleWithProvider(transaction: Transaction, buyerSkuCode: string
       buyerSkuCode,
       customerNo: transaction.customer_number,
       refId: transaction.idempotency_key,
+      // Digiflazz's development-mode account rejects every /transaction
+      // call with a generic "Signature Anda salah" unless `testing` is
+      // set — confirmed empirically (an intentionally wrong signature
+      // gets the identical rc/message as our correctly-signed request
+      // without this flag). Production mode has no such requirement.
+      testing: credentials.mode === "development",
     });
   } catch (error) {
     // Network/parse failure — we genuinely don't know if Digiflazz
@@ -178,6 +199,20 @@ async function settleWithProvider(transaction: Transaction, buyerSkuCode: string
     throw new Error("Tidak dapat menghubungi Digiflazz. Transaksi tetap tertunda — periksa status lagi nanti.");
   }
 
+  return applyDigiflazzResult(transaction, result, actorUserId);
+}
+
+// Shared by both ways a Digiflazz result reaches us: settleWithProvider
+// (we called them, got an HTTP response) and the webhook route (they
+// called us, pushing the same rc/status/message shape asynchronously once
+// a "Pending" transaction resolves). Kept separate from settleWithProvider
+// so the webhook path never has to make a second, redundant call to
+// Digiflazz just to reuse this branching.
+async function applyDigiflazzResult(
+  transaction: Transaction,
+  result: DigiflazzTransactionResult,
+  actorUserId: string | null,
+): Promise<Transaction> {
   if (result.status === "Sukses") {
     return captureTransaction(transaction, result, actorUserId);
   }
@@ -194,10 +229,46 @@ async function settleWithProvider(transaction: Transaction, buyerSkuCode: string
   return transaction;
 }
 
+// Processes an inbound Digiflazz webhook delivery — the near-real-time
+// counterpart to checkTransactionStatus's manual/polled re-check. Verifies
+// the signature against the raw body first (untrusted input: this route
+// has no session, so authenticity rests entirely on the HMAC), then
+// applies the exact same capture/release logic a synchronous response
+// would have gone through.
+export async function processDigiflazzWebhookEvent(rawBody: string, signatureHeader: string | null): Promise<Transaction> {
+  const secret = await getDigiflazzWebhookSecret();
+  if (!secret) {
+    throw new Error("Webhook Digiflazz belum dikonfigurasi (Webhook Secret kosong)");
+  }
+  if (!verifyDigiflazzWebhookSignature(rawBody, signatureHeader, secret)) {
+    throw new Error("Signature Digiflazz tidak valid");
+  }
+
+  const parsed = JSON.parse(rawBody) as { data?: DigiflazzTransactionResult };
+  const result = parsed.data;
+  if (!result?.ref_id) {
+    throw new Error("Payload webhook tidak lengkap");
+  }
+
+  const transaction = await findTransactionByIdempotencyKey(result.ref_id);
+  if (!transaction) {
+    throw new Error("Transaksi tidak ditemukan");
+  }
+
+  // Digiflazz resends events (their own "resend" event type) and our own
+  // polling job may have already resolved this first — a replay must be a
+  // safe no-op, never a double capture/release.
+  if (transaction.status !== "RESERVED") {
+    return transaction;
+  }
+
+  return applyDigiflazzResult(transaction, result, null);
+}
+
 async function captureTransaction(
   transaction: Transaction,
   result: DigiflazzTransactionResult,
-  actorUserId: string,
+  actorUserId: string | null,
 ): Promise<Transaction> {
   const finalTransaction = await withTransaction(async (client) => {
     const transitioned = await transitionTransactionStatus(
@@ -242,7 +313,7 @@ async function captureTransaction(
 
 async function releaseTransaction(
   transaction: Transaction,
-  actorUserId: string,
+  actorUserId: string | null,
   reason: string,
   rawResponse?: unknown,
 ): Promise<Transaction> {

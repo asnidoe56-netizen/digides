@@ -9,7 +9,25 @@ import { getWalletForMitraSession } from "@/services/wallet.service";
 // prerendered, same reasoning as every admin data page.
 export const dynamic = "force-dynamic";
 
-const CATEGORY_HREFS = { Pulsa: "/dashboard/bumdes/pulsa" };
+const CATEGORY_HREFS = {
+  Pulsa: "/dashboard/bumdes/pulsa",
+  "E-Money": "/dashboard/bumdes/e-money",
+  PLN: "/dashboard/bumdes/pln",
+  "Paket SMS & Telpon": "/dashboard/bumdes/paket-sms-telpon",
+  Data: "/dashboard/bumdes/data",
+  "Aktivasi Voucher": "/dashboard/bumdes/aktivasi-voucher",
+  "Aktivasi Perdana": "/dashboard/bumdes/aktivasi-perdana",
+  Games: "/dashboard/bumdes/games",
+  "Masa Aktif": "/dashboard/bumdes/masa-aktif",
+  TV: "/dashboard/bumdes/tv",
+  Gas: "/dashboard/bumdes/gas",
+  Voucher: "/dashboard/bumdes/voucher",
+};
+
+const ACTION_HREFS = {
+  Transfer: "/dashboard/bumdes/transfer",
+  Histori: "/dashboard/bumdes/histori",
+};
 
 export default async function BumdesDashboardPage() {
   const session = await getSession();
@@ -29,7 +47,7 @@ export default async function BumdesDashboardPage() {
       heldBalance={wallet?.held_balance ?? "0"}
       categories={categories}
       categoryHrefs={CATEGORY_HREFS}
-      homeHref="/dashboard/bumdes/dashboard"
+      actionHrefs={ACTION_HREFS}
     />
   );
 }

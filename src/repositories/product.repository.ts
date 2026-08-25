@@ -305,6 +305,8 @@ export interface UpsertDigiflazzSettingsInput {
   dev_key_encrypted?: string;
   /** Omit to leave the currently-stored encrypted key untouched. */
   prod_key_encrypted?: string;
+  /** Omit to leave the currently-stored encrypted secret untouched. */
+  webhook_secret_encrypted?: string;
 }
 
 export async function upsertDigiflazzSettings(
@@ -315,8 +317,8 @@ export async function upsertDigiflazzSettings(
 
   if (!existing) {
     const result = await db.query<DigiflazzSettings>(
-      `INSERT INTO digiflazz_settings (username, base_url, mode, dev_key_encrypted, prod_key_encrypted, is_active)
-       VALUES ($1, $2, $3, $4, $5, true)
+      `INSERT INTO digiflazz_settings (username, base_url, mode, dev_key_encrypted, prod_key_encrypted, webhook_secret_encrypted, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, true)
        RETURNING *`,
       [
         input.username,
@@ -324,6 +326,7 @@ export async function upsertDigiflazzSettings(
         input.mode,
         input.dev_key_encrypted ?? null,
         input.prod_key_encrypted ?? null,
+        input.webhook_secret_encrypted ?? null,
       ],
     );
     return result.rows[0];
@@ -335,7 +338,8 @@ export async function upsertDigiflazzSettings(
          base_url = $3,
          mode = $4,
          dev_key_encrypted = COALESCE($5, dev_key_encrypted),
-         prod_key_encrypted = COALESCE($6, prod_key_encrypted)
+         prod_key_encrypted = COALESCE($6, prod_key_encrypted),
+         webhook_secret_encrypted = COALESCE($7, webhook_secret_encrypted)
      WHERE id = $1
      RETURNING *`,
     [
@@ -345,6 +349,7 @@ export async function upsertDigiflazzSettings(
       input.mode,
       input.dev_key_encrypted ?? null,
       input.prod_key_encrypted ?? null,
+      input.webhook_secret_encrypted ?? null,
     ],
   );
   return result.rows[0];

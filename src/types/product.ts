@@ -47,6 +47,7 @@ export interface DigiflazzSettings {
   username: string;
   dev_key_encrypted: string | null;
   prod_key_encrypted: string | null;
+  webhook_secret_encrypted: string | null;
   base_url: string;
   is_active: boolean;
   updated_at: Date;

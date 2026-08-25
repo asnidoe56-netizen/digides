@@ -13,6 +13,7 @@ export interface DigiflazzSettingsView {
   is_active: boolean;
   dev_key_masked: string | null;
   prod_key_masked: string | null;
+  webhook_secret_masked: string | null;
   updated_at: Date;
 }
 
@@ -29,6 +30,7 @@ export async function getDigiflazzSettingsForDisplay(): Promise<DigiflazzSetting
     is_active: row.is_active,
     dev_key_masked: row.dev_key_encrypted ? maskSecret(decryptSecret(row.dev_key_encrypted)) : null,
     prod_key_masked: row.prod_key_encrypted ? maskSecret(decryptSecret(row.prod_key_encrypted)) : null,
+    webhook_secret_masked: row.webhook_secret_encrypted ? maskSecret(decryptSecret(row.webhook_secret_encrypted)) : null,
     updated_at: row.updated_at,
   };
 }
@@ -41,6 +43,8 @@ export interface SaveDigiflazzSettingsInput {
   dev_key?: string;
   /** Leave undefined/empty to keep the currently-stored key unchanged. */
   prod_key?: string;
+  /** Leave undefined/empty to keep the currently-stored secret unchanged. */
+  webhook_secret?: string;
 }
 
 export async function saveDigiflazzSettings(input: SaveDigiflazzSettingsInput): Promise<{ id: string }> {
@@ -50,8 +54,18 @@ export async function saveDigiflazzSettings(input: SaveDigiflazzSettingsInput): 
     mode: input.mode,
     dev_key_encrypted: input.dev_key ? encryptSecret(input.dev_key) : undefined,
     prod_key_encrypted: input.prod_key ? encryptSecret(input.prod_key) : undefined,
+    webhook_secret_encrypted: input.webhook_secret ? encryptSecret(input.webhook_secret) : undefined,
   });
   return { id: row.id };
+}
+
+// The webhook route's one dependency on this service — decrypts and hands
+// back the raw secret used to verify an inbound X-Hub-Signature header.
+// Never exposed through getDigiflazzSettingsForDisplay (masked-only).
+export async function getDigiflazzWebhookSecret(): Promise<string | null> {
+  const row = await getDigiflazzSettings();
+  if (!row?.webhook_secret_encrypted) return null;
+  return decryptSecret(row.webhook_secret_encrypted);
 }
 
 export interface DigiflazzCredentials {

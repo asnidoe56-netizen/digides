@@ -54,6 +54,14 @@ async function DigiflazzTab() {
             IP Digiflazz <code className="rounded bg-muted px-1 py-0.5 text-foreground">52.74.250.133</code>{" "}
             sudah di-whitelist di firewall/server DigiDes.
           </li>
+          <li>
+            (Opsional, untuk update status real-time) Payload URL di halaman Atur Koneksi → Webhook Digiflazz
+            diarahkan ke{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-foreground">
+              https://domain-anda/api/webhooks/digiflazz
+            </code>
+            , status Webhook diaktifkan, dan kolom Secret diisi nilai yang sama dengan Webhook Secret di form ini.
+          </li>
         </ul>
       </div>
     </div>

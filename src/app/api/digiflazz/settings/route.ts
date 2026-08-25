@@ -36,7 +36,7 @@ export async function PUT(request: Request) {
     );
   }
 
-  const { username, base_url, mode, dev_key, prod_key } = parsed.data;
+  const { username, base_url, mode, dev_key, prod_key, webhook_secret } = parsed.data;
 
   const saved = await saveDigiflazzSettings({
     username,
@@ -44,6 +44,7 @@ export async function PUT(request: Request) {
     mode,
     dev_key: dev_key || undefined,
     prod_key: prod_key || undefined,
+    webhook_secret: webhook_secret || undefined,
   });
 
   // Never log the key values themselves — only that a change happened and
@@ -60,6 +61,7 @@ export async function PUT(request: Request) {
       mode,
       dev_key_changed: Boolean(dev_key),
       prod_key_changed: Boolean(prod_key),
+      webhook_secret_changed: Boolean(webhook_secret),
     },
   });
 

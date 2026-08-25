@@ -14,6 +14,7 @@ export const digiflazzSettingsServerSchema = z.object({
   }),
   dev_key: z.string().trim().max(255).optional(),
   prod_key: z.string().trim().max(255).optional(),
+  webhook_secret: z.string().trim().max(255).optional(),
 });
 
 export type DigiflazzSettingsFormValues = z.infer<typeof digiflazzSettingsServerSchema>;

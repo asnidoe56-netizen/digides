@@ -13,6 +13,7 @@ interface DigiflazzSettingsResponse {
   is_active: boolean;
   dev_key_masked: string | null;
   prod_key_masked: string | null;
+  webhook_secret_masked: string | null;
   updated_at: string;
 }
 

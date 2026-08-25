@@ -36,6 +36,11 @@ export type WalletLedgerType =
   | "PAYOUT"
   | "ADJUSTMENT";
 
+// Where the mutation originated — issue M18 sections 11, 24, 25: every
+// channel shares the same wallet/ledger, this only records provenance for
+// reporting/audit, it never changes how the balance math works.
+export type WalletChannel = "WEB" | "TELEGRAM" | "ADMIN" | "SYSTEM";
+
 // Append-only — never updated or deleted (enforced by a DB trigger).
 export interface WalletLedgerEntry {
   id: string;
@@ -46,6 +51,7 @@ export interface WalletLedgerEntry {
   balance_before: string;
   balance_after: string;
   reference: string | null;
+  channel: WalletChannel;
   created_by: string | null;
   created_at: Date;
 }

@@ -2,7 +2,7 @@ import {
   getDigiflazzSettings,
   upsertDigiflazzSettings,
 } from "@/repositories/product.repository";
-import { decryptSecret, encryptSecret, maskSecret } from "@/lib/digiflazz/credentials";
+import { decryptSecret, encryptSecret, maskSecret } from "@/lib/crypto/credentials";
 import { fetchDigiflazzPriceList } from "@/lib/digiflazz/price-list";
 import type { DigiflazzMode } from "@/types/product";
 

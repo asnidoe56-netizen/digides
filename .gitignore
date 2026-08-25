@@ -23,3 +23,10 @@ npm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local tool config (Claude Code) — machine/session-specific, not project source
+.claude/
+
+# throwaway verification scripts (underscore-prefixed convention used during
+# development; always deleted after use, never meant to reach the repo)
+scripts/_*

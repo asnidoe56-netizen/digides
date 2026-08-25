@@ -78,3 +78,91 @@ export async function listAuditLogsForActor(
   );
   return result.rows;
 }
+
+export interface AuditLogWithActor extends AuditLog {
+  actor_name: string | null;
+  actor_email: string | null;
+}
+
+export interface ListAuditLogsFilter {
+  entity?: string;
+  /** Matches actor name or email, case-insensitive. */
+  actorSearch?: string;
+  /** Matches the action string, case-insensitive. */
+  actionSearch?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  limit?: number;
+  offset?: number;
+}
+
+function buildAuditLogFilterConditions(filter: ListAuditLogsFilter): { where: string; params: unknown[] } {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filter.entity) {
+    params.push(filter.entity);
+    conditions.push(`al.entity = $${params.length}`);
+  }
+  if (filter.actorSearch) {
+    params.push(`%${filter.actorSearch}%`);
+    conditions.push(`(u.full_name ILIKE $${params.length} OR u.email ILIKE $${params.length})`);
+  }
+  if (filter.actionSearch) {
+    params.push(`%${filter.actionSearch}%`);
+    conditions.push(`al.action ILIKE $${params.length}`);
+  }
+  if (filter.dateFrom) {
+    params.push(filter.dateFrom);
+    conditions.push(`al.created_at >= $${params.length}`);
+  }
+  if (filter.dateTo) {
+    params.push(filter.dateTo);
+    conditions.push(`al.created_at <= $${params.length}`);
+  }
+
+  return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };
+}
+
+// The Audit Log menu's platform-wide, filterable feed — every other list*
+// above is scoped to one entity/actor already, this is the general one.
+export async function listAuditLogsFiltered(
+  filter: ListAuditLogsFilter = {},
+  db: Queryable = pool,
+): Promise<AuditLogWithActor[]> {
+  const { where, params } = buildAuditLogFilterConditions(filter);
+  const limit = filter.limit ?? 20;
+  const offset = filter.offset ?? 0;
+  params.push(limit, offset);
+
+  const result = await db.query<AuditLogWithActor>(
+    `SELECT al.*, u.full_name AS actor_name, u.email AS actor_email
+     FROM audit_logs al
+     LEFT JOIN users u ON u.id = al.actor_user_id
+     ${where}
+     ORDER BY al.created_at DESC
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+  );
+  return result.rows;
+}
+
+export async function countAuditLogsFiltered(
+  filter: ListAuditLogsFilter = {},
+  db: Queryable = pool,
+): Promise<number> {
+  const { where, params } = buildAuditLogFilterConditions(filter);
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*) FROM audit_logs al LEFT JOIN users u ON u.id = al.actor_user_id ${where}`,
+    params,
+  );
+  return Number(result.rows[0].count);
+}
+
+// Populates the Audit Log menu's entity filter dropdown from whatever
+// entity strings actually exist — no hardcoded list to keep in sync as
+// new features add new `entity` values.
+export async function listDistinctAuditEntities(db: Queryable = pool): Promise<string[]> {
+  const result = await db.query<{ entity: string }>(`SELECT DISTINCT entity FROM audit_logs ORDER BY entity`);
+  return result.rows.map((row) => row.entity);
+}

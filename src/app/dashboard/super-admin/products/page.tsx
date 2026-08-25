@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/page-header";
 import { PaginationControls } from "@/components/pagination-controls";
 import { ProductFilters, ProductList, SyncCatalogButton } from "@/features/products";
 import { countProducts, listBrands, listCategories, listProducts } from "@/repositories/product.repository";
+import { getCategoryMarkups } from "@/services/pricing.service";
 import type { ProductStatus } from "@/types/product";
 
 const PAGE_SIZE = 20;
@@ -33,12 +34,15 @@ export default async function SuperAdminProductsPage({ searchParams }: SuperAdmi
 
   // Server Component reads straight from the repository — same reasoning
   // as the dashboard page, no self-fetch to /api/* needed for a read.
-  const [products, total, categories, brands] = await Promise.all([
+  const [products, total, categories, brands, categoryMarkups] = await Promise.all([
     listProducts(filter),
     countProducts(filter),
     listCategories(),
     listBrands(),
+    getCategoryMarkups(),
   ]);
+
+  const markupByCategoryId = new Map(categoryMarkups.map((entry) => [entry.category_id, Number(entry.markup_value)]));
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -58,7 +62,7 @@ export default async function SuperAdminProductsPage({ searchParams }: SuperAdmi
 
       <SyncCatalogButton />
       <ProductFilters categories={categories} />
-      <ProductList products={products} categories={categories} brands={brands} />
+      <ProductList products={products} categories={categories} brands={brands} markupByCategoryId={markupByCategoryId} />
       <PaginationControls page={page} totalPages={totalPages} buildHref={buildHref} />
     </div>
   );

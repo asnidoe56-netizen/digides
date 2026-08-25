@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { getSession } from "@/lib/auth/session";
+import { findUserById } from "@/repositories/user.repository";
 
 // Every page under dashboard/super-admin/* renders inside this layout, so
 // checking the session here protects all of them at once — including
@@ -15,5 +16,17 @@ export default async function SuperAdminLayout({ children }: { children: ReactNo
     redirect("/login");
   }
 
-  return <AppShell role="SUPER_ADMIN">{children}</AppShell>;
+  // getSession() already confirmed this session is valid (not revoked,
+  // not idle-timed-out, device not blocked) — this is purely for the
+  // display name/email the shell's logout area shows, never re-derives auth.
+  const user = await findUserById(session.userId);
+  if (!user) {
+    redirect("/login");
+  }
+
+  return (
+    <AppShell role="SUPER_ADMIN" user={{ full_name: user.full_name, email: user.email }}>
+      {children}
+    </AppShell>
+  );
 }

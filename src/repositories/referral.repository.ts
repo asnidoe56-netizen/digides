@@ -17,6 +17,109 @@ export async function createReferralCode(
   return result.rows[0];
 }
 
+export async function findReferralCodeByUserId(userId: string, db: Queryable = pool): Promise<ReferralCode | null> {
+  const result = await db.query<ReferralCode>(`SELECT * FROM referral_codes WHERE user_id = $1`, [userId]);
+  return result.rows[0] ?? null;
+}
+
+const UNIQUE_VIOLATION = "23505";
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === UNIQUE_VIOLATION;
+}
+
+// Retries with a fresh random code on the rare collision — `code` is
+// UNIQUE, and generateReferralCode's caller (referral.service.ts) never
+// calls this for a user who already has one (user_id is UNIQUE too).
+export async function insertReferralCodeWithRetry(
+  userId: string,
+  makeCode: () => string,
+  db: Queryable = pool,
+  attemptsLeft = 5,
+): Promise<ReferralCode> {
+  try {
+    return await createReferralCode(userId, makeCode(), null, db);
+  } catch (error) {
+    if (isUniqueViolation(error) && attemptsLeft > 1) {
+      return insertReferralCodeWithRetry(userId, makeCode, db, attemptsLeft - 1);
+    }
+    throw error;
+  }
+}
+
+export async function setReferralCodeActive(
+  id: string,
+  isActive: boolean,
+  db: Queryable = pool,
+): Promise<ReferralCode | null> {
+  const result = await db.query<ReferralCode>(
+    `UPDATE referral_codes SET is_active = $2 WHERE id = $1 RETURNING *`,
+    [id, isActive],
+  );
+  return result.rows[0] ?? null;
+}
+
+export interface ReferralCodeWithDetail extends ReferralCode {
+  owner_name: string;
+  owner_email: string;
+  referred_count: number;
+}
+
+// The Referral menu's Kode tab — one row per code with its owner and how
+// many people it has actually referred (referral_relationships counts by
+// referrer_id, not by code, since a code can be reused indefinitely).
+export async function listReferralCodes(db: Queryable = pool): Promise<ReferralCodeWithDetail[]> {
+  const result = await db.query<ReferralCodeWithDetail>(
+    `SELECT
+       rc.*,
+       u.full_name AS owner_name,
+       u.email AS owner_email,
+       COALESCE((SELECT COUNT(*) FROM referral_relationships rr WHERE rr.referrer_id = rc.user_id), 0)::int AS referred_count
+     FROM referral_codes rc
+     JOIN users u ON u.id = rc.user_id
+     ORDER BY rc.created_at DESC`,
+  );
+  return result.rows;
+}
+
+export interface ReferralRelationshipWithDetail extends ReferralRelationship {
+  referrer_name: string;
+  referrer_email: string;
+  referred_name: string;
+  referred_email: string;
+}
+
+// The Referral menu's Relasi tab — every edge in the referral forest with
+// both endpoints' names, so an admin can audit who referred whom without
+// cross-referencing user ids by hand.
+export async function listReferralRelationships(db: Queryable = pool): Promise<ReferralRelationshipWithDetail[]> {
+  const result = await db.query<ReferralRelationshipWithDetail>(
+    `SELECT
+       rr.*,
+       ref.full_name AS referrer_name,
+       ref.email AS referrer_email,
+       red.full_name AS referred_name,
+       red.email AS referred_email
+     FROM referral_relationships rr
+     JOIN users ref ON ref.id = rr.referrer_id
+     JOIN users red ON red.id = rr.referred_id
+     ORDER BY rr.created_at DESC`,
+  );
+  return result.rows;
+}
+
+export async function setReferralRelationshipStatus(
+  id: string,
+  status: "ACTIVE" | "BLOCKED",
+  db: Queryable = pool,
+): Promise<ReferralRelationship | null> {
+  const result = await db.query<ReferralRelationship>(
+    `UPDATE referral_relationships SET status = $2 WHERE id = $1 RETURNING *`,
+    [id, status],
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function findReferralCodeByCode(
   code: string,
   db: Queryable = pool,
@@ -62,6 +165,8 @@ export async function createReferralRelationship(
 }
 
 export interface ReferrerChainEntry {
+  /** The referral_relationships row this hop came from — commission_ledger.referral_relationship_id points here. */
+  relationship_id: string;
   user_id: string;
   depth: number;
 }
@@ -76,16 +181,16 @@ export async function findReferrerChain(
 ): Promise<ReferrerChainEntry[]> {
   const result = await db.query<ReferrerChainEntry>(
     `WITH RECURSIVE chain AS (
-       SELECT referrer_id AS user_id, 1 AS depth
+       SELECT id AS relationship_id, referrer_id AS user_id, 1 AS depth
        FROM referral_relationships
        WHERE referred_id = $1 AND status = 'ACTIVE'
        UNION ALL
-       SELECT rr.referrer_id, chain.depth + 1
+       SELECT rr.id, rr.referrer_id, chain.depth + 1
        FROM referral_relationships rr
        JOIN chain ON rr.referred_id = chain.user_id
        WHERE rr.status = 'ACTIVE' AND chain.depth < $2
      )
-     SELECT user_id, depth FROM chain ORDER BY depth ASC`,
+     SELECT relationship_id, user_id, depth FROM chain ORDER BY depth ASC`,
     [userId, maxLevel],
   );
   return result.rows;

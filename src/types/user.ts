@@ -7,8 +7,18 @@ export interface User {
   password_hash: string;
   full_name: string;
   status: UserStatus;
+  /** Set when brute-force login detection trips security_policies'
+   *  max_login_attempts — login is rejected while this is in the future. */
+  locked_until: Date | null;
   created_at: Date;
   updated_at: Date;
+}
+
+// The minimal, public-safe shape passed down to layout chrome (AppShell,
+// nav components) — never the full `User` row (which has password_hash).
+export interface UserSummary {
+  full_name: string;
+  email: string;
 }
 
 export type RoleCode = "SUPER_ADMIN" | "BUMDES_ADMIN" | "KONTER" | "AFFILIATE";

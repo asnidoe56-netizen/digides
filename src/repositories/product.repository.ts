@@ -2,6 +2,7 @@ import type { Queryable } from "@/lib/db/query";
 import { pool } from "@/lib/db/pool";
 import type {
   Brand,
+  CatalogStatus,
   CatalogSyncLog,
   Category,
   DigiflazzMode,
@@ -22,6 +23,53 @@ export async function upsertCategory(name: string, db: Queryable = pool): Promis
   return result.rows[0];
 }
 
+export async function findCategoryById(id: string, db: Queryable = pool): Promise<Category | null> {
+  const result = await db.query<Category>(`SELECT * FROM categories WHERE id = $1`, [id]);
+  return result.rows[0] ?? null;
+}
+
+// Manual creation from the Kategori menu — fails on a duplicate name
+// (UNIQUE violation surfaces as a thrown error) instead of upsertCategory's
+// silent "update the existing row" behavior, since catalog-sync's
+// upsert-by-name semantics don't apply to an admin explicitly adding one.
+export async function createCategory(name: string, db: Queryable = pool): Promise<Category> {
+  const result = await db.query<Category>(`INSERT INTO categories (name) VALUES ($1) RETURNING *`, [name]);
+  return result.rows[0];
+}
+
+export async function renameCategory(id: string, name: string, db: Queryable = pool): Promise<Category | null> {
+  const result = await db.query<Category>(`UPDATE categories SET name = $2 WHERE id = $1 RETURNING *`, [id, name]);
+  return result.rows[0] ?? null;
+}
+
+export async function updateCategoryStatus(
+  id: string,
+  status: CatalogStatus,
+  db: Queryable = pool,
+): Promise<Category | null> {
+  const result = await db.query<Category>(`UPDATE categories SET status = $2 WHERE id = $1 RETURNING *`, [
+    id,
+    status,
+  ]);
+  return result.rows[0] ?? null;
+}
+
+export interface CategoryWithProductCount extends Category {
+  product_count: number;
+}
+
+// One query for the Kategori menu's list — avoids an N+1 COUNT per row.
+export async function listCategoriesWithProductCount(db: Queryable = pool): Promise<CategoryWithProductCount[]> {
+  const result = await db.query<CategoryWithProductCount>(
+    `SELECT c.*, COUNT(p.id)::int AS product_count
+     FROM categories c
+     LEFT JOIN products p ON p.category_id = c.id
+     GROUP BY c.id
+     ORDER BY c.name ASC`,
+  );
+  return result.rows;
+}
+
 export async function upsertBrand(name: string, db: Queryable = pool): Promise<Brand> {
   const result = await db.query<Brand>(
     `INSERT INTO brands (name) VALUES ($1)
@@ -30,6 +78,49 @@ export async function upsertBrand(name: string, db: Queryable = pool): Promise<B
     [name],
   );
   return result.rows[0];
+}
+
+export async function findBrandById(id: string, db: Queryable = pool): Promise<Brand | null> {
+  const result = await db.query<Brand>(`SELECT * FROM brands WHERE id = $1`, [id]);
+  return result.rows[0] ?? null;
+}
+
+// Manual creation from the Brand menu — fails on a duplicate name (UNIQUE
+// violation surfaces as a thrown error) instead of upsertBrand's silent
+// "update the existing row" behavior, same reasoning as createCategory.
+export async function createBrand(name: string, db: Queryable = pool): Promise<Brand> {
+  const result = await db.query<Brand>(`INSERT INTO brands (name) VALUES ($1) RETURNING *`, [name]);
+  return result.rows[0];
+}
+
+export async function renameBrand(id: string, name: string, db: Queryable = pool): Promise<Brand | null> {
+  const result = await db.query<Brand>(`UPDATE brands SET name = $2 WHERE id = $1 RETURNING *`, [id, name]);
+  return result.rows[0] ?? null;
+}
+
+export async function updateBrandStatus(
+  id: string,
+  status: CatalogStatus,
+  db: Queryable = pool,
+): Promise<Brand | null> {
+  const result = await db.query<Brand>(`UPDATE brands SET status = $2 WHERE id = $1 RETURNING *`, [id, status]);
+  return result.rows[0] ?? null;
+}
+
+export interface BrandWithProductCount extends Brand {
+  product_count: number;
+}
+
+// One query for the Brand menu's list — avoids an N+1 COUNT per row.
+export async function listBrandsWithProductCount(db: Queryable = pool): Promise<BrandWithProductCount[]> {
+  const result = await db.query<BrandWithProductCount>(
+    `SELECT b.*, COUNT(p.id)::int AS product_count
+     FROM brands b
+     LEFT JOIN products p ON p.brand_id = b.id
+     GROUP BY b.id
+     ORDER BY b.name ASC`,
+  );
+  return result.rows;
 }
 
 export interface UpsertProductInput {
@@ -296,6 +387,69 @@ export async function createMarkupRule(input: CreateMarkupRuleInput, db: Queryab
       input.effective_from ?? null,
       input.effective_until ?? null,
     ],
+  );
+  return result.rows[0];
+}
+
+export interface CategoryMarkup {
+  category_id: string;
+  category_name: string;
+  markup_rule_id: string | null;
+  /** "0" when the category has no active MASTER/CATEGORY rule yet. */
+  markup_value: string;
+}
+
+// The single list the Markup page and the Products catalog both need: one
+// row per category, left-joined to its active MASTER-owned, NOMINAL,
+// CATEGORY-scope markup rule (at most one, enforced by
+// markup_rules_master_category_active_uidx). Categories without a rule
+// yet still appear, with markup_value coalesced to 0.
+export async function listCategoryMarkups(db: Queryable = pool): Promise<CategoryMarkup[]> {
+  const result = await db.query<CategoryMarkup>(
+    `SELECT
+       c.id AS category_id,
+       c.name AS category_name,
+       mr.id AS markup_rule_id,
+       COALESCE(mr.markup_value, 0) AS markup_value
+     FROM categories c
+     LEFT JOIN markup_rules mr
+       ON mr.category_id = c.id
+      AND mr.scope_type = 'CATEGORY'
+      AND mr.owner_type = 'MASTER'
+      AND mr.is_active = true
+     ORDER BY c.name ASC`,
+  );
+  return result.rows;
+}
+
+// Single-category lookup for the Transaction Engine's selling-price
+// calculation — avoids fetching every category just to price one product.
+export async function getCategoryMarkupValue(categoryId: string | null, db: Queryable = pool): Promise<string> {
+  if (!categoryId) return "0";
+  const result = await db.query<{ markup_value: string }>(
+    `SELECT COALESCE(markup_value, 0) AS markup_value FROM markup_rules
+     WHERE category_id = $1 AND scope_type = 'CATEGORY' AND owner_type = 'MASTER' AND is_active = true`,
+    [categoryId],
+  );
+  return result.rows[0]?.markup_value ?? "0";
+}
+
+// Sets the one active MASTER/CATEGORY markup rule for a category — always
+// NOMINAL (Rupiah), per the Markup menu's scope. Relies on
+// markup_rules_master_category_active_uidx as the ON CONFLICT target so
+// this is a single atomic upsert, not a read-then-write.
+export async function upsertCategoryMarkup(
+  categoryId: string,
+  markupValue: string | number,
+  db: Queryable = pool,
+): Promise<MarkupRule> {
+  const result = await db.query<MarkupRule>(
+    `INSERT INTO markup_rules (scope_type, category_id, owner_type, markup_type, markup_value)
+     VALUES ('CATEGORY', $1, 'MASTER', 'NOMINAL', $2)
+     ON CONFLICT (category_id) WHERE scope_type = 'CATEGORY' AND owner_type = 'MASTER' AND is_active = true
+     DO UPDATE SET markup_value = EXCLUDED.markup_value
+     RETURNING *`,
+    [categoryId, markupValue],
   );
   return result.rows[0];
 }

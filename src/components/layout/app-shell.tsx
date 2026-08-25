@@ -2,10 +2,11 @@ import type { ReactNode } from "react";
 import { DesktopSidebarNav } from "@/components/navigation/desktop-sidebar-nav";
 import { MobileBottomNav } from "@/components/navigation/mobile-bottom-nav";
 import { TopAppBar } from "@/components/layout/top-app-bar";
-import type { RoleCode } from "@/types/user";
+import type { RoleCode, UserSummary } from "@/types/user";
 
 export interface AppShellProps {
   role: RoleCode;
+  user: UserSummary;
   children: ReactNode;
 }
 
@@ -27,13 +28,15 @@ export interface AppShellProps {
 // activate its own scrollbar instead of being pushed taller by content
 // (the same category of flexbox default as the min-w-0 fix products
 // needed for its table).
-export function AppShell({ role, children }: AppShellProps) {
+export function AppShell({ role, user, children }: AppShellProps) {
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background lg:flex-row">
-      <DesktopSidebarNav role={role} className="hidden lg:flex" />
+      <DesktopSidebarNav role={role} user={user} className="hidden lg:flex" />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <TopAppBar className="lg:hidden" />
+        {/* No lg:hidden here — the notification bell must sit in the
+            top-right corner on every breakpoint, not just mobile. */}
+        <TopAppBar user={user} />
 
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 pb-20 sm:p-6 lg:pb-6">
           {/* Caps line/content length on very large monitors — an

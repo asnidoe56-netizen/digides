@@ -34,6 +34,15 @@ export async function findKonterById(id: string, db: Queryable = pool): Promise<
   return result.rows[0] ?? null;
 }
 
+// Resolves "which Konter am I" for a logged-in KONTER session — the same
+// reasoning as findBumdesByAdminUserId (bumdes.repository.ts): the home
+// screen's own wallet/identity is looked up server-side from the session,
+// never trusted from a client-supplied id.
+export async function findKonterByOperatorUserId(operatorUserId: string, db: Queryable = pool): Promise<Konter | null> {
+  const result = await db.query<Konter>(`SELECT * FROM konters WHERE operator_user_id = $1`, [operatorUserId]);
+  return result.rows[0] ?? null;
+}
+
 export async function listKontersByBumdes(bumdesId: string, db: Queryable = pool): Promise<Konter[]> {
   const result = await db.query<Konter>(
     `SELECT * FROM konters WHERE bumdes_id = $1 ORDER BY created_at DESC`,

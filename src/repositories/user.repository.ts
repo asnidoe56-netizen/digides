@@ -47,6 +47,18 @@ export async function countUsers(db: Queryable = pool): Promise<number> {
   return Number(result.rows[0].count);
 }
 
+// Brute-force lockout — set once login_activities' recent LOGIN_FAILED
+// count trips security_policies.max_login_attempts, cleared on a
+// subsequent successful login or by resolving the resulting security
+// incident (src/services/security.service.ts).
+export async function lockUserAccount(userId: string, lockedUntil: Date, db: Queryable = pool): Promise<void> {
+  await db.query(`UPDATE users SET locked_until = $2 WHERE id = $1`, [userId, lockedUntil]);
+}
+
+export async function clearUserAccountLock(userId: string, db: Queryable = pool): Promise<void> {
+  await db.query(`UPDATE users SET locked_until = NULL WHERE id = $1`, [userId]);
+}
+
 export interface UserWithRoles extends User {
   roles: RoleCode[];
 }

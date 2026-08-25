@@ -1,6 +1,7 @@
 import type { Queryable } from "@/lib/db/query";
 import { pool } from "@/lib/db/pool";
 import type { Transaction, TransactionEvent, TransactionStatus } from "@/types/transaction";
+import type { WalletAccountType } from "@/types/wallet";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -151,4 +152,145 @@ export async function listByWallet(
     [walletId, limit],
   );
   return result.rows;
+}
+
+export async function listTransactionEvents(transactionId: string, db: Queryable = pool): Promise<TransactionEvent[]> {
+  const result = await db.query<TransactionEvent>(
+    `SELECT * FROM transaction_events WHERE transaction_id = $1 ORDER BY created_at ASC`,
+    [transactionId],
+  );
+  return result.rows;
+}
+
+// --- Admin monitoring (Transaksi menu) ------------------------------------
+//
+// Same owner-resolution pattern as wallet.repository.ts's OWNER_JOIN — a
+// transaction's wallet_id can belong to a BUMDes, Konter, or plain user.
+
+const OWNER_JOIN = `
+  JOIN wallets w ON w.id = t.wallet_id
+  JOIN wallet_accounts wa ON wa.id = w.wallet_account_id
+  LEFT JOIN bumdes b ON b.id = wa.bumdes_id
+  LEFT JOIN konters k ON k.id = wa.konter_id
+  LEFT JOIN users u ON u.id = wa.user_id
+  JOIN products p ON p.id = t.product_id
+`;
+const OWNER_NAME_EXPR = `COALESCE(b.name, k.name, u.full_name)`;
+
+export interface TransactionWithDetail extends Transaction {
+  owner_name: string;
+  product_name: string;
+  product_sku: string;
+}
+
+export interface ListTransactionsFilter {
+  status?: TransactionStatus;
+  search?: string;
+  /** BUMDes/Konter/Affiliate(USER) — issue M18 §38's "Laporan" filter list. */
+  ownerType?: WalletAccountType;
+  dateFrom?: Date;
+  dateTo?: Date;
+  limit?: number;
+  offset?: number;
+}
+
+function buildTransactionFilterConditions(filter: ListTransactionsFilter): { where: string; params: unknown[] } {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filter.status) {
+    params.push(filter.status);
+    conditions.push(`t.status = $${params.length}`);
+  }
+  if (filter.search) {
+    params.push(`%${filter.search}%`);
+    conditions.push(
+      `(${OWNER_NAME_EXPR} ILIKE $${params.length} OR p.product_name ILIKE $${params.length} OR t.customer_number ILIKE $${params.length} OR t.idempotency_key ILIKE $${params.length})`,
+    );
+  }
+  if (filter.ownerType) {
+    params.push(filter.ownerType);
+    conditions.push(`wa.account_type = $${params.length}`);
+  }
+  if (filter.dateFrom) {
+    params.push(filter.dateFrom);
+    conditions.push(`t.created_at >= $${params.length}`);
+  }
+  if (filter.dateTo) {
+    params.push(filter.dateTo);
+    conditions.push(`t.created_at <= $${params.length}`);
+  }
+
+  return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };
+}
+
+export async function listTransactionsWithDetail(
+  filter: ListTransactionsFilter = {},
+  db: Queryable = pool,
+): Promise<TransactionWithDetail[]> {
+  const { where, params } = buildTransactionFilterConditions(filter);
+  const limit = filter.limit ?? 20;
+  const offset = filter.offset ?? 0;
+  params.push(limit, offset);
+
+  const result = await db.query<TransactionWithDetail>(
+    `SELECT t.*, ${OWNER_NAME_EXPR} AS owner_name, p.product_name, p.sku AS product_sku
+     FROM transactions t
+     ${OWNER_JOIN}
+     ${where}
+     ORDER BY t.created_at DESC
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+  );
+  return result.rows;
+}
+
+export async function countTransactionsWithDetail(
+  filter: ListTransactionsFilter = {},
+  db: Queryable = pool,
+): Promise<number> {
+  const { where, params } = buildTransactionFilterConditions(filter);
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*) FROM transactions t ${OWNER_JOIN} ${where}`,
+    params,
+  );
+  return Number(result.rows[0].count);
+}
+
+export async function findTransactionWithDetailById(
+  id: string,
+  db: Queryable = pool,
+): Promise<TransactionWithDetail | null> {
+  const result = await db.query<TransactionWithDetail>(
+    `SELECT t.*, ${OWNER_NAME_EXPR} AS owner_name, p.product_name, p.sku AS product_sku
+     FROM transactions t
+     ${OWNER_JOIN}
+     WHERE t.id = $1`,
+    [id],
+  );
+  return result.rows[0] ?? null;
+}
+
+export interface TransactionVolumeSummary {
+  count: number;
+  total_value: string;
+}
+
+// The Laporan menu's "total transaksi" metric — count and total selling
+// value of completed (SUCCESS) purchases in the filtered window. Same
+// filter shape as listTransactionsWithDetail, minus `status` (always
+// pinned to SUCCESS here since a report cares about completed revenue).
+export async function sumTransactionVolume(
+  filter: Omit<ListTransactionsFilter, "status" | "search" | "limit" | "offset"> = {},
+  db: Queryable = pool,
+): Promise<TransactionVolumeSummary> {
+  const { where, params } = buildTransactionFilterConditions({ ...filter, status: "SUCCESS" });
+  const result = await db.query<{ count: string; total_value: string | null }>(
+    `SELECT COUNT(*) AS count, COALESCE(SUM(t.selling_price), 0) AS total_value
+     FROM transactions t
+     ${OWNER_JOIN}
+     ${where}`,
+    params,
+  );
+  return { count: Number(result.rows[0].count), total_value: result.rows[0].total_value ?? "0" };
 }

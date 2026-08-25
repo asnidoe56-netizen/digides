@@ -61,3 +61,79 @@ export async function resolveRecord(
   );
   return result.rows[0] ?? null;
 }
+
+export interface ReconciliationRecordWithDetail extends ReconciliationRecord {
+  idempotency_key: string | null;
+  product_name: string | null;
+}
+
+export interface ListReconciliationFilter {
+  category?: ReconciliationCategory;
+  /** true = only unresolved, false = only resolved, omitted = both. */
+  unresolved?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+function buildReconciliationFilterConditions(
+  filter: ListReconciliationFilter,
+): { where: string; params: unknown[] } {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filter.category) {
+    params.push(filter.category);
+    conditions.push(`rr.category = $${params.length}`);
+  }
+  if (filter.unresolved === true) {
+    conditions.push(`rr.resolved_at IS NULL`);
+  } else if (filter.unresolved === false) {
+    conditions.push(`rr.resolved_at IS NOT NULL`);
+  }
+
+  return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };
+}
+
+// The Rekonsiliasi menu's list — joined to the local transaction (when one
+// exists; PROVIDER_ONLY rows have none) for a human-readable reference.
+export async function listReconciliationRecords(
+  filter: ListReconciliationFilter = {},
+  db: Queryable = pool,
+): Promise<ReconciliationRecordWithDetail[]> {
+  const { where, params } = buildReconciliationFilterConditions(filter);
+  const limit = filter.limit ?? 20;
+  const offset = filter.offset ?? 0;
+  params.push(limit, offset);
+
+  const result = await db.query<ReconciliationRecordWithDetail>(
+    `SELECT rr.*, t.idempotency_key, p.product_name
+     FROM reconciliation_records rr
+     LEFT JOIN transactions t ON t.id = rr.transaction_id
+     LEFT JOIN products p ON p.id = t.product_id
+     ${where}
+     ORDER BY rr.checked_at DESC
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+  );
+  return result.rows;
+}
+
+export async function countReconciliationRecords(
+  filter: ListReconciliationFilter = {},
+  db: Queryable = pool,
+): Promise<number> {
+  const { where, params } = buildReconciliationFilterConditions(filter);
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*) FROM reconciliation_records rr ${where}`,
+    params,
+  );
+  return Number(result.rows[0].count);
+}
+
+export async function findReconciliationRecordById(
+  id: string,
+  db: Queryable = pool,
+): Promise<ReconciliationRecord | null> {
+  const result = await db.query<ReconciliationRecord>(`SELECT * FROM reconciliation_records WHERE id = $1`, [id]);
+  return result.rows[0] ?? null;
+}

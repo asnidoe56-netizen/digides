@@ -1,17 +1,19 @@
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeftRight,
-  Building2,
   ClipboardList,
   Coins,
   FileBarChart2,
+  Handshake,
   LayoutDashboard,
   Layers,
+  LifeBuoy,
   Package,
   Percent,
   Scale,
   Settings,
   Share2,
+  Shield,
   Tags,
   Users,
   Wallet,
@@ -31,7 +33,7 @@ export interface NavItem {
 export const NAV_ITEMS: Record<RoleCode, NavItem[]> = {
   SUPER_ADMIN: [
     { label: "Dashboard", href: "/dashboard/super-admin/dashboard", icon: LayoutDashboard },
-    { label: "BUMDes", href: "/dashboard/super-admin/bumdes", icon: Building2 },
+    { label: "Mitra", href: "/dashboard/super-admin/mitra", icon: Handshake },
     { label: "Pengguna", href: "/dashboard/super-admin/users", icon: Users },
     { label: "Produk", href: "/dashboard/super-admin/products", icon: Package },
     { label: "Kategori", href: "/dashboard/super-admin/categories", icon: Tags },
@@ -44,6 +46,8 @@ export const NAV_ITEMS: Record<RoleCode, NavItem[]> = {
     { label: "Laporan", href: "/dashboard/super-admin/reports", icon: FileBarChart2 },
     { label: "Rekonsiliasi", href: "/dashboard/super-admin/reconciliation", icon: Scale },
     { label: "Audit Log", href: "/dashboard/super-admin/audit-logs", icon: ClipboardList },
+    { label: "Tim Support", href: "/dashboard/super-admin/support", icon: LifeBuoy },
+    { label: "Keamanan", href: "/dashboard/super-admin/security", icon: Shield },
     { label: "Pengaturan", href: "/dashboard/super-admin/settings", icon: Settings },
   ],
   // Populated when their dashboards are built (M03.5 continues per role).

@@ -1,4 +1,4 @@
-export type PaymentMethod = "QRIS" | "VA" | "MANUAL";
+export type PaymentMethod = "QRIS" | "VA" | "MANUAL" | "MIDTRANS";
 export type PaymentStatus = "PENDING" | "SUCCESS" | "FAILED" | "EXPIRED";
 
 // A single table for this phase covers both real gateway payments and

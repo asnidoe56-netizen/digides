@@ -11,11 +11,13 @@ import { ApiError } from "@/lib/api/client";
 import { loginSchema, type LoginFormValues } from "../schemas/login.schema";
 import { loginUser } from "../services/auth-api";
 
-// Where each role lands after login. Only Super Admin has a dashboard so
-// far (M03.5) — everyone else falls back to "/" until their dashboard
-// exists, rather than sending them to a route that 404s.
+// Where each role lands after login. BUMDES_ADMIN and KONTER now have a
+// real home screen — AFFILIATE still falls back to "/" until their
+// dashboard exists, rather than sending them to a route that 404s.
 function destinationForRoles(roles: string[] | undefined): string {
   if (roles?.includes("SUPER_ADMIN")) return "/dashboard/super-admin/dashboard";
+  if (roles?.includes("BUMDES_ADMIN")) return "/dashboard/bumdes/dashboard";
+  if (roles?.includes("KONTER")) return "/dashboard/konter/dashboard";
   return "/";
 }
 

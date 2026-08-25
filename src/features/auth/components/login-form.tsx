@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/password-input";
 import { ApiError } from "@/lib/api/client";
 import { loginSchema, type LoginFormValues } from "../schemas/login.schema";
 import { loginUser } from "../services/auth-api";
@@ -68,9 +69,8 @@ export function LoginForm() {
 
       <div className="grid gap-2">
         <Label htmlFor="password">Password</Label>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           autoComplete="current-password"
           className="h-11"
           aria-invalid={!!errors.password}

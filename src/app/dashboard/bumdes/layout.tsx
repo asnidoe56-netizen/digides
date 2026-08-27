@@ -26,6 +26,7 @@ export default async function BumdesLayout({ children }: { children: ReactNode }
       <MitraBottomNav
         homeHref="/dashboard/bumdes/dashboard"
         mitraHref="/dashboard/bumdes/mitra"
+        laporanHref="/dashboard/bumdes/laporan"
         akunHref="/dashboard/bumdes/akun"
       />
     </div>

@@ -19,7 +19,7 @@ export function PaginationControls({ page, totalPages, buildHref }: PaginationCo
   const disabledClasses = "pointer-events-none opacity-40";
 
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="print:hidden flex items-center justify-between gap-3">
       {page > 1 ? (
         <Link href={buildHref(page - 1)} className={cn(buttonVariants({ variant: "outline" }), "h-11")}>
           Sebelumnya

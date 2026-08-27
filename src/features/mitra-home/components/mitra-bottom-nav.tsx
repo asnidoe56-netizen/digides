@@ -8,21 +8,24 @@ import { cn } from "@/lib/utils";
 export interface MitraBottomNavProps {
   homeHref: string;
   mitraHref: string;
+  laporanHref: string;
   akunHref: string;
 }
 
-// "Beranda", "Mitra", and "Akun" link somewhere real; Laporan and the QRIS
-// scan action are the next menus to build for this section (BUMDes/
-// Konter), so they're shown disabled rather than linking to a route with
-// no page behind it yet.
-export function MitraBottomNav({ homeHref, mitraHref, akunHref }: MitraBottomNavProps) {
+// "Beranda", "Mitra", "Laporan", and "Akun" all link somewhere real; the
+// QRIS scan action is the next thing to build for this section (BUMDes/
+// Konter), so it's shown disabled rather than linking to a route with no
+// page behind it yet. print:hidden — this chrome has no place in an
+// exported Laporan PDF (see ExportPdfButton).
+export function MitraBottomNav({ homeHref, mitraHref, laporanHref, akunHref }: MitraBottomNavProps) {
   const pathname = usePathname();
   const isHome = pathname === homeHref;
   const isMitra = pathname === mitraHref;
+  const isLaporan = pathname === laporanHref;
   const isAkun = pathname === akunHref;
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto flex h-16 max-w-lg items-stretch border-t bg-background">
+    <nav className="print:hidden fixed inset-x-0 bottom-0 z-40 mx-auto flex h-16 max-w-lg items-stretch border-t bg-background">
       <Link
         href={homeHref}
         className={cn(
@@ -56,15 +59,16 @@ export function MitraBottomNav({ homeHref, mitraHref, akunHref }: MitraBottomNav
         </button>
       </div>
 
-      <button
-        type="button"
-        disabled
-        title="Segera hadir"
-        className="flex flex-1 flex-col items-center justify-center gap-1 text-xs text-muted-foreground/50"
+      <Link
+        href={laporanHref}
+        className={cn(
+          "flex flex-1 flex-col items-center justify-center gap-1 text-xs font-medium",
+          isLaporan ? "text-red-600" : "text-muted-foreground",
+        )}
       >
         <FileBarChart2 className="size-5" />
         Laporan
-      </button>
+      </Link>
 
       <Link
         href={akunHref}

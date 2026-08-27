@@ -331,116 +331,135 @@ export function CategoryPurchaseFlow({
         <h1 className="font-semibold">{selectedBrand ? `${categoryName} - ${selectedBrand.name}` : categoryName}</h1>
       </header>
 
-      <div className={cn("flex flex-1 flex-col gap-5 p-4", selectedProduct && "pb-32")}>
-        <div className="flex items-center justify-between gap-3 rounded-xl border p-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-muted-foreground">{customerIdField.label}</p>
+      <div className={cn("flex flex-1 flex-col", selectedProduct && "pb-32")}>
+        {/* Sticky utility header — Nomor Tujuan + (while browsing) the promo
+            banner and merchandising tabs. `position: sticky` (not fixed) so
+            it keeps its place in normal flow until scrolled to the top of
+            the viewport, where it then stays put; the page's only scroll
+            container is the window itself (no overflow-constrained
+            ancestor — see BumdesLayout/KonterLayout), so `top-0` alone is
+            enough, no header-height offset needed. Opaque bg + z-20 (same
+            layering as the Beranda wallet card's own sticky header) keeps
+            the provider/nominal grid scrolling underneath it instead of
+            showing through. */}
+        <div className="sticky top-0 z-20 flex flex-col gap-4 bg-background px-4 pt-4 pb-4">
+          <div className="flex items-center justify-between gap-3 rounded-xl border p-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-muted-foreground">{customerIdField.label}</p>
+              {selectedBrandId ? (
+                <p className="font-medium">{customerId}</p>
+              ) : (
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={customerId}
+                  onChange={(event) => setCustomerId(event.target.value)}
+                  placeholder={customerIdField.placeholder}
+                  className="w-full bg-transparent font-medium outline-none placeholder:font-normal placeholder:text-muted-foreground"
+                />
+              )}
+            </div>
             {selectedBrandId ? (
-              <p className="font-medium">{customerId}</p>
+              <button type="button" onClick={() => setSelectedBrandId(null)} className="text-sm font-medium text-red-600">
+                Ubah
+              </button>
             ) : (
-              <input
-                type="text"
-                inputMode="numeric"
-                value={customerId}
-                onChange={(event) => setCustomerId(event.target.value)}
-                placeholder={customerIdField.placeholder}
-                className="w-full bg-transparent font-medium outline-none placeholder:font-normal placeholder:text-muted-foreground"
-              />
+              <button
+                type="button"
+                onClick={handlePasteCustomerId}
+                aria-label="Tempel dari clipboard"
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg border text-muted-foreground hover:bg-muted"
+              >
+                <Clipboard className="size-4" />
+              </button>
             )}
           </div>
-          {selectedBrandId ? (
-            <button type="button" onClick={() => setSelectedBrandId(null)} className="text-sm font-medium text-red-600">
-              Ubah
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handlePasteCustomerId}
-              aria-label="Tempel dari clipboard"
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg border text-muted-foreground hover:bg-muted"
-            >
-              <Clipboard className="size-4" />
-            </button>
-          )}
+
+          {!selectedBrandId ? (
+            <>
+              <PromoBanner filter={merchandisingFilter} brandName={featuredBrand?.name ?? null} />
+              <MerchandisingTabs value={merchandisingFilter} onChange={setMerchandisingFilter} />
+            </>
+          ) : null}
         </div>
 
-        {!selectedBrandId ? (
-          <div className="flex flex-col gap-4">
-            <PromoBanner filter={merchandisingFilter} brandName={featuredBrand?.name ?? null} />
-            <MerchandisingTabs value={merchandisingFilter} onChange={setMerchandisingFilter} />
+        {/* Everything below scrolls normally underneath the sticky block above. */}
+        <div className="flex flex-col gap-5 px-4 pb-4">
+          {!selectedBrandId ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3">
+                <p className="font-semibold">Pilih Provider</p>
+                {!isCustomerIdValid && customerId.length > 0 ? (
+                  <p className="text-xs text-destructive">{customerIdField.invalidMessage}</p>
+                ) : null}
+                <div className="grid grid-cols-4 gap-x-2 gap-y-3 sm:gap-x-3">
+                  {filteredBrands.map((brand) => (
+                    <button
+                      key={brand.id}
+                      type="button"
+                      disabled={!isCustomerIdValid}
+                      onClick={() => handleSelectBrand(brand.id)}
+                      className={cn(
+                        "flex h-24 min-w-0 flex-col items-center justify-center gap-2 rounded-xl border p-2 text-center disabled:opacity-40",
+                        featuredBrand?.id === brand.id && "border-red-500 bg-red-50",
+                      )}
+                    >
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-xs font-bold text-red-600">
+                        {brand.name.slice(0, 2).toUpperCase()}
+                      </span>
+                      <span className="line-clamp-2 w-full break-words text-[11px] leading-tight font-medium">
+                        {brand.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {!isCustomerIdValid ? (
+                  <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">{customerIdField.helperMessage}</p>
+                ) : null}
+              </div>
 
+              <FeatureBadges />
+              <PromoFooterCard filter={merchandisingFilter} categoryName={categoryName} brandName={featuredBrand?.name ?? null} />
+            </div>
+          ) : (
             <div className="flex flex-col gap-3">
-              <p className="font-semibold">Pilih Provider</p>
-              {!isCustomerIdValid && customerId.length > 0 ? (
-                <p className="text-xs text-destructive">{customerIdField.invalidMessage}</p>
-              ) : null}
-              <div className="grid grid-cols-4 gap-x-2 gap-y-3 sm:gap-x-3">
-                {filteredBrands.map((brand) => (
+              <div>
+                <p className="font-semibold">Pilih Nominal</p>
+                {merchandisingFilter !== "REGULER" ? (
+                  <p className="text-xs text-muted-foreground">
+                    Menampilkan produk {MERCHANDISING_LABELS[merchandisingFilter]}
+                  </p>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {brandProducts.map((product) => (
                   <button
-                    key={brand.id}
+                    key={product.id}
                     type="button"
-                    disabled={!isCustomerIdValid}
-                    onClick={() => handleSelectBrand(brand.id)}
+                    onClick={() => handleSelectProduct(product.id)}
                     className={cn(
-                      "flex h-24 min-w-0 flex-col items-center justify-center gap-2 rounded-xl border p-2 text-center disabled:opacity-40",
-                      featuredBrand?.id === brand.id && "border-red-500 bg-red-50",
+                      "rounded-lg border py-3 text-center text-sm font-medium",
+                      product.id === selectedProductId ? "border-red-600 bg-red-600 text-white" : "hover:border-red-300",
                     )}
                   >
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-xs font-bold text-red-600">
-                      {brand.name.slice(0, 2).toUpperCase()}
-                    </span>
-                    <span className="line-clamp-2 w-full break-words text-[11px] leading-tight font-medium">
-                      {brand.name}
-                    </span>
+                    {extractNominalLabel(product.product_name, categoryName, selectedBrand?.name)}
                   </button>
                 ))}
               </div>
-              {!isCustomerIdValid ? (
-                <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">{customerIdField.helperMessage}</p>
-              ) : null}
-            </div>
-
-            <FeatureBadges />
-            <PromoFooterCard filter={merchandisingFilter} categoryName={categoryName} brandName={featuredBrand?.name ?? null} />
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <div>
-              <p className="font-semibold">Pilih Nominal</p>
-              {merchandisingFilter !== "REGULER" ? (
-                <p className="text-xs text-muted-foreground">
-                  Menampilkan produk {MERCHANDISING_LABELS[merchandisingFilter]}
+              {brandProducts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {merchandisingFilter === "REGULER"
+                    ? "Belum ada produk aktif untuk provider ini."
+                    : `Belum ada produk ${MERCHANDISING_LABELS[merchandisingFilter]} untuk provider ini.`}
                 </p>
               ) : null}
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              {brandProducts.map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  onClick={() => handleSelectProduct(product.id)}
-                  className={cn(
-                    "rounded-lg border py-3 text-center text-sm font-medium",
-                    product.id === selectedProductId ? "border-red-600 bg-red-600 text-white" : "hover:border-red-300",
-                  )}
-                >
-                  {extractNominalLabel(product.product_name, categoryName, selectedBrand?.name)}
-                </button>
-              ))}
-            </div>
-            {brandProducts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {merchandisingFilter === "REGULER"
-                  ? "Belum ada produk aktif untuk provider ini."
-                  : `Belum ada produk ${MERCHANDISING_LABELS[merchandisingFilter]} untuk provider ini.`}
-              </p>
-            ) : null}
 
-            <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
-              Pastikan {customerIdField.label.toLowerCase()} dan provider sudah benar sebelum melanjutkan.
-            </p>
-          </div>
-        )}
+              <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+                Pastikan {customerIdField.label.toLowerCase()} dan provider sudah benar sebelum melanjutkan.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       {selectedProduct ? (

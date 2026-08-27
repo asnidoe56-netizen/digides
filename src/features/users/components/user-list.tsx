@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -71,12 +72,20 @@ export function UserList({ users, currentUserId }: UserListProps) {
                   <StatusBadge status={user.status} />
                 </TableCell>
                 <TableCell>
-                  <UserStatusActions
-                    userId={user.id}
-                    userName={user.full_name}
-                    status={user.status}
-                    isSelf={user.id === currentUserId}
-                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      href={`/dashboard/super-admin/users/${user.id}`}
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
+                      Lihat Detail
+                    </Link>
+                    <UserStatusActions
+                      userId={user.id}
+                      userName={user.full_name}
+                      status={user.status}
+                      isSelf={user.id === currentUserId}
+                    />
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

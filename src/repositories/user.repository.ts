@@ -30,6 +30,27 @@ export async function findUserByPhone(phone: string, db: Queryable = pool): Prom
   return result.rows[0] ?? null;
 }
 
+export interface UpdateUserProfileInput {
+  full_name: string;
+  email: string;
+  phone: string | null;
+}
+
+// The Super Admin Pengguna page's "Edit Profil" action — lets an existing
+// account (most commonly one missing a WhatsApp number) be filled in or
+// corrected after the fact, independent of updateUserStatus.
+export async function updateUserProfile(
+  id: string,
+  input: UpdateUserProfileInput,
+  db: Queryable = pool,
+): Promise<User | null> {
+  const result = await db.query<User>(
+    `UPDATE users SET full_name = $2, email = $3, phone = $4 WHERE id = $1 RETURNING *`,
+    [id, input.full_name, input.email, input.phone],
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function findUserById(id: string, db: Queryable = pool): Promise<User | null> {
   const result = await db.query<User>(`SELECT * FROM users WHERE id = $1`, [id]);
   return result.rows[0] ?? null;

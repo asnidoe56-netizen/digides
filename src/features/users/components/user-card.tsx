@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { StatusBadge } from "@/components/status-badge";
 import type { UserWithRoles } from "@/repositories/user.repository";
 import { UserStatusActions } from "./user-status-actions";
@@ -37,12 +38,20 @@ export function UserCard({ user, currentUserId }: UserCardProps) {
         )}
       </div>
 
-      <UserStatusActions
-        userId={user.id}
-        userName={user.full_name}
-        status={user.status}
-        isSelf={user.id === currentUserId}
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          href={`/dashboard/super-admin/users/${user.id}`}
+          className="text-sm font-medium text-primary hover:underline"
+        >
+          Lihat Detail
+        </Link>
+        <UserStatusActions
+          userId={user.id}
+          userName={user.full_name}
+          status={user.status}
+          isSelf={user.id === currentUserId}
+        />
+      </div>
     </div>
   );
 }

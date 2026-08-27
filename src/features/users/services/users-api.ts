@@ -1,5 +1,5 @@
 import { apiFetch } from "@/lib/api/client";
-import type { User, UserStatus } from "@/types/user";
+import type { PublicUserProfile, UserStatus } from "@/types/user";
 import type { UpdateUserProfileValues } from "../schemas/user-profile.schema";
 
 export interface UpdateUserStatusResponse {
@@ -14,8 +14,11 @@ export function updateUserStatus(userId: string, status: UserStatus): Promise<Up
   });
 }
 
-export function updateUserProfile(userId: string, values: UpdateUserProfileValues): Promise<{ user: User }> {
-  return apiFetch<{ user: User }>(`/api/users/${userId}/profile`, {
+export function updateUserProfile(
+  userId: string,
+  values: UpdateUserProfileValues,
+): Promise<{ user: PublicUserProfile }> {
+  return apiFetch<{ user: PublicUserProfile }>(`/api/users/${userId}/profile`, {
     method: "PATCH",
     body: JSON.stringify(values),
   });

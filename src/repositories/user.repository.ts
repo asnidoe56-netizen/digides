@@ -1,7 +1,15 @@
 import type { Queryable } from "@/lib/db/query";
 import { pool } from "@/lib/db/pool";
-import type { Role, RoleCode, User, UserStatus } from "@/types/user";
+import type { PublicUserProfile, Role, RoleCode, User, UserStatus } from "@/types/user";
 import type { PinStatus, UserTransactionPin, UserTransactionPinForVerification } from "@/types/auth";
+
+// The one place a full `User` row (password_hash, locked_until, etc.) gets
+// narrowed down to what's safe to send across an API response or into a
+// Client Component prop — see security audit SEC-01. Call this instead of
+// passing/returning a `User` row directly anywhere it crosses that boundary.
+export function toPublicUserProfile(user: User): PublicUserProfile {
+  return { id: user.id, email: user.email, full_name: user.full_name, phone: user.phone };
+}
 
 export interface CreateUserInput {
   email: string;

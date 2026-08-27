@@ -9,12 +9,16 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api/client";
-import type { User } from "@/types/user";
+import type { PublicUserProfile } from "@/types/user";
 import { updateUserProfileSchema, type UpdateUserProfileValues } from "../schemas/user-profile.schema";
 import { updateUserProfile } from "../services/users-api";
 
 export interface UserEditProfileDialogProps {
-  user: Pick<User, "id" | "full_name" | "email" | "phone">;
+  // PublicUserProfile, not the full User row — see security audit SEC-01.
+  // Never widen this to `User`/`UserWithRoles`, even structurally
+  // compatible ones: a caller passing the full row would silently ship
+  // password_hash into this Client Component's props.
+  user: PublicUserProfile;
   /** Plain text link/button style, so this fits both the list row's
    *  compact "Edit" action and the detail page's more prominent one. */
   triggerLabel?: string;

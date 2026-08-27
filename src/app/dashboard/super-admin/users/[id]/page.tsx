@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { UserEditProfileDialog, UserStatusActions } from "@/features/users";
 import { getSession } from "@/lib/auth/session";
-import { findUserById, listRolesForUser } from "@/repositories/user.repository";
+import { findUserById, listRolesForUser, toPublicUserProfile } from "@/repositories/user.repository";
 
 const ROLE_LABEL: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
@@ -49,7 +49,7 @@ export default async function UserDetailPage({ params }: UserDetailPageProps) {
       <PageHeader
         title={user.full_name}
         description="Detail profil pengguna."
-        actions={<UserEditProfileDialog user={user} />}
+        actions={<UserEditProfileDialog user={toPublicUserProfile(user)} />}
       />
 
       <div className="grid grid-cols-1 gap-4 rounded-lg border p-4 sm:grid-cols-2">

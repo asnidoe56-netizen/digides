@@ -21,6 +21,18 @@ export interface UserSummary {
   email: string;
 }
 
+// The safe shape for anything that displays/edits a user's own identity
+// fields (Super Admin's Edit Profil, the mitra self-service Profil page).
+// Deliberately excludes password_hash/locked_until/status/timestamps —
+// use this instead of the full `User` row anywhere one crosses an API
+// response or a Server->Client Component prop boundary.
+export interface PublicUserProfile {
+  id: string;
+  email: string;
+  full_name: string;
+  phone: string | null;
+}
+
 export type RoleCode = "SUPER_ADMIN" | "BUMDES_ADMIN" | "KONTER" | "AFFILIATE";
 
 export interface Role {

@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth/session";
 import { recordAuditLog } from "@/repositories/audit.repository";
-import { findUserByEmail, findUserById, findUserByPhone, updateUserProfile } from "@/repositories/user.repository";
+import {
+  findUserByEmail,
+  findUserById,
+  findUserByPhone,
+  toPublicUserProfile,
+  updateUserProfile,
+} from "@/repositories/user.repository";
 
 const updateProfileSchema = z.object({
   fullName: z.string().trim().min(3, "Nama minimal 3 karakter").max(120),
@@ -60,6 +66,9 @@ export async function PATCH(request: Request) {
     email: parsed.data.email,
     phone,
   });
+  if (!updated) {
+    return NextResponse.json({ error: "Pengguna tidak ditemukan" }, { status: 404 });
+  }
 
   await recordAuditLog({
     actor_user_id: session.userId,
@@ -70,5 +79,5 @@ export async function PATCH(request: Request) {
     new_value: { full_name: parsed.data.fullName, email: parsed.data.email, phone },
   });
 
-  return NextResponse.json({ user: updated });
+  return NextResponse.json({ user: toPublicUserProfile(updated) });
 }

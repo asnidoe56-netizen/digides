@@ -25,7 +25,7 @@ export function MitraBottomNav({ homeHref, mitraHref, laporanHref, akunHref }: M
   const isAkun = pathname === akunHref;
 
   return (
-    <nav className="print:hidden fixed inset-x-0 bottom-0 z-40 mx-auto flex h-16 max-w-lg items-stretch border-t bg-background">
+    <nav className="print:hidden fixed inset-x-0 bottom-0 z-40 mx-auto flex h-16 max-w-lg items-stretch border-t border-border bg-background">
       <Link
         href={homeHref}
         className={cn(

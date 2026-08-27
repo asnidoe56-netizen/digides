@@ -332,16 +332,27 @@ export function CategoryPurchaseFlow({
       </header>
 
       <div className={cn("flex flex-1 flex-col", selectedProduct && "pb-32")}>
-        {/* Sticky utility header — Nomor Tujuan + (while browsing) the promo
-            banner and merchandising tabs. `position: sticky` (not fixed) so
-            it keeps its place in normal flow until scrolled to the top of
-            the viewport, where it then stays put; the page's only scroll
-            container is the window itself (no overflow-constrained
-            ancestor — see BumdesLayout/KonterLayout), so `top-0` alone is
-            enough, no header-height offset needed. Opaque bg + z-20 (same
-            layering as the Beranda wallet card's own sticky header) keeps
-            the provider/nominal grid scrolling underneath it instead of
-            showing through. */}
+        {/* STANDING LAYOUT RULE for this shared purchase-flow screen — applies
+            to every category that renders it (Pulsa, E-Money, PLN, Data,
+            Games, Gas, TV, Voucher, Aktivasi Perdana/Voucher, Masa Aktif,
+            Paket SMS & Telpon today, and any category added later, since
+            they all render this one component rather than duplicating this
+            screen per category): the customer-id row plus — while still
+            browsing providers — the promo banner and merchandising tabs
+            stay sticky at the top of the viewport; only the provider/
+            nominal grid below scrolls. Keep any future edit to this browse
+            JSX inside this same two-block split (sticky wrapper below,
+            plain scrollable wrapper below that) — don't move pieces back
+            into one flat scrolling block, or every category regresses at
+            once.
+              `position: sticky` (not fixed) keeps it in normal flow until
+            scrolled to the top of the viewport, where it then stays put;
+            the page's only scroll container is the window itself (no
+            overflow-constrained ancestor — see BumdesLayout/KonterLayout),
+            so `top-0` alone is enough, no header-height offset needed.
+            Opaque bg + z-20 (same layering as the Beranda wallet card's own
+            sticky header) keeps the provider/nominal grid scrolling
+            underneath it instead of showing through. */}
         <div className="sticky top-0 z-20 flex flex-col gap-4 bg-background px-4 pt-4 pb-4">
           <div className="flex items-center justify-between gap-3 rounded-xl border p-3">
             <div className="min-w-0 flex-1">

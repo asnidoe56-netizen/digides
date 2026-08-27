@@ -2,6 +2,7 @@ import { fetchDigiflazzPriceList, type DigiflazzPrepaidPriceListItem } from "@/l
 import { getActiveDigiflazzCredentials } from "@/services/digiflazz.service";
 import {
   finishCatalogSyncLog,
+  getLastCatalogSyncStartedAt,
   startCatalogSyncLog,
   upsertBrand,
   upsertCategory,
@@ -13,6 +14,14 @@ import type { ProductStatus } from "@/types/product";
 // completely different pricing shape (admin fee + commission, no flat
 // price) that the current products/markup schema doesn't model yet.
 const CMD = "prepaid" as const;
+
+// Digiflazz's own best-practice guidance: "Update harga all produk dapat
+// dilakukan setiap 5 menit 1x." This is specifically about the *full*
+// price-list pull this job does — a single buyer_sku_code lookup right
+// before one purchase (pricing.service.ts's getLiveProductPricing) is a
+// separate, much narrower call they recommend doing on every transaction
+// instead, and is not subject to this cooldown.
+const MIN_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 function mapDigiflazzStatus(item: DigiflazzPrepaidPriceListItem): ProductStatus {
   if (!item.buyer_product_status) return "DISABLED";
@@ -36,6 +45,17 @@ export async function runCatalogSync(): Promise<CatalogSyncSummary> {
   const credentials = await getActiveDigiflazzCredentials();
   if (!credentials) {
     throw new Error("Kredensial Digiflazz belum diatur atau tidak aktif.");
+  }
+
+  const lastStartedAt = await getLastCatalogSyncStartedAt();
+  if (lastStartedAt) {
+    const elapsedMs = Date.now() - lastStartedAt.getTime();
+    if (elapsedMs < MIN_SYNC_INTERVAL_MS) {
+      const waitSeconds = Math.ceil((MIN_SYNC_INTERVAL_MS - elapsedMs) / 1000);
+      throw new Error(
+        `Digiflazz membatasi sinkronisasi daftar harga maksimal setiap 5 menit sekali. Coba lagi dalam ${waitSeconds} detik.`,
+      );
+    }
   }
 
   const log = await startCatalogSyncLog();

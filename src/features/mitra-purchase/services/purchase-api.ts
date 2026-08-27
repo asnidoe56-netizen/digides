@@ -17,3 +17,17 @@ export function executePurchase(input: ExecutePurchaseInput) {
     body: JSON.stringify(input),
   });
 }
+
+export interface LiveProductPrice {
+  basePrice: string;
+  markupValue: string;
+  sellingPrice: string;
+}
+
+// Called right when the mitra taps "Lanjutkan" after picking a nominal —
+// a fresh, single-SKU price check against Digiflazz (pricing.service.ts's
+// getLiveProductPricing), per their own best-practice guidance, instead of
+// trusting the snapshot the page loaded with.
+export function getLiveProductPrice(productId: string) {
+  return apiFetch<LiveProductPrice>(`/api/products/${productId}/live-price`, { method: "POST" });
+}

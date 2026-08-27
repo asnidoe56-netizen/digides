@@ -5,7 +5,7 @@ import { verifyDigiflazzWebhookSignature } from "@/lib/digiflazz/webhook";
 import { verifyTransactionPin } from "@/services/auth.service";
 import { awardCommissionForTransaction } from "@/services/commission.service";
 import { findBrandById, findCategoryById, findProductById } from "@/repositories/product.repository";
-import { getEffectiveMarkupValue } from "@/services/pricing.service";
+import { getLiveProductPricing } from "@/services/pricing.service";
 import { postLedgerEntry } from "@/repositories/wallet.repository";
 import {
   createTransaction,
@@ -66,12 +66,13 @@ export async function executeTransaction(input: ExecuteTransactionInput): Promis
   if (!product) {
     throw new Error("Produk tidak ditemukan");
   }
-  if (product.status !== "ACTIVE") {
-    throw new Error("Produk sedang tidak tersedia");
-  }
-  // Super Admin's own override (Produk page's Aktifkan/Nonaktifkan) — checked
-  // separately from `status`, which Digiflazz's catalog sync owns and can
-  // silently overwrite; this one can't be reset by a sync.
+  // Super Admin's own override (Produk page's Aktifkan/Nonaktifkan) — a
+  // purely local decision Digiflazz has no say in, so it's checked here as
+  // an immediate hard block. `status` itself is deliberately NOT checked
+  // here anymore — it's only as fresh as the last catalog sync (now capped
+  // at once per 5 minutes per Digiflazz's own rate-limit guidance), so the
+  // live single-SKU check below (getLiveProductPricing) is what actually
+  // gates Digiflazz-side availability, never this cached column.
   if (product.admin_disabled) {
     throw new Error("Produk sedang dinonaktifkan oleh admin");
   }
@@ -90,12 +91,14 @@ export async function executeTransaction(input: ExecuteTransactionInput): Promis
     }
   }
 
-  // Most-specific markup wins (PRODUCT > BRAND > CATEGORY > GLOBAL) — the
-  // real charge must match exactly what the buyer was shown while
-  // browsing (catalog.service.ts's getCategoryPurchaseCatalog uses the
-  // same resolver), not just the category's flat markup.
-  const markup = await getEffectiveMarkupValue(product);
-  const sellingPrice = Number(product.base_price) + Number(markup);
+  // Live, single-SKU check against Digiflazz right before reserving any
+  // funds — per their own best-practice guidance for the moment a customer
+  // has picked a specific product. Throws if Digiflazz now reports it
+  // unavailable, and is the sole source of truth for both the base price
+  // and the most-specific markup (PRODUCT > BRAND > CATEGORY > GLOBAL),
+  // so what's actually charged can never drift from what was just fetched.
+  const pricing = await getLiveProductPricing(product.id);
+  const sellingPrice = Number(pricing.sellingPrice);
 
   const { transaction, alreadyExisted } = await withTransaction(async (client) => {
     const created = await createTransaction(
@@ -185,6 +188,10 @@ async function settleWithProvider(
       buyerSkuCode,
       customerNo: transaction.customer_number,
       refId: transaction.idempotency_key,
+      // Guards against paying Digiflazz more than we already reserved
+      // from the buyer's wallet for this exact transaction — see
+      // SubmitDigiflazzTransactionParams.maxPrice.
+      maxPrice: Number(transaction.selling_price),
       // Digiflazz's development-mode account rejects every /transaction
       // call with a generic "Signature Anda salah" unless `testing` is
       // set — confirmed empirically (an intentionally wrong signature

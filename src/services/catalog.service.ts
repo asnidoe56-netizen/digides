@@ -1,4 +1,4 @@
-import { listBrands, listCategories, listProducts } from "@/repositories/product.repository";
+import { listBrands, listCategories, listCheapestActiveProducts } from "@/repositories/product.repository";
 import { getEffectiveMarkupsByProductId } from "@/services/pricing.service";
 import type { Brand, Category, Product } from "@/types/product";
 
@@ -25,7 +25,7 @@ export async function getCategoryPurchaseCatalog(categoryName: string): Promise<
   }
 
   const [products, allBrands] = await Promise.all([
-    listProducts({ categoryId: category.id, status: "ACTIVE", excludeAdminDisabled: true, limit: 200 }),
+    listCheapestActiveProducts({ categoryId: category.id, excludeAdminDisabled: true, limit: 200 }),
     listBrands(),
   ]);
 

@@ -13,7 +13,7 @@ import { FeatureBadges, PromoBanner, PromoFooterCard } from "./promo-highlights"
 import { PurchaseConfirmationScreen } from "./purchase-confirmation-screen";
 import { PurchasePinScreen } from "./purchase-pin-screen";
 import { PurchaseResultScreen, type PurchaseResultStatus } from "./purchase-result-screen";
-import { executePurchase } from "../services/purchase-api";
+import { executePurchase, getLiveProductPrice } from "../services/purchase-api";
 
 export interface CustomerIdFieldConfig {
   /** e.g. "Nomor Tujuan" (telco/e-money/PLN) or "ID Game" (Games). */
@@ -127,6 +127,12 @@ export function CategoryPurchaseFlow({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
   const [result, setResult] = useState<{ status: PurchaseResultStatus; note?: string } | null>(null);
+  // Filled in only once a live, single-SKU Digiflazz check succeeds (see
+  // handleProceedToConfirm) — null means "still showing the page-load
+  // estimate," which is what the browse screen's bottom bar shows.
+  const [livePrice, setLivePrice] = useState<number | null>(null);
+  const [isCheckingPrice, setIsCheckingPrice] = useState(false);
+  const [priceCheckError, setPriceCheckError] = useState<string | null>(null);
 
   const normalizedCustomerId = customerId.replace(/\s+/g, "");
   const customerIdPattern = useMemo(() => new RegExp(customerIdField.pattern), [customerIdField.pattern]);
@@ -166,9 +172,14 @@ export function CategoryPurchaseFlow({
 
   const selectedBrand = brands.find((brand) => brand.id === selectedBrandId) ?? null;
   const selectedProduct = brandProducts.find((product) => product.id === selectedProductId) ?? null;
-  const sellingPrice = selectedProduct
+  // Estimate from the page-load snapshot — shown while still browsing.
+  // Overridden by `livePrice` (a fresh single-SKU Digiflazz check) the
+  // moment the mitra taps "Lanjutkan", per Digiflazz's own guidance to
+  // re-check price right when a customer has picked a specific product.
+  const estimatedSellingPrice = selectedProduct
     ? Number(selectedProduct.base_price) + Number(productMarkups[selectedProduct.id] ?? "0")
     : 0;
+  const sellingPrice = livePrice ?? estimatedSellingPrice;
 
   // A fresh purchase intent gets a fresh idempotency key; retrying a wrong
   // PIN for the *same* intent reuses it, so a flaky retry can never
@@ -179,6 +190,14 @@ export function CategoryPurchaseFlow({
   function handleSelectBrand(brandId: string) {
     setSelectedBrandId(brandId);
     setSelectedProductId(null);
+    setLivePrice(null);
+    setPriceCheckError(null);
+  }
+
+  function handleSelectProduct(productId: string) {
+    setSelectedProductId(productId);
+    setLivePrice(null);
+    setPriceCheckError(null);
   }
 
   async function handlePasteCustomerId() {
@@ -187,6 +206,29 @@ export function CategoryPurchaseFlow({
       if (text) setCustomerId(text.trim());
     } catch {
       // Clipboard permission denied/unavailable — user can still type it in manually.
+    }
+  }
+
+  // Digiflazz's own best-practice: check the specific product's price
+  // right when the customer has chosen it, rather than trusting whatever
+  // the page loaded with (which can be minutes stale). A failure here
+  // (price-list unreachable, or the SKU just went unavailable) keeps the
+  // mitra on the browse screen instead of letting them confirm a purchase
+  // against a price nobody can guarantee anymore.
+  async function handleProceedToConfirm() {
+    if (!selectedProduct) return;
+    setIsCheckingPrice(true);
+    setPriceCheckError(null);
+    try {
+      const pricing = await getLiveProductPrice(selectedProduct.id);
+      setLivePrice(Number(pricing.sellingPrice));
+      setPhase("confirm");
+    } catch (error) {
+      setPriceCheckError(
+        error instanceof ApiError ? error.message : "Gagal memeriksa harga terbaru. Coba lagi.",
+      );
+    } finally {
+      setIsCheckingPrice(false);
     }
   }
 
@@ -266,7 +308,10 @@ export function CategoryPurchaseFlow({
         nominalLabel={extractNominalLabel(selectedProduct.product_name, categoryName, selectedBrand.name)}
         price={sellingPrice}
         availableBalance={availableBalance}
-        onBack={() => setPhase("browse")}
+        onBack={() => {
+          setLivePrice(null);
+          setPhase("browse");
+        }}
         onConfirm={() => setPhase("pin")}
       />
     );
@@ -373,7 +418,7 @@ export function CategoryPurchaseFlow({
                 <button
                   key={product.id}
                   type="button"
-                  onClick={() => setSelectedProductId(product.id)}
+                  onClick={() => handleSelectProduct(product.id)}
                   className={cn(
                     "rounded-lg border py-3 text-center text-sm font-medium",
                     product.id === selectedProductId ? "border-red-600 bg-red-600 text-white" : "hover:border-red-300",
@@ -411,12 +456,14 @@ export function CategoryPurchaseFlow({
             <span className="text-muted-foreground">Saldo Tersedia</span>
             <span className="font-semibold">{formatMoney(availableBalance)}</span>
           </div>
+          {priceCheckError ? <p className="text-xs text-destructive">{priceCheckError}</p> : null}
           <button
             type="button"
-            onClick={() => setPhase("confirm")}
-            className="rounded-full bg-red-600 py-3 text-center font-semibold text-white"
+            onClick={handleProceedToConfirm}
+            disabled={isCheckingPrice}
+            className="rounded-full bg-red-600 py-3 text-center font-semibold text-white disabled:opacity-60"
           >
-            Lanjutkan
+            {isCheckingPrice ? "Memeriksa harga..." : "Lanjutkan"}
           </button>
         </div>
       ) : null}

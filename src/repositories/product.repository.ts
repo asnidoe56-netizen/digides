@@ -303,6 +303,76 @@ export async function countProducts(
   return Number(result.rows[0].count);
 }
 
+// The buyer-facing catalog's own view of "what's actually purchasable" —
+// collapses every Digiflazz SKU sharing the same (category, brand, product
+// name) down to just the cheapest one still ACTIVE, so a mitra never sees
+// two buttons for what is, from their side, the exact same nominal (e.g.
+// two different SKUs both named "Telkomsel 10.000" at two different
+// costs). `status` is always forced to ACTIVE regardless of what's passed
+// in `filter` — picking a cheaper DISABLED/GANGGUAN row over a pricier
+// ACTIVE one would surface a price nobody can actually buy. Always
+// evaluated against the local mirror, never Digiflazz directly, so the
+// extra grouping step costs nothing beyond an ordinary indexed SELECT.
+export async function listCheapestActiveProducts(
+  filter: Omit<ListProductsFilter, "status"> = {},
+  db: Queryable = pool,
+): Promise<Product[]> {
+  const { where, params } = buildProductFilterConditions({ ...filter, status: "ACTIVE" });
+
+  // LIMIT applies to the deduped outer result, not the raw row count —
+  // otherwise a category with many duplicate-nominal SKUs could get
+  // truncated before grouping ever ran, silently dropping legitimate
+  // distinct nominals instead of just the redundant variants.
+  let limitClause = "";
+  if (filter.limit !== undefined) {
+    params.push(filter.limit);
+    limitClause += ` LIMIT $${params.length}`;
+    if (filter.offset !== undefined) {
+      params.push(filter.offset);
+      limitClause += ` OFFSET $${params.length}`;
+    }
+  }
+
+  const result = await db.query<Product>(
+    `SELECT * FROM (
+       SELECT DISTINCT ON (category_id, brand_id, product_name) *
+       FROM products
+       ${where}
+       ORDER BY category_id, brand_id, product_name, base_price ASC
+     ) cheapest
+     ORDER BY base_price ASC, product_name ASC${limitClause}`,
+    params,
+  );
+  return result.rows;
+}
+
+// A single-SKU refresh from Digiflazz's own recommended "check right
+// before this specific purchase" pattern (see pricing.service.ts's
+// getLiveProductPricing) — narrower than upsertProduct's full-row upsert,
+// and just like it, never touches admin_disabled/merchandising_tag.
+export async function updateProductLiveSnapshot(
+  id: string,
+  input: { base_price: number; status: ProductStatus },
+  db: Queryable = pool,
+): Promise<void> {
+  await db.query(`UPDATE products SET base_price = $2, status = $3, last_synced_at = now(), updated_at = now() WHERE id = $1`, [
+    id,
+    input.base_price,
+    input.status,
+  ]);
+}
+
+// Enforces Digiflazz's "update all products at most once every 5 minutes"
+// guidance (see runCatalogSync) — checked before ever calling Digiflazz,
+// not after, so a rapid double-click on "Sinkronkan Sekarang" never
+// actually reaches their API twice.
+export async function getLastCatalogSyncStartedAt(db: Queryable = pool): Promise<Date | null> {
+  const result = await db.query<{ started_at: Date }>(
+    `SELECT started_at FROM catalog_sync_logs ORDER BY started_at DESC LIMIT 1`,
+  );
+  return result.rows[0]?.started_at ?? null;
+}
+
 export async function listCategories(db: Queryable = pool): Promise<Category[]> {
   const result = await db.query<Category>(`SELECT * FROM categories ORDER BY name ASC`);
   return result.rows;

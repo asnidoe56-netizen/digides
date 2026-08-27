@@ -38,6 +38,15 @@ export interface SubmitDigiflazzTransactionParams {
   /** Our transactions.idempotency_key, reused as Digiflazz's own ref_id. */
   refId: string;
   /**
+   * Digiflazz's own loss-prevention guard: "max_price dapat diisi sesuai
+   * dengan harga jual Buyer kepada pelanggan, sehingga jika harga seller
+   * melebihi max_price, maka transaksi akan otomatis ditolak." Always set
+   * to transaction.selling_price — the amount already reserved from the
+   * buyer's wallet — so a cost spike on Digiflazz's side can never leave
+   * us paying more than we collected.
+   */
+  maxPrice?: number;
+  /**
    * Digiflazz's flag for routing a request through their test harness,
    * which resolves deterministically off a fixed set of "magic"
    * customer_no values (see their official Test Case docs) instead of
@@ -68,6 +77,7 @@ export async function submitDigiflazzTransaction(
       customer_no: params.customerNo,
       ref_id: params.refId,
       sign,
+      ...(params.maxPrice !== undefined ? { max_price: params.maxPrice } : {}),
       ...(params.testing ? { testing: true } : {}),
     }),
   });

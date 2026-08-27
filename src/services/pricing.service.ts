@@ -1,11 +1,15 @@
 import { withTransaction } from "@/lib/db/transaction";
 import { recordAuditLog } from "@/repositories/audit.repository";
+import { fetchDigiflazzPriceList, type DigiflazzPrepaidPriceListItem } from "@/lib/digiflazz/price-list";
+import { getActiveDigiflazzCredentials } from "@/services/digiflazz.service";
 import {
   bulkUpsertProductMarkup,
+  findProductById,
   listApplicableMarkupRules,
   listCategoryMarkups,
   listEffectiveMarkupsByProductId,
   listProductMarkups,
+  updateProductLiveSnapshot,
   upsertCategoryMarkup,
   upsertProductMarkup,
   type ListProductsFilter,
@@ -69,6 +73,61 @@ export async function getEffectiveMarkupValue(product: {
 
 export async function getEffectiveMarkupsByProductId(productIds: string[]) {
   return listEffectiveMarkupsByProductId(productIds);
+}
+
+export interface LiveProductPricing {
+  basePrice: string;
+  markupValue: string;
+  sellingPrice: string;
+}
+
+// Digiflazz's own rate-limit guidance splits two concerns: the *full*
+// price-list (catalog-sync.ts's runCatalogSync) is capped at once every 5
+// minutes, but looking up one specific buyer_sku_code right when a
+// customer has picked that exact product — this — is what they recommend
+// doing on every purchase instead of trusting a snapshot that can be
+// minutes stale. This is the one source of truth executeTransaction
+// reserves/charges against, and what the confirmation screen shows the
+// buyer before they commit — never the locally-cached `base_price`/
+// `status` alone.
+export async function getLiveProductPricing(productId: string): Promise<LiveProductPricing> {
+  const product = await findProductById(productId);
+  if (!product) {
+    throw new Error("Produk tidak ditemukan");
+  }
+
+  const credentials = await getActiveDigiflazzCredentials();
+  if (!credentials) {
+    throw new Error("Digiflazz belum dikonfigurasi");
+  }
+
+  const items = await fetchDigiflazzPriceList<DigiflazzPrepaidPriceListItem>({
+    baseUrl: credentials.baseUrl,
+    username: credentials.username,
+    apiKey: credentials.apiKey,
+    cmd: "prepaid",
+    code: product.sku,
+  });
+
+  const live = items[0];
+  if (!live || !live.buyer_product_status || !live.seller_product_status) {
+    // Refresh our own cache immediately so the buyer catalog stops
+    // offering this SKU before the next scheduled full sync gets to it —
+    // the same self-healing behavior a full sync would produce, just
+    // scoped to the one row we already know just changed.
+    await updateProductLiveSnapshot(product.id, {
+      base_price: live?.price ?? Number(product.base_price),
+      status: !live || !live.buyer_product_status ? "DISABLED" : "GANGGUAN",
+    });
+    throw new Error("Produk sedang tidak tersedia di Digiflazz saat ini.");
+  }
+
+  await updateProductLiveSnapshot(product.id, { base_price: live.price, status: "ACTIVE" });
+
+  const markupValue = await getEffectiveMarkupValue(product);
+  const sellingPrice = live.price + Number(markupValue);
+
+  return { basePrice: String(live.price), markupValue, sellingPrice: String(sellingPrice) };
 }
 
 export async function getProductMarkups(filter: ListProductsFilter = {}) {

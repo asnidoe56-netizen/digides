@@ -1,21 +1,23 @@
 import { redirect } from "next/navigation";
-import { MitraAccountView } from "@/features/mitra-account";
+import { MitraProfileView } from "@/features/mitra-account";
 import { getSession } from "@/lib/auth/session";
 import { findUserById } from "@/repositories/user.repository";
 
 export const dynamic = "force-dynamic";
 
-export default async function BumdesAkunPage() {
+export default async function KonterProfilPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
   const user = await findUserById(session.userId);
+  if (!user) redirect("/login");
 
   return (
-    <MitraAccountView
-      fullName={user?.full_name ?? ""}
-      roleLabel="Mitra"
-      profilHref="/dashboard/bumdes/akun/profil"
+    <MitraProfileView
+      backHref="/dashboard/konter/akun"
+      fullName={user.full_name}
+      email={user.email}
+      phone={user.phone}
     />
   );
 }

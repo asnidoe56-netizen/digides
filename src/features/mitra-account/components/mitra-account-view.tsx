@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ChevronRight, KeyRound, Lock, ShieldCheck, Smartphone, User } from "lucide-react";
 import { LogoutButton } from "@/features/auth/components/logout-button";
 import { cn } from "@/lib/utils";
@@ -5,22 +6,21 @@ import { cn } from "@/lib/utils";
 export interface MitraAccountViewProps {
   fullName: string;
   roleLabel: string;
+  profilHref: string;
 }
 
-// Tahap 1: UI and navigation only, per the current request — Profil,
-// Perangkat, Keamanan, Ganti PIN, and Ganti Password are placeholders
+// Perangkat, Keamanan, Ganti PIN, and Ganti Password remain placeholders
 // (disabled, "Segera hadir") until their own screens/logic are built in a
-// later pass. Only Keluar is wired to real behavior, reusing the existing
-// LogoutButton as-is.
-const PLACEHOLDER_MENU_ITEMS = [
-  { label: "Profil", icon: User },
+// later pass — Profil is the first of these five to get real behavior
+// (see MitraProfileView), Keluar reuses the existing LogoutButton as-is.
+const DISABLED_MENU_ITEMS = [
   { label: "Perangkat", icon: Smartphone },
   { label: "Keamanan", icon: ShieldCheck },
   { label: "Ganti PIN", icon: KeyRound },
   { label: "Ganti Password", icon: Lock },
 ];
 
-export function MitraAccountView({ fullName, roleLabel }: MitraAccountViewProps) {
+export function MitraAccountView({ fullName, roleLabel, profilHref }: MitraAccountViewProps) {
   return (
     <div className="flex flex-col gap-6 pb-6">
       <div className="flex flex-col gap-1 rounded-b-3xl bg-gradient-to-br from-red-500 to-red-700 px-4 pt-4 pb-6 text-white sm:rounded-3xl">
@@ -32,16 +32,21 @@ export function MitraAccountView({ fullName, roleLabel }: MitraAccountViewProps)
 
       <div className="flex flex-col gap-3 px-4">
         <div className="overflow-hidden rounded-2xl border">
-          {PLACEHOLDER_MENU_ITEMS.map(({ label, icon: Icon }, index) => (
+          <Link
+            href={profilHref}
+            className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium hover:bg-muted/50"
+          >
+            <User className="size-4 shrink-0" />
+            <span className="flex-1">Profil</span>
+            <ChevronRight className="size-4 shrink-0" />
+          </Link>
+          {DISABLED_MENU_ITEMS.map(({ label, icon: Icon }) => (
             <button
               key={label}
               type="button"
               disabled
               title="Segera hadir"
-              className={cn(
-                "flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-muted-foreground/60",
-                index > 0 && "border-t",
-              )}
+              className="flex w-full items-center gap-3 border-t px-4 py-3 text-left text-sm font-medium text-muted-foreground/60"
             >
               <Icon className="size-4 shrink-0" />
               <span className="flex-1">{label}</span>

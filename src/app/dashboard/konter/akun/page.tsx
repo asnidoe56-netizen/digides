@@ -11,5 +11,11 @@ export default async function KonterAkunPage() {
 
   const user = await findUserById(session.userId);
 
-  return <MitraAccountView fullName={user?.full_name ?? ""} roleLabel="Agen" />;
+  return (
+    <MitraAccountView
+      fullName={user?.full_name ?? ""}
+      roleLabel="Agen"
+      profilHref="/dashboard/konter/akun/profil"
+    />
+  );
 }

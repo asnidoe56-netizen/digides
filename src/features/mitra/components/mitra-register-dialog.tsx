@@ -17,6 +17,7 @@ const DEFAULT_VALUES: RegisterMitraFormValues = {
   name: "",
   address: "",
   email: "",
+  whatsapp: "",
   password: "",
   confirmPassword: "",
   pin: "",
@@ -51,6 +52,7 @@ export function MitraRegisterDialog() {
         name: values.name,
         address: values.address,
         email: values.email,
+        whatsapp: values.whatsapp,
         password: values.password,
         pin: values.pin,
         referralCode: values.referralCode,
@@ -115,6 +117,21 @@ export function MitraRegisterDialog() {
               {...register("email")}
             />
             {errors.email ? <p className="text-sm text-destructive">{errors.email.message}</p> : null}
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="mitra-whatsapp">Nomor WhatsApp</Label>
+            <Input
+              id="mitra-whatsapp"
+              type="tel"
+              inputMode="numeric"
+              placeholder="08xxxxxxxxxx"
+              className="h-11"
+              aria-invalid={!!errors.whatsapp}
+              {...register("whatsapp")}
+            />
+            <p className="text-xs text-muted-foreground">Juga bisa dipakai mitra untuk masuk selain email.</p>
+            {errors.whatsapp ? <p className="text-sm text-destructive">{errors.whatsapp.message}</p> : null}
           </div>
 
           <div className="grid gap-2">

@@ -27,6 +27,7 @@ export async function POST(request: Request) {
       name: parsed.data.name,
       address: parsed.data.address || null,
       email: parsed.data.email,
+      whatsapp: parsed.data.whatsapp,
       password: parsed.data.password,
       pin: parsed.data.pin,
       referralCode: parsed.data.referralCode || null,
@@ -35,7 +36,12 @@ export async function POST(request: Request) {
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal mendaftarkan mitra.";
-    const status = message === "Email sudah terdaftar" || message === "Kode referensi tidak ditemukan" ? 409 : 400;
+    const status =
+      message === "Email sudah terdaftar" ||
+      message === "Nomor WhatsApp sudah terdaftar" ||
+      message === "Kode referensi tidak ditemukan"
+        ? 409
+        : 400;
     return NextResponse.json({ error: message }, { status });
   }
 }

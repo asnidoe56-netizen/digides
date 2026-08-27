@@ -4,7 +4,7 @@ import { hashPin } from "@/lib/auth/pin";
 import { recordAuditLog } from "@/repositories/audit.repository";
 import { createBumdes, listBumdesWithDetail } from "@/repositories/bumdes.repository";
 import { createReferralRelationship, findReferralCodeByCode } from "@/repositories/referral.repository";
-import { assignRole, createTransactionPin, createUser, findUserByEmail } from "@/repositories/user.repository";
+import { assignRole, createTransactionPin, createUser, findUserByEmail, findUserByPhone } from "@/repositories/user.repository";
 import { provisionWalletForAccount } from "@/repositories/wallet.repository";
 
 export async function getMitraList() {
@@ -15,6 +15,9 @@ export interface RegisterMitraInput {
   name: string;
   address?: string | null;
   email: string;
+  /** Persisted as users.phone — doubles as this Mitra's alternate login
+   *  identifier alongside email (see /api/auth/login). */
+  whatsapp: string;
   password: string;
   pin: string;
   /** An existing referral_codes.code — its owner becomes this Mitra's referrer. */
@@ -35,6 +38,11 @@ export async function registerMitra(input: RegisterMitraInput) {
     throw new Error("Email sudah terdaftar");
   }
 
+  const existingPhone = await findUserByPhone(input.whatsapp);
+  if (existingPhone) {
+    throw new Error("Nomor WhatsApp sudah terdaftar");
+  }
+
   const referralCode = input.referralCode?.trim() || null;
   const referrer = referralCode ? await findReferralCodeByCode(referralCode) : null;
   if (referralCode && !referrer) {
@@ -45,7 +53,7 @@ export async function registerMitra(input: RegisterMitraInput) {
 
   return withTransaction(async (client) => {
     const user = await createUser(
-      { email: input.email, password_hash, full_name: input.name },
+      { email: input.email, password_hash, full_name: input.name, phone: input.whatsapp },
       client,
     );
     await assignRole(user.id, "BUMDES_ADMIN", client);

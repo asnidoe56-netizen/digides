@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { loginSchema } from "@/features/auth/schemas/login.schema";
 import { recordLoginActivity } from "@/repositories/login-activity.repository";
-import { findUserByEmail, listRolesForUser } from "@/repositories/user.repository";
+import { findUserByEmail, findUserByPhone, listRolesForUser } from "@/repositories/user.repository";
 import { verifyPassword } from "@/lib/auth/password";
 import { createSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from "@/lib/auth/session";
 import { getClientIp } from "@/lib/security/request-ip";
 import { authorizeDeviceForLogin, createLoginSession, recordFailedLogin } from "@/services/security.service";
 
-const INVALID_CREDENTIALS_MESSAGE = "Email atau password salah";
+const INVALID_CREDENTIALS_MESSAGE = "Email/No. WhatsApp atau password salah";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
@@ -17,16 +17,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Data tidak valid" }, { status: 400 });
   }
 
-  const { email, password } = parsed.data;
+  const { identifier, password } = parsed.data;
   const ipAddress = getClientIp(request);
   const userAgent = request.headers.get("user-agent");
 
-  const user = await findUserByEmail(email);
+  // "@" reliably distinguishes the two — no registered users.phone value
+  // can contain it (it's validated as digits-only wherever it's set).
+  const user = identifier.includes("@") ? await findUserByEmail(identifier) : await findUserByPhone(identifier);
 
   // Same error for "no such user" and "wrong password" — never reveal
-  // which one it was.
+  // which one it was. `attempted_email` below just logs whatever the
+  // person typed, email or phone alike.
   if (!user || user.status !== "ACTIVE") {
-    await recordFailedLogin(email, null, ipAddress, userAgent, "Akun tidak ditemukan");
+    await recordFailedLogin(identifier, null, ipAddress, userAgent, "Akun tidak ditemukan");
     return NextResponse.json({ error: INVALID_CREDENTIALS_MESSAGE }, { status: 401 });
   }
 
@@ -38,7 +41,7 @@ export async function POST(request: Request) {
     // incident for as long as someone keeps hammering a locked account).
     await recordLoginActivity({
       user_id: user.id,
-      attempted_email: email,
+      attempted_email: identifier,
       event_type: "LOGIN_FAILED",
       ip_address: ipAddress,
       user_agent: userAgent,
@@ -52,7 +55,7 @@ export async function POST(request: Request) {
 
   const passwordMatches = await verifyPassword(password, user.password_hash);
   if (!passwordMatches) {
-    const lockResult = await recordFailedLogin(email, user.id, ipAddress, userAgent, "Password salah");
+    const lockResult = await recordFailedLogin(identifier, user.id, ipAddress, userAgent, "Password salah");
     if (lockResult.locked) {
       return NextResponse.json(
         { error: `Terlalu banyak percobaan gagal. Akun dikunci selama ${lockResult.lockoutMinutes} menit.` },
@@ -62,7 +65,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: INVALID_CREDENTIALS_MESSAGE }, { status: 401 });
   }
 
-  const deviceResult = await authorizeDeviceForLogin(user.id, email, ipAddress, userAgent);
+  const deviceResult = await authorizeDeviceForLogin(user.id, identifier, ipAddress, userAgent);
   if (!deviceResult.allowed) {
     return NextResponse.json({ error: deviceResult.reason }, { status: deviceResult.status });
   }
@@ -70,7 +73,7 @@ export async function POST(request: Request) {
   const roles = await listRolesForUser(user.id);
   const roleCodes = roles.map((role) => role.code);
 
-  const session = await createLoginSession(user.id, deviceResult.deviceId, email, ipAddress, userAgent);
+  const session = await createLoginSession(user.id, deviceResult.deviceId, identifier, ipAddress, userAgent);
 
   const token = createSessionToken(user.id, roleCodes, session.id);
 

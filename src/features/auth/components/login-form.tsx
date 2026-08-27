@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Fingerprint, Lock, Mail } from "lucide-react";
+import { Fingerprint, Lock, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -57,20 +57,19 @@ export function LoginForm() {
       ) : null}
 
       <div className="grid gap-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="identifier">Email / No. WhatsApp</Label>
         <div className="relative">
-          <Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <User className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            placeholder="nama@email.com"
+            id="identifier"
+            autoComplete="username"
+            placeholder="nama@email.com atau 08xxxxxxxxxx"
             className="h-12 pl-10"
-            aria-invalid={!!errors.email}
-            {...register("email")}
+            aria-invalid={!!errors.identifier}
+            {...register("identifier")}
           />
         </div>
-        {errors.email ? <p className="text-sm text-destructive">{errors.email.message}</p> : null}
+        {errors.identifier ? <p className="text-sm text-destructive">{errors.identifier.message}</p> : null}
       </div>
 
       <div className="grid gap-2">

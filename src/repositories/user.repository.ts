@@ -25,6 +25,11 @@ export async function findUserByEmail(email: string, db: Queryable = pool): Prom
   return result.rows[0] ?? null;
 }
 
+export async function findUserByPhone(phone: string, db: Queryable = pool): Promise<User | null> {
+  const result = await db.query<User>(`SELECT * FROM users WHERE phone = $1`, [phone]);
+  return result.rows[0] ?? null;
+}
+
 export async function findUserById(id: string, db: Queryable = pool): Promise<User | null> {
   const result = await db.query<User>(`SELECT * FROM users WHERE id = $1`, [id]);
   return result.rows[0] ?? null;

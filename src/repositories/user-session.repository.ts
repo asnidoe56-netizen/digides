@@ -27,17 +27,21 @@ export interface ActiveSessionContext {
 }
 
 // The one query getSession() runs on every authenticated request: session
-// row + its device's live trust status + the current policy's idle-timeout
-// threshold, in a single round trip. Blocking a device (trust_status) or
-// tightening the policy takes effect on the very next request — no need to
-// wait for anything to expire.
+// row + its device's live trust status + the owning user's current
+// account status + the current policy's idle-timeout threshold, in a
+// single round trip. Blocking a device (trust_status), suspending/
+// deleting the account (u.status), or tightening the policy all take
+// effect on the very next request — no need to wait for anything to
+// expire, and no need for every status-changing code path to remember to
+// separately revoke sessions (security audit SEC-02).
 export async function findActiveSessionContext(id: string, db: Queryable = pool): Promise<ActiveSessionContext | null> {
   const result = await db.query<ActiveSessionContext>(
     `SELECT s.id, s.last_active_at, d.trust_status AS device_trust_status, p.session_timeout_minutes
      FROM user_sessions s
      JOIN user_devices d ON d.id = s.device_id
+     JOIN users u ON u.id = s.user_id
      CROSS JOIN security_policies p
-     WHERE s.id = $1 AND s.revoked_at IS NULL AND s.expires_at > now()`,
+     WHERE s.id = $1 AND s.revoked_at IS NULL AND s.expires_at > now() AND u.status = 'ACTIVE'`,
     [id],
   );
   return result.rows[0] ?? null;

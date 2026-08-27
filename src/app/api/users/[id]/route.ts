@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSession } from "@/lib/auth/session";
 import { findUserById, updateUserStatus } from "@/repositories/user.repository";
 import { recordAuditLog } from "@/repositories/audit.repository";
+import { revokeAllSessionsForUserAndAudit } from "@/services/security.service";
 
 const updateStatusSchema = z.object({
   status: z.enum(["ACTIVE", "SUSPENDED", "DELETED"]),
@@ -49,6 +50,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     old_value: { status: existing.status },
     new_value: { status: parsed.data.status },
   });
+
+  // getSession() already rejects every request from this user the instant
+  // status stops being ACTIVE (findActiveSessionContext checks users.status
+  // directly), so this isn't what actually blocks access — it just marks
+  // their sessions revoked for an accurate Security > Sesi Login list
+  // instead of leaving rows that look "active" but can no longer be used
+  // (security audit SEC-02).
+  if (parsed.data.status !== "ACTIVE") {
+    await revokeAllSessionsForUserAndAudit(id, session.userId);
+  }
 
   return NextResponse.json({ id: updated?.id, status: updated?.status });
 }

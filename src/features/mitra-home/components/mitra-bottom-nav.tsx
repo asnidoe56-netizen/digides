@@ -16,7 +16,7 @@ export interface MitraBottomNavProps {
 // QRIS scan action is the next thing to build for this section (BUMDes/
 // Konter), so it's shown disabled rather than linking to a route with no
 // page behind it yet. print:hidden — this chrome has no place in an
-// exported Laporan PDF (see ExportPdfButton).
+// exported Laporan PDF (see DownloadPdfButton).
 export function MitraBottomNav({ homeHref, mitraHref, laporanHref, akunHref }: MitraBottomNavProps) {
   const pathname = usePathname();
   const isHome = pathname === homeHref;

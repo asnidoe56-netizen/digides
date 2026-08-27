@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { PaginationControls } from "@/components/pagination-controls";
 import {
-  ExportPdfButton,
+  DownloadPdfButton,
+  type DownloadPdfButtonProps,
   LaporanPrintHeader,
   LaporanTabs,
   PeriodSelector,
@@ -103,8 +104,10 @@ export default async function KonterLaporanPage({ searchParams }: LaporanPagePro
       ? `${displayDateFormatter.format(from)} - ${displayDateFormatter.format(to)}`
       : `${PERIOD_LABEL[period]} (${displayDateFormatter.format(from)} - ${displayDateFormatter.format(to)})`;
 
+  const fullName = user?.full_name ?? "";
   let content: React.ReactNode = null;
   let pagination: React.ReactNode = null;
+  let downloadProps: DownloadPdfButtonProps;
 
   if (tab === "transaksi") {
     const filter = { walletId, dateFrom: from, dateTo: to, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE };
@@ -114,6 +117,7 @@ export default async function KonterLaporanPage({ searchParams }: LaporanPagePro
     pagination = (
       <PaginationControls page={page} totalPages={totalPages} buildHref={(p) => buildHref({ tab: "transaksi", page: p })} />
     );
+    downloadProps = { kind: "transaksi", fullName, periodLabel, transactions };
   } else if (tab === "mutasi") {
     const filter = { walletId, dateFrom: from, dateTo: to, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE };
     const [entries, total] = await Promise.all([listLedgerGlobal(filter), countLedgerGlobal(filter)]);
@@ -122,6 +126,7 @@ export default async function KonterLaporanPage({ searchParams }: LaporanPagePro
     pagination = (
       <PaginationControls page={page} totalPages={totalPages} buildHref={(p) => buildHref({ tab: "mutasi", page: p })} />
     );
+    downloadProps = { kind: "mutasi", fullName, periodLabel, entries };
   } else {
     const [typeSums, transactionVolume] = await Promise.all([
       sumLedgerAmountsByType({ walletId, dateFrom: from, dateTo: to }),
@@ -143,19 +148,29 @@ export default async function KonterLaporanPage({ searchParams }: LaporanPagePro
         breakdown={breakdown}
       />
     );
+    downloadProps = {
+      kind: "rekap",
+      fullName,
+      periodLabel,
+      transactionCount: transactionVolume.count,
+      transactionValue: transactionVolume.total_value,
+      totalMasuk: String(totalMasuk),
+      totalKeluar: String(totalKeluar),
+      breakdown,
+    };
   }
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-4">
       <PageHeader title="Laporan" description="Riwayat transaksi, mutasi saldo, dan rekap sesuai periode." />
 
-      <LaporanPrintHeader fullName={user?.full_name ?? ""} tabLabel={TAB_LABEL[tab]} periodLabel={periodLabel} />
+      <LaporanPrintHeader fullName={fullName} tabLabel={TAB_LABEL[tab]} periodLabel={periodLabel} />
 
       <LaporanTabs active={tab} buildHref={(t) => buildHref({ tab: t })} />
       <PeriodSelector activePeriod={period} dateFrom={query.dateFrom} dateTo={query.dateTo} />
 
       <div className="print:hidden flex justify-end">
-        <ExportPdfButton />
+        <DownloadPdfButton {...downloadProps} />
       </div>
 
       <div className="flex flex-col gap-3">{content}</div>

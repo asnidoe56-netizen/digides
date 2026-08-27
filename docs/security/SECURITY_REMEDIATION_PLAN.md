@@ -4,7 +4,7 @@ Source: `docs/security/SECURITY_AUDIT.md` (2026-08-28 audit). Ordered CRITICAL �
 
 | Priority | Finding | Severity | Component | Fix | Status |
 |---|---|---|---|---|---|
-| 1 | SEC-01 | CRITICAL | `api/users/[id]/profile`, `api/account/profile`, `super-admin/users/[id]` page | Narrow every `User` row to `{id, email, full_name, phone}` before it crosses an API response or a Server→Client Component prop boundary; add a shared "safe user" projection helper to prevent recurrence | Open |
+| 1 | SEC-01 | CRITICAL | `api/users/[id]/profile`, `api/account/profile`, `super-admin/users/[id]` page | Narrow every `User` row to `{id, email, full_name, phone}` before it crosses an API response or a Server→Client Component prop boundary; add a shared "safe user" projection helper to prevent recurrence | **Fixed** (`edf3a7d`) — `PublicUserProfile` + `toPublicUserProfile()` added, all 3 boundaries updated, verified no `password_hash` in either PATCH response or the detail page's HTML; issue #6 closed |
 | 2 | SEC-02 | HIGH | `api/users/[id]/route.ts`, `lib/auth/session.ts` | Call `revokeAllSessionsForUserAndAudit` when status → SUSPENDED/DELETED, or check `users.status` inside `findActiveSessionContext` so it's enforced everywhere automatically | Open |
 | 3 | SEC-03 | MEDIUM | `api/notifications/[id]/read`, `notification.repository.ts` | Add `recipient_role` (or owner) predicate to `markNotificationRead`, matching `listNotifications`/`markAllNotificationsRead` | Open |
 | 4 | SEC-04 | MEDIUM | `lib/midtrans/client.ts` | Replace `===` with `crypto.timingSafeEqual` (mirror `lib/digiflazz/webhook.ts`) | Open |

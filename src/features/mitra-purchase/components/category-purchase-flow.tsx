@@ -2,11 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Clipboard } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
 import { formatMoney } from "@/lib/formatting/money";
 import { cn } from "@/lib/utils";
 import type { Brand, Product } from "@/types/product";
+import type { MerchandisingFilter } from "../lib/merchandising-config";
+import { MerchandisingTabs } from "./merchandising-tabs";
+import { FeatureBadges, PromoBanner, PromoFooterCard } from "./promo-highlights";
 import { PurchaseConfirmationScreen } from "./purchase-confirmation-screen";
 import { PurchasePinScreen } from "./purchase-pin-screen";
 import { PurchaseResultScreen, type PurchaseResultStatus } from "./purchase-result-screen";
@@ -113,6 +116,7 @@ export function CategoryPurchaseFlow({
 }: CategoryPurchaseFlowProps) {
   const router = useRouter();
   const [customerId, setCustomerId] = useState("");
+  const [merchandisingFilter, setMerchandisingFilter] = useState<MerchandisingFilter>("SUPER_MURAH");
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("browse");
@@ -129,6 +133,31 @@ export function CategoryPurchaseFlow({
     [products, selectedBrandId],
   );
 
+  // Providers that have at least one product tagged with the active
+  // MerchandisingTabs selection surface first — "REGULER" means no tag
+  // filter at all. Falls back to the untouched brand list whenever nothing
+  // is tagged yet (e.g. right after this feature ships, before Super Admin
+  // has curated anything on the Produk page), so the grid never goes empty.
+  const taggedBrandIds = useMemo(() => {
+    if (merchandisingFilter === "REGULER") return null;
+    const ids = new Set<string>();
+    for (const product of products) {
+      if (product.merchandising_tag === merchandisingFilter && product.brand_id) {
+        ids.add(product.brand_id);
+      }
+    }
+    return ids;
+  }, [products, merchandisingFilter]);
+
+  const filteredBrands = useMemo(() => {
+    if (!taggedBrandIds || taggedBrandIds.size === 0) return brands;
+    const matched = brands.filter((brand) => taggedBrandIds.has(brand.id));
+    const rest = brands.filter((brand) => !taggedBrandIds.has(brand.id));
+    return [...matched, ...rest];
+  }, [brands, taggedBrandIds]);
+
+  const featuredBrand = taggedBrandIds && taggedBrandIds.size > 0 ? (filteredBrands[0] ?? null) : null;
+
   const selectedBrand = brands.find((brand) => brand.id === selectedBrandId) ?? null;
   const selectedProduct = brandProducts.find((product) => product.id === selectedProductId) ?? null;
   const sellingPrice = selectedProduct
@@ -144,6 +173,15 @@ export function CategoryPurchaseFlow({
   function handleSelectBrand(brandId: string) {
     setSelectedBrandId(brandId);
     setSelectedProductId(null);
+  }
+
+  async function handlePasteCustomerId() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) setCustomerId(text.trim());
+    } catch {
+      // Clipboard permission denied/unavailable — user can still type it in manually.
+    }
   }
 
   async function handleSubmitPin(pin: string) {
@@ -263,36 +301,56 @@ export function CategoryPurchaseFlow({
             <button type="button" onClick={() => setSelectedBrandId(null)} className="text-sm font-medium text-red-600">
               Ubah
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              onClick={handlePasteCustomerId}
+              aria-label="Tempel dari clipboard"
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg border text-muted-foreground hover:bg-muted"
+            >
+              <Clipboard className="size-4" />
+            </button>
+          )}
         </div>
 
         {!selectedBrandId ? (
-          <div className="flex flex-col gap-3">
-            <p className="font-semibold">Pilih Provider</p>
-            {!isCustomerIdValid && customerId.length > 0 ? (
-              <p className="text-xs text-destructive">{customerIdField.invalidMessage}</p>
-            ) : null}
-            <div className="grid grid-cols-4 gap-x-2 gap-y-3 sm:gap-x-3">
-              {brands.map((brand) => (
-                <button
-                  key={brand.id}
-                  type="button"
-                  disabled={!isCustomerIdValid}
-                  onClick={() => handleSelectBrand(brand.id)}
-                  className="flex h-24 min-w-0 flex-col items-center justify-center gap-2 rounded-xl border p-2 text-center disabled:opacity-40"
-                >
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-xs font-bold text-red-600">
-                    {brand.name.slice(0, 2).toUpperCase()}
-                  </span>
-                  <span className="line-clamp-2 w-full break-words text-[11px] leading-tight font-medium">
-                    {brand.name}
-                  </span>
-                </button>
-              ))}
+          <div className="flex flex-col gap-4">
+            <PromoBanner filter={merchandisingFilter} brandName={featuredBrand?.name ?? null} />
+            <MerchandisingTabs value={merchandisingFilter} onChange={setMerchandisingFilter} />
+
+            <div className="flex flex-col gap-3">
+              <p className="font-semibold">Pilih Provider</p>
+              {!isCustomerIdValid && customerId.length > 0 ? (
+                <p className="text-xs text-destructive">{customerIdField.invalidMessage}</p>
+              ) : null}
+              <div className="grid grid-cols-4 gap-x-2 gap-y-3 sm:gap-x-3">
+                {filteredBrands.map((brand) => (
+                  <button
+                    key={brand.id}
+                    type="button"
+                    disabled={!isCustomerIdValid}
+                    onClick={() => handleSelectBrand(brand.id)}
+                    className={cn(
+                      "flex h-24 min-w-0 flex-col items-center justify-center gap-2 rounded-xl border p-2 text-center disabled:opacity-40",
+                      featuredBrand?.id === brand.id && "border-red-500 bg-red-50",
+                    )}
+                  >
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-xs font-bold text-red-600">
+                      {brand.name.slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="line-clamp-2 w-full break-words text-[11px] leading-tight font-medium">
+                      {brand.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {!isCustomerIdValid ? (
+                <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">{customerIdField.helperMessage}</p>
+              ) : null}
             </div>
-            {!isCustomerIdValid ? (
-              <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">{customerIdField.helperMessage}</p>
-            ) : null}
+
+            <FeatureBadges />
+            <PromoFooterCard filter={merchandisingFilter} categoryName={categoryName} brandName={featuredBrand?.name ?? null} />
           </div>
         ) : (
           <div className="flex flex-col gap-3">

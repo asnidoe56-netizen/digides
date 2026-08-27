@@ -1,7 +1,13 @@
 import { PageHeader } from "@/components/page-header";
 import { PaginationControls } from "@/components/pagination-controls";
 import { ProductFilters, ProductList, SyncCatalogButton } from "@/features/products";
-import { countProducts, listBrands, listCategories, listProducts } from "@/repositories/product.repository";
+import {
+  countProducts,
+  listBrands,
+  listCategories,
+  listCategoryBrandPairs,
+  listProducts,
+} from "@/repositories/product.repository";
 import { getCategoryMarkups } from "@/services/pricing.service";
 import type { ProductStatus } from "@/types/product";
 
@@ -15,6 +21,7 @@ interface SuperAdminProductsPageProps {
   searchParams: Promise<{
     search?: string;
     category?: string;
+    brand?: string;
     status?: string;
     page?: string;
   }>;
@@ -27,6 +34,7 @@ export default async function SuperAdminProductsPage({ searchParams }: SuperAdmi
   const filter = {
     search: params.search || undefined,
     categoryId: params.category || undefined,
+    brandId: params.brand || undefined,
     status: (params.status as ProductStatus | undefined) || undefined,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
@@ -34,11 +42,12 @@ export default async function SuperAdminProductsPage({ searchParams }: SuperAdmi
 
   // Server Component reads straight from the repository — same reasoning
   // as the dashboard page, no self-fetch to /api/* needed for a read.
-  const [products, total, categories, brands, categoryMarkups] = await Promise.all([
+  const [products, total, categories, brands, categoryBrandPairs, categoryMarkups] = await Promise.all([
     listProducts(filter),
     countProducts(filter),
     listCategories(),
     listBrands(),
+    listCategoryBrandPairs(),
     getCategoryMarkups(),
   ]);
 
@@ -50,6 +59,7 @@ export default async function SuperAdminProductsPage({ searchParams }: SuperAdmi
     const query = new URLSearchParams();
     if (params.search) query.set("search", params.search);
     if (params.category) query.set("category", params.category);
+    if (params.brand) query.set("brand", params.brand);
     if (params.status) query.set("status", params.status);
     if (targetPage > 1) query.set("page", String(targetPage));
     const queryString = query.toString();
@@ -61,8 +71,14 @@ export default async function SuperAdminProductsPage({ searchParams }: SuperAdmi
       <PageHeader title="Produk" description={`${total} produk dari katalog Digiflazz`} />
 
       <SyncCatalogButton />
-      <ProductFilters categories={categories} />
-      <ProductList products={products} categories={categories} brands={brands} markupByCategoryId={markupByCategoryId} />
+      <ProductFilters categories={categories} brands={brands} categoryBrandPairs={categoryBrandPairs} />
+      <ProductList
+        products={products}
+        categories={categories}
+        brands={brands}
+        markupByCategoryId={markupByCategoryId}
+        startIndex={(page - 1) * PAGE_SIZE}
+      />
       <PaginationControls page={page} totalPages={totalPages} buildHref={buildHref} />
     </div>
   );

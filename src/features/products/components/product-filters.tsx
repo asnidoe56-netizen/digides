@@ -6,19 +6,22 @@ import { Filter, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { Category } from "@/types/product";
+import type { CategoryBrandPair } from "@/repositories/product.repository";
+import type { Brand, Category } from "@/types/product";
 import { ProductFilterDialog } from "./product-filter-dialog";
 import type { ProductFilterValues } from "./product-filter-fields";
 
 export interface ProductFiltersProps {
   categories: Category[];
+  brands: Brand[];
+  categoryBrandPairs: CategoryBrandPair[];
 }
 
 // Search is always visible and submits on its own (real-app search bars
-// never hide). Category + status live behind one "Filter" button whose
-// dialog/sheet presentation adapts to the viewport — see
+// never hide). Category + provider + status live behind one "Filter"
+// button whose dialog/sheet presentation adapts to the viewport — see
 // ProductFilterDialog for the mobile-sheet vs tablet/desktop-dialog split.
-export function ProductFilters({ categories }: ProductFiltersProps) {
+export function ProductFilters({ categories, brands, categoryBrandPairs }: ProductFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -28,9 +31,10 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
 
   const appliedFilters: ProductFilterValues = {
     category: searchParams.get("category") ?? "ALL",
+    brand: searchParams.get("brand") ?? "ALL",
     status: searchParams.get("status") ?? "ALL",
   };
-  const activeFilterCount = [appliedFilters.category, appliedFilters.status].filter(
+  const activeFilterCount = [appliedFilters.category, appliedFilters.brand, appliedFilters.status].filter(
     (value) => value !== "ALL",
   ).length;
 
@@ -53,7 +57,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
   }
 
   function handleApplyFilters(values: ProductFilterValues) {
-    updateParams({ category: values.category, status: values.status });
+    updateParams({ category: values.category, brand: values.brand, status: values.status });
   }
 
   return (
@@ -89,6 +93,8 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
         open={filterOpen}
         onOpenChange={setFilterOpen}
         categories={categories}
+        brands={brands}
+        categoryBrandPairs={categoryBrandPairs}
         appliedValue={appliedFilters}
         onApply={handleApplyFilters}
       />

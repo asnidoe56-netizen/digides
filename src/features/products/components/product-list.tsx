@@ -11,13 +11,17 @@ export interface ProductListProps {
   brands: Brand[];
   /** category_id -> active Rupiah markup, from the Markup menu. */
   markupByCategoryId: Map<string, number>;
+  /** Row number of the first product on this page minus 1 — e.g. page 2 at
+   *  20/page passes 20, so rows continue 21, 22, 23... instead of
+   *  restarting at 1 every page. */
+  startIndex?: number;
 }
 
 // One data source, two presentations toggled purely by breakpoint — a
 // card list on mobile (ProductCard), a table on desktop — so they can
 // never drift out of sync with each other (issue M03 section 5, "Mobile:
 // Card/List, Desktop: Table/Grid").
-export function ProductList({ products, categories, brands, markupByCategoryId }: ProductListProps) {
+export function ProductList({ products, categories, brands, markupByCategoryId, startIndex = 0 }: ProductListProps) {
   if (products.length === 0) {
     return (
       <EmptyState
@@ -52,6 +56,7 @@ export function ProductList({ products, categories, brands, markupByCategoryId }
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-px">No.</TableHead>
               <TableHead>Produk</TableHead>
               <TableHead>SKU</TableHead>
               <TableHead>Kategori</TableHead>
@@ -62,10 +67,11 @@ export function ProductList({ products, categories, brands, markupByCategoryId }
             </TableRow>
           </TableHeader>
           <TableBody>
-            {products.map((product) => {
+            {products.map((product, index) => {
               const markup = product.category_id ? (markupByCategoryId.get(product.category_id) ?? 0) : 0;
               return (
                 <TableRow key={product.id}>
+                  <TableCell className="text-muted-foreground">{startIndex + index + 1}</TableCell>
                   <TableCell className="font-medium">{product.product_name}</TableCell>
                   <TableCell className="text-muted-foreground">{product.sku}</TableCell>
                   <TableCell>

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { FilterSheet } from "@/components/feedback/filter-sheet";
-import type { Category } from "@/types/product";
+import type { CategoryBrandPair } from "@/repositories/product.repository";
+import type { Brand, Category } from "@/types/product";
 import {
   DEFAULT_PRODUCT_FILTER_VALUES,
   ProductFilterFields,
@@ -13,6 +14,8 @@ export interface ProductFilterDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   categories: Category[];
+  brands: Brand[];
+  categoryBrandPairs: CategoryBrandPair[];
   appliedValue: ProductFilterValues;
   onApply: (value: ProductFilterValues) => void;
 }
@@ -24,6 +27,8 @@ export function ProductFilterDialog({
   open,
   onOpenChange,
   categories,
+  brands,
+  categoryBrandPairs,
   appliedValue,
   onApply,
 }: ProductFilterDialogProps) {
@@ -50,7 +55,13 @@ export function ProductFilterDialog({
       onReset={() => setPending(DEFAULT_PRODUCT_FILTER_VALUES)}
       onApply={handleApply}
     >
-      <ProductFilterFields categories={categories} value={pending} onChange={setPending} />
+      <ProductFilterFields
+        categories={categories}
+        brands={brands}
+        categoryBrandPairs={categoryBrandPairs}
+        value={pending}
+        onChange={setPending}
+      />
     </FilterSheet>
   );
 }

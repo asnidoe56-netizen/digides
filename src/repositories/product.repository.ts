@@ -107,6 +107,23 @@ export async function updateBrandStatus(
   return result.rows[0] ?? null;
 }
 
+export interface CategoryBrandPair {
+  category_id: string;
+  brand_id: string;
+}
+
+// Which brands actually have products under which category — e.g. Pulsa ->
+// [TELKOMSEL, INDOSAT, ...]. Lets the Produk filter narrow its Provider
+// dropdown to only what's relevant once a category is picked, instead of
+// always listing every brand across every category.
+export async function listCategoryBrandPairs(db: Queryable = pool): Promise<CategoryBrandPair[]> {
+  const result = await db.query<CategoryBrandPair>(
+    `SELECT DISTINCT category_id, brand_id FROM products
+     WHERE category_id IS NOT NULL AND brand_id IS NOT NULL`,
+  );
+  return result.rows;
+}
+
 export interface BrandWithProductCount extends Brand {
   product_count: number;
 }
@@ -215,9 +232,12 @@ export async function listProducts(
   const offset = filter.offset ?? 0;
   params.push(limit, offset);
 
+  // Ascending by nominal (base_price) — e.g. Pulsa 5.000 before 10.000 —
+  // rather than alphabetical by name, per the Produk page's sort order.
+  // product_name is only a tiebreaker for products that share a price.
   const result = await db.query<Product>(
     `SELECT * FROM products ${where}
-     ORDER BY product_name ASC
+     ORDER BY base_price ASC, product_name ASC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params,
   );

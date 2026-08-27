@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
@@ -19,6 +20,7 @@ export interface MobileBottomNavProps {
 // large touch targets).
 export function MobileBottomNav({ role, className }: MobileBottomNavProps) {
   const pathname = usePathname();
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const primaryItems = MOBILE_PRIMARY_NAV_ITEMS[role];
   const allItems = NAV_ITEMS[role];
 
@@ -47,7 +49,7 @@ export function MobileBottomNav({ role, className }: MobileBottomNavProps) {
         );
       })}
 
-      <Sheet>
+      <Sheet open={isMoreMenuOpen} onOpenChange={setIsMoreMenuOpen}>
         <SheetTrigger
           className={cn(
             "flex flex-1 flex-col items-center justify-center gap-1 text-xs text-muted-foreground",
@@ -67,6 +69,7 @@ export function MobileBottomNav({ role, className }: MobileBottomNavProps) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={() => setIsMoreMenuOpen(false)}
                   className="flex flex-col items-center gap-2 rounded-lg border p-3 text-center text-xs"
                 >
                   <Icon className="size-5" />

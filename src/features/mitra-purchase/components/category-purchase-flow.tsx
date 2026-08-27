@@ -7,7 +7,7 @@ import { ApiError } from "@/lib/api/client";
 import { formatMoney } from "@/lib/formatting/money";
 import { cn } from "@/lib/utils";
 import type { Brand, Product } from "@/types/product";
-import type { MerchandisingFilter } from "../lib/merchandising-config";
+import { MERCHANDISING_LABELS, type MerchandisingFilter } from "../lib/merchandising-config";
 import { MerchandisingTabs } from "./merchandising-tabs";
 import { FeatureBadges, PromoBanner, PromoFooterCard } from "./promo-highlights";
 import { PurchaseConfirmationScreen } from "./purchase-confirmation-screen";
@@ -116,7 +116,11 @@ export function CategoryPurchaseFlow({
 }: CategoryPurchaseFlowProps) {
   const router = useRouter();
   const [customerId, setCustomerId] = useState("");
-  const [merchandisingFilter, setMerchandisingFilter] = useState<MerchandisingFilter>("SUPER_MURAH");
+  // "REGULER" (no tag filter) is the neutral default — a mitra who never
+  // touches the tabs and taps a provider straight away sees the normal,
+  // unfiltered price list. Only tapping Super Murah/Promo/Terlaris narrows
+  // the nominal list down to products carrying that merchandising_tag.
+  const [merchandisingFilter, setMerchandisingFilter] = useState<MerchandisingFilter>("REGULER");
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("browse");
@@ -128,10 +132,12 @@ export function CategoryPurchaseFlow({
   const customerIdPattern = useMemo(() => new RegExp(customerIdField.pattern), [customerIdField.pattern]);
   const isCustomerIdValid = customerIdPattern.test(normalizedCustomerId);
 
-  const brandProducts = useMemo(
-    () => (selectedBrandId ? products.filter((product) => product.brand_id === selectedBrandId) : []),
-    [products, selectedBrandId],
-  );
+  const brandProducts = useMemo(() => {
+    if (!selectedBrandId) return [];
+    const forBrand = products.filter((product) => product.brand_id === selectedBrandId);
+    if (merchandisingFilter === "REGULER") return forBrand;
+    return forBrand.filter((product) => product.merchandising_tag === merchandisingFilter);
+  }, [products, selectedBrandId, merchandisingFilter]);
 
   // Providers that have at least one product tagged with the active
   // MerchandisingTabs selection surface first — "REGULER" means no tag
@@ -354,7 +360,14 @@ export function CategoryPurchaseFlow({
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <p className="font-semibold">Pilih Nominal</p>
+            <div>
+              <p className="font-semibold">Pilih Nominal</p>
+              {merchandisingFilter !== "REGULER" ? (
+                <p className="text-xs text-muted-foreground">
+                  Menampilkan produk {MERCHANDISING_LABELS[merchandisingFilter]}
+                </p>
+              ) : null}
+            </div>
             <div className="grid grid-cols-3 gap-3">
               {brandProducts.map((product) => (
                 <button
@@ -371,7 +384,11 @@ export function CategoryPurchaseFlow({
               ))}
             </div>
             {brandProducts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Belum ada produk aktif untuk provider ini.</p>
+              <p className="text-sm text-muted-foreground">
+                {merchandisingFilter === "REGULER"
+                  ? "Belum ada produk aktif untuk provider ini."
+                  : `Belum ada produk ${MERCHANDISING_LABELS[merchandisingFilter]} untuk provider ini.`}
+              </p>
             ) : null}
 
             <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">

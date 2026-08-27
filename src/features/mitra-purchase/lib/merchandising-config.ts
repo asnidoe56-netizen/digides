@@ -81,6 +81,10 @@ export const MERCHANDISING_BANNER_COPY: Record<
   },
 };
 
+export const MERCHANDISING_LABELS: Record<MerchandisingFilter, string> = Object.fromEntries(
+  MERCHANDISING_TABS.map((tab) => [tab.value, tab.label]),
+) as Record<MerchandisingFilter, string>;
+
 export const MERCHANDISING_FOOTER_COPY: Record<MerchandisingFilter, { title: string; subtitle: string }> = {
   SUPER_MURAH: {
     title: "Pilih Super Murah, Untung Berlipat!",

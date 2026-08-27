@@ -319,41 +319,43 @@ export function CategoryPurchaseFlow({
 
   return (
     <div className="flex flex-1 flex-col">
-      <header className="flex items-center gap-3 bg-red-600 px-4 py-3 text-white">
-        <button
-          type="button"
-          onClick={() => (selectedBrandId ? setSelectedBrandId(null) : router.push(homeHref))}
-          aria-label="Kembali"
-          className="flex size-8 items-center justify-center rounded-full hover:bg-white/10"
-        >
-          <ArrowLeft className="size-5" />
-        </button>
-        <h1 className="font-semibold">{selectedBrand ? `${categoryName} - ${selectedBrand.name}` : categoryName}</h1>
-      </header>
+      {/* STANDING LAYOUT RULE for this shared purchase-flow screen — applies
+          to every category that renders it (Pulsa, E-Money, PLN, Data,
+          Games, Gas, TV, Voucher, Aktivasi Perdana/Voucher, Masa Aktif,
+          Paket SMS & Telpon today, and any category added later, since
+          they all render this one component rather than duplicating this
+          screen per category): the back-button header, the customer-id
+          row, and — while still browsing providers — the promo banner and
+          merchandising tabs all stay sticky together at the top of the
+          viewport; only the provider/nominal grid below scrolls. They're
+          one combined sticky unit (not two separately-positioned sticky
+          elements) specifically so there's no header-height offset to
+          keep in sync if the header's own height ever changes — keep any
+          future edit to this browse JSX inside this same
+          sticky-header-block / plain-scrollable-block split, don't move
+          pieces back into one flat scrolling block, or every category
+          regresses at once.
+            `position: sticky` (not fixed) keeps it in normal flow until
+          scrolled to the top of the viewport, where it then stays put;
+          the page's only scroll container is the window itself (no
+          overflow-constrained ancestor — see BumdesLayout/KonterLayout),
+          so `top-0` alone is enough. Opaque bg + z-20 (same layering as
+          the Beranda wallet card's own sticky header) keeps the provider/
+          nominal grid scrolling underneath it instead of showing through. */}
+      <div className="sticky top-0 z-20 flex flex-col bg-background">
+        <header className="flex items-center gap-3 bg-red-600 px-4 py-3 text-white">
+          <button
+            type="button"
+            onClick={() => (selectedBrandId ? setSelectedBrandId(null) : router.push(homeHref))}
+            aria-label="Kembali"
+            className="flex size-8 items-center justify-center rounded-full hover:bg-white/10"
+          >
+            <ArrowLeft className="size-5" />
+          </button>
+          <h1 className="font-semibold">{selectedBrand ? `${categoryName} - ${selectedBrand.name}` : categoryName}</h1>
+        </header>
 
-      <div className={cn("flex flex-1 flex-col", selectedProduct && "pb-32")}>
-        {/* STANDING LAYOUT RULE for this shared purchase-flow screen — applies
-            to every category that renders it (Pulsa, E-Money, PLN, Data,
-            Games, Gas, TV, Voucher, Aktivasi Perdana/Voucher, Masa Aktif,
-            Paket SMS & Telpon today, and any category added later, since
-            they all render this one component rather than duplicating this
-            screen per category): the customer-id row plus — while still
-            browsing providers — the promo banner and merchandising tabs
-            stay sticky at the top of the viewport; only the provider/
-            nominal grid below scrolls. Keep any future edit to this browse
-            JSX inside this same two-block split (sticky wrapper below,
-            plain scrollable wrapper below that) — don't move pieces back
-            into one flat scrolling block, or every category regresses at
-            once.
-              `position: sticky` (not fixed) keeps it in normal flow until
-            scrolled to the top of the viewport, where it then stays put;
-            the page's only scroll container is the window itself (no
-            overflow-constrained ancestor — see BumdesLayout/KonterLayout),
-            so `top-0` alone is enough, no header-height offset needed.
-            Opaque bg + z-20 (same layering as the Beranda wallet card's own
-            sticky header) keeps the provider/nominal grid scrolling
-            underneath it instead of showing through. */}
-        <div className="sticky top-0 z-20 flex flex-col gap-4 bg-background px-4 pt-4 pb-4">
+        <div className="flex flex-col gap-4 px-4 pt-4 pb-4">
           <div className="flex items-center justify-between gap-3 rounded-xl border p-3">
             <div className="min-w-0 flex-1">
               <p className="text-xs text-muted-foreground">{customerIdField.label}</p>
@@ -393,8 +395,10 @@ export function CategoryPurchaseFlow({
             </>
           ) : null}
         </div>
+      </div>
 
-        {/* Everything below scrolls normally underneath the sticky block above. */}
+      {/* Everything below scrolls normally underneath the sticky block above. */}
+      <div className={cn("flex flex-1 flex-col", selectedProduct && "pb-32")}>
         <div className="flex flex-col gap-5 px-4 pb-4">
           {!selectedBrandId ? (
             <div className="flex flex-col gap-4">

@@ -161,20 +161,29 @@ export default async function KonterLaporanPage({ searchParams }: LaporanPagePro
   }
 
   return (
-    <div className="flex flex-col gap-4 px-4 pt-4">
-      <PageHeader title="Laporan" description="Riwayat transaksi, mutasi saldo, dan rekap sesuai periode." />
+    <div className="flex flex-1 flex-col">
+      {/* Sticky report header — title, tabs, period filter, and Download
+          PDF all stay pinned at the top while the report's own list below
+          scrolls underneath. Same standing pattern as the purchase-flow
+          screens (category-purchase-flow.tsx): one opaque `sticky top-0`
+          block, no separate header-offset to keep in sync. */}
+      <div className="sticky top-0 z-20 flex flex-col gap-4 bg-background px-4 pt-4 pb-4">
+        <PageHeader title="Laporan" description="Riwayat transaksi, mutasi saldo, dan rekap sesuai periode." />
 
-      <LaporanPrintHeader fullName={fullName} tabLabel={TAB_LABEL[tab]} periodLabel={periodLabel} />
+        <LaporanPrintHeader fullName={fullName} tabLabel={TAB_LABEL[tab]} periodLabel={periodLabel} />
 
-      <LaporanTabs active={tab} buildHref={(t) => buildHref({ tab: t })} />
-      <PeriodSelector activePeriod={period} dateFrom={query.dateFrom} dateTo={query.dateTo} />
+        <LaporanTabs active={tab} buildHref={(t) => buildHref({ tab: t })} />
+        <PeriodSelector activePeriod={period} dateFrom={query.dateFrom} dateTo={query.dateTo} />
 
-      <div className="print:hidden flex justify-end">
-        <DownloadPdfButton {...downloadProps} />
+        <div className="print:hidden flex justify-end">
+          <DownloadPdfButton {...downloadProps} />
+        </div>
       </div>
 
-      <div className="flex flex-col gap-3">{content}</div>
-      {pagination}
+      <div className="flex flex-col gap-4 px-4">
+        <div className="flex flex-col gap-3">{content}</div>
+        {pagination}
+      </div>
     </div>
   );
 }

@@ -27,7 +27,7 @@ export default async function KonterPlnPage() {
       homeHref="/dashboard/konter/dashboard"
       brands={catalog.brands}
       products={catalog.products}
-      categoryMarkup={catalog.categoryMarkup}
+      productMarkups={catalog.productMarkups}
       availableBalance={wallet?.available_balance ?? "0"}
       customerIdField={PLN_ID_FIELD}
     />

@@ -23,7 +23,7 @@ export default async function BumdesDataPage() {
       homeHref="/dashboard/bumdes/dashboard"
       brands={catalog.brands}
       products={catalog.products}
-      categoryMarkup={catalog.categoryMarkup}
+      productMarkups={catalog.productMarkups}
       availableBalance={wallet?.available_balance ?? "0"}
     />
   );

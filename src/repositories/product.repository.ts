@@ -198,25 +198,32 @@ export interface ListProductsFilter {
   offset?: number;
 }
 
-function buildProductFilterConditions(filter: ListProductsFilter): { where: string; params: unknown[] } {
+// `alias` lets this be reused inside a query that joins products under an
+// alias (e.g. "p.") instead of selecting from it bare — needed once
+// markup_rules (which has its own category_id/brand_id columns) gets
+// joined in, or "category_id = $1" becomes ambiguous.
+function buildProductFilterConditions(
+  filter: ListProductsFilter,
+  alias = "",
+): { where: string; params: unknown[] } {
   const conditions: string[] = [];
   const params: unknown[] = [];
 
   if (filter.status) {
     params.push(filter.status);
-    conditions.push(`status = $${params.length}`);
+    conditions.push(`${alias}status = $${params.length}`);
   }
   if (filter.categoryId) {
     params.push(filter.categoryId);
-    conditions.push(`category_id = $${params.length}`);
+    conditions.push(`${alias}category_id = $${params.length}`);
   }
   if (filter.brandId) {
     params.push(filter.brandId);
-    conditions.push(`brand_id = $${params.length}`);
+    conditions.push(`${alias}brand_id = $${params.length}`);
   }
   if (filter.search) {
     params.push(`%${filter.search}%`);
-    conditions.push(`(product_name ILIKE $${params.length} OR sku ILIKE $${params.length})`);
+    conditions.push(`(${alias}product_name ILIKE $${params.length} OR ${alias}sku ILIKE $${params.length})`);
   }
 
   return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };
@@ -508,4 +515,119 @@ export async function listApplicableMarkupRules(
     [params.productId, params.brandId, params.categoryId],
   );
   return result.rows;
+}
+
+// Same PRODUCT > BRAND > CATEGORY > GLOBAL priority as
+// listApplicableMarkupRules, computed for many products in one query
+// instead of one round trip per product — the buyer-facing catalog and
+// the admin Produk list both need "what's the real selling price of each
+// of these ~20-200 products" without an N+1.
+export async function listEffectiveMarkupsByProductId(
+  productIds: string[],
+  db: Queryable = pool,
+): Promise<Record<string, string>> {
+  if (productIds.length === 0) return {};
+
+  const result = await db.query<{ id: string; effective_markup_value: string }>(
+    `SELECT p.id,
+            COALESCE(pm.markup_value, bm.markup_value, cm.markup_value, gm.markup_value, 0) AS effective_markup_value
+     FROM products p
+     LEFT JOIN markup_rules pm ON pm.product_id = p.id AND pm.scope_type = 'PRODUCT' AND pm.owner_type = 'MASTER' AND pm.is_active = true
+     LEFT JOIN markup_rules bm ON bm.brand_id = p.brand_id AND bm.scope_type = 'BRAND' AND bm.owner_type = 'MASTER' AND bm.is_active = true
+     LEFT JOIN markup_rules cm ON cm.category_id = p.category_id AND cm.scope_type = 'CATEGORY' AND cm.owner_type = 'MASTER' AND cm.is_active = true
+     LEFT JOIN markup_rules gm ON gm.scope_type = 'GLOBAL' AND gm.owner_type = 'MASTER' AND gm.is_active = true
+     WHERE p.id = ANY($1)`,
+    [productIds],
+  );
+  return Object.fromEntries(result.rows.map((row) => [row.id, row.effective_markup_value]));
+}
+
+export interface ProductMarkupRow {
+  id: string;
+  product_name: string;
+  sku: string;
+  category_id: string | null;
+  brand_id: string | null;
+  base_price: string;
+  status: ProductStatus;
+  /** This product's own PRODUCT-scope override — null means none is set,
+   *  so the row falls back to brand/category/global. */
+  product_markup_value: string | null;
+  /** What actually applies right now (same COALESCE chain as
+   *  listEffectiveMarkupsByProductId). */
+  effective_markup_value: string;
+}
+
+// The Markup menu's "Per Produk" tab — one row per product in the current
+// category/provider filter, showing both its own override (editable) and
+// what's actually in effect if no override is set.
+export async function listProductMarkups(
+  filter: ListProductsFilter = {},
+  db: Queryable = pool,
+): Promise<ProductMarkupRow[]> {
+  const { where, params } = buildProductFilterConditions(filter, "p.");
+  const limit = filter.limit ?? 20;
+  const offset = filter.offset ?? 0;
+  params.push(limit, offset);
+
+  const result = await db.query<ProductMarkupRow>(
+    `SELECT p.id, p.product_name, p.sku, p.category_id, p.brand_id, p.base_price, p.status,
+            pm.markup_value AS product_markup_value,
+            COALESCE(pm.markup_value, bm.markup_value, cm.markup_value, gm.markup_value, 0) AS effective_markup_value
+     FROM products p
+     LEFT JOIN markup_rules pm ON pm.product_id = p.id AND pm.scope_type = 'PRODUCT' AND pm.owner_type = 'MASTER' AND pm.is_active = true
+     LEFT JOIN markup_rules bm ON bm.brand_id = p.brand_id AND bm.scope_type = 'BRAND' AND bm.owner_type = 'MASTER' AND bm.is_active = true
+     LEFT JOIN markup_rules cm ON cm.category_id = p.category_id AND cm.scope_type = 'CATEGORY' AND cm.owner_type = 'MASTER' AND cm.is_active = true
+     LEFT JOIN markup_rules gm ON gm.scope_type = 'GLOBAL' AND gm.owner_type = 'MASTER' AND gm.is_active = true
+     ${where}
+     ORDER BY p.base_price ASC, p.product_name ASC
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+  );
+  return result.rows;
+}
+
+// Sets (or replaces) the one active PRODUCT/MASTER markup rule for a
+// single product — markup_rules_master_product_active_uidx makes this a
+// single atomic upsert, same pattern as upsertCategoryMarkup.
+export async function upsertProductMarkup(
+  productId: string,
+  markupValue: string | number,
+  db: Queryable = pool,
+): Promise<MarkupRule> {
+  const result = await db.query<MarkupRule>(
+    `INSERT INTO markup_rules (scope_type, product_id, owner_type, markup_type, markup_value)
+     VALUES ('PRODUCT', $1, 'MASTER', 'NOMINAL', $2)
+     ON CONFLICT (product_id) WHERE scope_type = 'PRODUCT' AND owner_type = 'MASTER' AND is_active = true
+     DO UPDATE SET markup_value = EXCLUDED.markup_value
+     RETURNING *`,
+    [productId, markupValue],
+  );
+  return result.rows[0];
+}
+
+// The "terapkan ke semua" bulk action — one INSERT ... SELECT ... ON
+// CONFLICT covering every product matching the filter (typically a
+// category+provider combo, e.g. Pulsa+TELKOMSEL), rather than looping
+// upsertProductMarkup per row. Returns the affected product ids so the
+// caller can write one precise audit-log entry per product.
+export async function bulkUpsertProductMarkup(
+  filter: ListProductsFilter,
+  markupValue: string | number,
+  db: Queryable = pool,
+): Promise<string[]> {
+  const { where, params } = buildProductFilterConditions(filter);
+  params.push(markupValue);
+
+  const result = await db.query<{ product_id: string }>(
+    `INSERT INTO markup_rules (scope_type, product_id, owner_type, markup_type, markup_value)
+     SELECT 'PRODUCT', id, 'MASTER', 'NOMINAL', $${params.length}
+     FROM products
+     ${where}
+     ON CONFLICT (product_id) WHERE scope_type = 'PRODUCT' AND owner_type = 'MASTER' AND is_active = true
+     DO UPDATE SET markup_value = EXCLUDED.markup_value
+     RETURNING product_id`,
+    params,
+  );
+  return result.rows.map((row) => row.product_id);
 }

@@ -9,8 +9,9 @@ export interface ProductListProps {
   products: Product[];
   categories: Category[];
   brands: Brand[];
-  /** category_id -> active Rupiah markup, from the Markup menu. */
-  markupByCategoryId: Map<string, number>;
+  /** product_id -> its effective markup (PRODUCT > BRAND > CATEGORY >
+   *  GLOBAL, whichever is most specific) — from the Markup menu. */
+  markupByProductId: Record<string, string>;
   /** Row number of the first product on this page minus 1 — e.g. page 2 at
    *  20/page passes 20, so rows continue 21, 22, 23... instead of
    *  restarting at 1 every page. */
@@ -21,7 +22,7 @@ export interface ProductListProps {
 // card list on mobile (ProductCard), a table on desktop — so they can
 // never drift out of sync with each other (issue M03 section 5, "Mobile:
 // Card/List, Desktop: Table/Grid").
-export function ProductList({ products, categories, brands, markupByCategoryId, startIndex = 0 }: ProductListProps) {
+export function ProductList({ products, categories, brands, markupByProductId, startIndex = 0 }: ProductListProps) {
   if (products.length === 0) {
     return (
       <EmptyState
@@ -47,7 +48,7 @@ export function ProductList({ products, categories, brands, markupByCategoryId, 
             product={product}
             categoryName={product.category_id ? (categoryNameById.get(product.category_id) ?? null) : null}
             brandName={product.brand_id ? (brandNameById.get(product.brand_id) ?? null) : null}
-            markup={product.category_id ? (markupByCategoryId.get(product.category_id) ?? 0) : 0}
+            markup={Number(markupByProductId[product.id] ?? "0")}
           />
         ))}
       </div>
@@ -68,7 +69,7 @@ export function ProductList({ products, categories, brands, markupByCategoryId, 
           </TableHeader>
           <TableBody>
             {products.map((product, index) => {
-              const markup = product.category_id ? (markupByCategoryId.get(product.category_id) ?? 0) : 0;
+              const markup = Number(markupByProductId[product.id] ?? "0");
               return (
                 <TableRow key={product.id}>
                   <TableCell className="text-muted-foreground">{startIndex + index + 1}</TableCell>

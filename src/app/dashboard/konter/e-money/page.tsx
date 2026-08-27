@@ -23,7 +23,7 @@ export default async function KonterEMoneyPage() {
       homeHref="/dashboard/konter/dashboard"
       brands={catalog.brands}
       products={catalog.products}
-      categoryMarkup={catalog.categoryMarkup}
+      productMarkups={catalog.productMarkups}
       availableBalance={wallet?.available_balance ?? "0"}
     />
   );

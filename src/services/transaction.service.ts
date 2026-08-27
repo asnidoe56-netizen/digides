@@ -4,12 +4,8 @@ import { submitDigiflazzTransaction, type DigiflazzTransactionResult } from "@/l
 import { verifyDigiflazzWebhookSignature } from "@/lib/digiflazz/webhook";
 import { verifyTransactionPin } from "@/services/auth.service";
 import { awardCommissionForTransaction } from "@/services/commission.service";
-import {
-  findBrandById,
-  findCategoryById,
-  findProductById,
-  getCategoryMarkupValue,
-} from "@/repositories/product.repository";
+import { findBrandById, findCategoryById, findProductById } from "@/repositories/product.repository";
+import { getEffectiveMarkupValue } from "@/services/pricing.service";
 import { postLedgerEntry } from "@/repositories/wallet.repository";
 import {
   createTransaction,
@@ -88,7 +84,11 @@ export async function executeTransaction(input: ExecuteTransactionInput): Promis
     }
   }
 
-  const markup = await getCategoryMarkupValue(product.category_id);
+  // Most-specific markup wins (PRODUCT > BRAND > CATEGORY > GLOBAL) — the
+  // real charge must match exactly what the buyer was shown while
+  // browsing (catalog.service.ts's getCategoryPurchaseCatalog uses the
+  // same resolver), not just the category's flat markup.
+  const markup = await getEffectiveMarkupValue(product);
   const sellingPrice = Number(product.base_price) + Number(markup);
 
   const { transaction, alreadyExisted } = await withTransaction(async (client) => {

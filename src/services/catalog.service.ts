@@ -1,34 +1,38 @@
-import { getCategoryMarkupValue, listBrands, listCategories, listProducts } from "@/repositories/product.repository";
+import { listBrands, listCategories, listProducts } from "@/repositories/product.repository";
+import { getEffectiveMarkupsByProductId } from "@/services/pricing.service";
 import type { Brand, Category, Product } from "@/types/product";
 
 export interface CategoryPurchaseCatalog {
   category: Category | null;
   brands: Brand[];
   products: Product[];
-  categoryMarkup: string;
+  /** product_id -> its effective markup (PRODUCT > BRAND > CATEGORY >
+   *  GLOBAL, whichever is most specific) — the exact same resolver
+   *  transaction.service.ts's executeTransaction charges with, so the
+   *  price shown here always matches what a purchase actually costs. */
+  productMarkups: Record<string, string>;
 }
 
 // The buyer-facing catalog for one category (Pulsa today, Data/PLN/etc.
 // next) — only brands that actually have an active product in this
-// category, never the full brand list, and the same category-level
-// markup transaction.service.ts's executeTransaction() applies, so the
-// price shown here is exactly what a purchase would charge.
+// category, never the full brand list.
 export async function getCategoryPurchaseCatalog(categoryName: string): Promise<CategoryPurchaseCatalog> {
   const categories = await listCategories();
   const category = categories.find((item) => item.name === categoryName) ?? null;
 
   if (!category || category.status !== "ACTIVE") {
-    return { category: null, brands: [], products: [], categoryMarkup: "0" };
+    return { category: null, brands: [], products: [], productMarkups: {} };
   }
 
-  const [products, allBrands, categoryMarkup] = await Promise.all([
+  const [products, allBrands] = await Promise.all([
     listProducts({ categoryId: category.id, status: "ACTIVE", limit: 200 }),
     listBrands(),
-    getCategoryMarkupValue(category.id),
   ]);
+
+  const productMarkups = await getEffectiveMarkupsByProductId(products.map((product) => product.id));
 
   const brandIdsWithProducts = new Set(products.map((product) => product.brand_id));
   const brands = allBrands.filter((brand) => brand.status === "ACTIVE" && brandIdsWithProducts.has(brand.id));
 
-  return { category, brands, products, categoryMarkup };
+  return { category, brands, products, productMarkups };
 }

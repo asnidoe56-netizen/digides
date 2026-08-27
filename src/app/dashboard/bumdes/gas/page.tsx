@@ -27,7 +27,7 @@ export default async function BumdesGasPage() {
       homeHref="/dashboard/bumdes/dashboard"
       brands={catalog.brands}
       products={catalog.products}
-      categoryMarkup={catalog.categoryMarkup}
+      productMarkups={catalog.productMarkups}
       availableBalance={wallet?.available_balance ?? "0"}
       customerIdField={GAS_ID_FIELD}
     />

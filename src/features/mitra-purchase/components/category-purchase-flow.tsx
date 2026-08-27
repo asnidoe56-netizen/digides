@@ -47,7 +47,11 @@ export interface CategoryPurchaseFlowProps {
   homeHref: string;
   brands: Brand[];
   products: Product[];
-  categoryMarkup: string;
+  /** product_id -> its effective markup (PRODUCT > BRAND > CATEGORY >
+   *  GLOBAL) — see catalog.service.ts's getCategoryPurchaseCatalog(). Not
+   *  one flat value per category: two products in the same category can
+   *  have different markups if either has its own PRODUCT/BRAND override. */
+  productMarkups: Record<string, string>;
   availableBalance: string;
   /** Override for categories whose customer_no isn't a phone number —
    *  Games needs a numeric player ID, optionally with a zone ID in
@@ -103,7 +107,7 @@ export function CategoryPurchaseFlow({
   homeHref,
   brands,
   products,
-  categoryMarkup,
+  productMarkups,
   availableBalance,
   customerIdField = DEFAULT_CUSTOMER_ID_FIELD,
 }: CategoryPurchaseFlowProps) {
@@ -127,7 +131,9 @@ export function CategoryPurchaseFlow({
 
   const selectedBrand = brands.find((brand) => brand.id === selectedBrandId) ?? null;
   const selectedProduct = brandProducts.find((product) => product.id === selectedProductId) ?? null;
-  const sellingPrice = selectedProduct ? Number(selectedProduct.base_price) + Number(categoryMarkup) : 0;
+  const sellingPrice = selectedProduct
+    ? Number(selectedProduct.base_price) + Number(productMarkups[selectedProduct.id] ?? "0")
+    : 0;
 
   // A fresh purchase intent gets a fresh idempotency key; retrying a wrong
   // PIN for the *same* intent reuses it, so a flaky retry can never

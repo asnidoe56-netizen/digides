@@ -8,7 +8,7 @@ import {
   listCategoryBrandPairs,
   listProducts,
 } from "@/repositories/product.repository";
-import { getCategoryMarkups } from "@/services/pricing.service";
+import { getEffectiveMarkupsByProductId } from "@/services/pricing.service";
 import type { ProductStatus } from "@/types/product";
 
 const PAGE_SIZE = 20;
@@ -42,16 +42,20 @@ export default async function SuperAdminProductsPage({ searchParams }: SuperAdmi
 
   // Server Component reads straight from the repository — same reasoning
   // as the dashboard page, no self-fetch to /api/* needed for a read.
-  const [products, total, categories, brands, categoryBrandPairs, categoryMarkups] = await Promise.all([
+  const [products, total, categories, brands, categoryBrandPairs] = await Promise.all([
     listProducts(filter),
     countProducts(filter),
     listCategories(),
     listBrands(),
     listCategoryBrandPairs(),
-    getCategoryMarkups(),
   ]);
 
-  const markupByCategoryId = new Map(categoryMarkups.map((entry) => [entry.category_id, Number(entry.markup_value)]));
+  // Effective markup per product (PRODUCT > BRAND > CATEGORY > GLOBAL) —
+  // the same resolver the buyer-facing catalog and the transaction engine
+  // use, so "Harga Jual" here always matches what a purchase actually
+  // costs, including any per-product/provider override set from the
+  // Markup menu's "Per Produk" tab.
+  const markupByProductId = await getEffectiveMarkupsByProductId(products.map((product) => product.id));
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -76,7 +80,7 @@ export default async function SuperAdminProductsPage({ searchParams }: SuperAdmi
         products={products}
         categories={categories}
         brands={brands}
-        markupByCategoryId={markupByCategoryId}
+        markupByProductId={markupByProductId}
         startIndex={(page - 1) * PAGE_SIZE}
       />
       <PaginationControls page={page} totalPages={totalPages} buildHref={buildHref} />

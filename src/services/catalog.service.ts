@@ -25,7 +25,7 @@ export async function getCategoryPurchaseCatalog(categoryName: string): Promise<
   }
 
   const [products, allBrands] = await Promise.all([
-    listProducts({ categoryId: category.id, status: "ACTIVE", limit: 200 }),
+    listProducts({ categoryId: category.id, status: "ACTIVE", excludeAdminDisabled: true, limit: 200 }),
     listBrands(),
   ]);
 

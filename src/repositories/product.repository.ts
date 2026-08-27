@@ -9,6 +9,7 @@ import type {
   DigiflazzSettings,
   MarkupRule,
   MarkupOwnerType,
+  MerchandisingTag,
   Product,
   ProductStatus,
 } from "@/types/product";
@@ -153,6 +154,10 @@ export interface UpsertProductInput {
 // Used by the catalog-sync job: one row per SKU from the provider
 // price-list, inserted on first sight and refreshed on every subsequent
 // sync (base_price/status/last_synced_at kept current).
+// Deliberately never touches admin_disabled or merchandising_tag on
+// conflict — those are Super Admin's own overrides (see
+// product.service.ts), and a routine catalog sync must never silently
+// reset them back to whatever Digiflazz's last state happened to be.
 export async function upsertProduct(input: UpsertProductInput, db: Queryable = pool): Promise<Product> {
   const result = await db.query<Product>(
     `INSERT INTO products (sku, product_name, category_id, brand_id, base_price, status, provider, last_synced_at)
@@ -188,12 +193,47 @@ export async function findProductById(id: string, db: Queryable = pool): Promise
   return result.rows[0] ?? null;
 }
 
+// The Produk page's "Aktifkan/Nonaktifkan" action — a manual override
+// independent of upsertProduct's Digiflazz-driven `status`. See
+// product.service.ts's setProductAvailability for the enforcement points
+// this actually affects (buyer catalog + the transaction engine).
+export async function setProductAdminDisabled(
+  id: string,
+  disabled: boolean,
+  db: Queryable = pool,
+): Promise<Product | null> {
+  const result = await db.query<Product>(`UPDATE products SET admin_disabled = $2 WHERE id = $1 RETURNING *`, [
+    id,
+    disabled,
+  ]);
+  return result.rows[0] ?? null;
+}
+
+// Purely a storefront label (Super Murah/Promo/Terlaris) — no bearing on
+// purchasability. null clears it.
+export async function setProductMerchandisingTag(
+  id: string,
+  tag: MerchandisingTag | null,
+  db: Queryable = pool,
+): Promise<Product | null> {
+  const result = await db.query<Product>(`UPDATE products SET merchandising_tag = $2 WHERE id = $1 RETURNING *`, [
+    id,
+    tag,
+  ]);
+  return result.rows[0] ?? null;
+}
+
 export interface ListProductsFilter {
   status?: ProductStatus;
   categoryId?: string;
   brandId?: string;
   /** Matches against product_name or sku, case-insensitive. */
   search?: string;
+  /** The buyer-facing catalog's own gate — admin_disabled = true must
+   *  never show up for purchase, regardless of `status`. The admin Produk
+   *  list omits this so an admin can still see (and re-enable) a product
+   *  they turned off. */
+  excludeAdminDisabled?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -224,6 +264,9 @@ function buildProductFilterConditions(
   if (filter.search) {
     params.push(`%${filter.search}%`);
     conditions.push(`(${alias}product_name ILIKE $${params.length} OR ${alias}sku ILIKE $${params.length})`);
+  }
+  if (filter.excludeAdminDisabled) {
+    conditions.push(`${alias}admin_disabled = false`);
   }
 
   return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };

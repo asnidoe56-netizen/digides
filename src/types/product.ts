@@ -1,5 +1,6 @@
 export type CatalogStatus = "ACTIVE" | "DISABLED";
 export type ProductStatus = "ACTIVE" | "DISABLED" | "GANGGUAN";
+export type MerchandisingTag = "SUPER_MURAH" | "PROMO" | "TERLARIS";
 
 export interface Category {
   id: string;
@@ -21,6 +22,13 @@ export interface Product {
   brand_id: string | null;
   base_price: string;
   status: ProductStatus;
+  /** Super Admin's own on/off switch, independent of `status` (which
+   *  Digiflazz's catalog sync owns and can overwrite at any time). Lets an
+   *  admin turn a product off without needing Digiflazz to do it. */
+  admin_disabled: boolean;
+  /** Purely a storefront label (Super Murah/Promo/Terlaris) — no bearing
+   *  on whether the product can actually be purchased. */
+  merchandising_tag: MerchandisingTag | null;
   provider: string;
   last_synced_at: Date | null;
   created_at: Date;

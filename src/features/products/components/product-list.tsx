@@ -1,9 +1,12 @@
 import { EmptyState } from "@/components/empty-state";
 import { MoneyDisplay } from "@/components/money-display";
 import { StatusBadge } from "@/components/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Brand, Category, Product } from "@/types/product";
+import { ProductAvailabilityToggle } from "./product-availability-toggle";
 import { ProductCard } from "./product-card";
+import { ProductTagSelect } from "./product-tag-select";
 
 export interface ProductListProps {
   products: Product[];
@@ -65,6 +68,8 @@ export function ProductList({ products, categories, brands, markupByProductId, s
               <TableHead className="text-right">Harga Dasar</TableHead>
               <TableHead className="text-right">Harga Jual</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Label</TableHead>
+              <TableHead className="w-px" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -86,7 +91,23 @@ export function ProductList({ products, categories, brands, markupByProductId, s
                     <MoneyDisplay amount={Number(product.base_price) + markup} size="sm" />
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={product.status} />
+                    <div className="flex flex-col gap-1">
+                      <StatusBadge status={product.status} />
+                      {/* Independent of the Digiflazz-driven badge above —
+                          an admin can turn a product off even while
+                          Digiflazz still reports it Aktif. */}
+                      {product.admin_disabled ? (
+                        <Badge className="w-fit border-transparent bg-status-failed font-medium text-status-failed-foreground">
+                          Dinonaktifkan Admin
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <ProductTagSelect product={product} />
+                  </TableCell>
+                  <TableCell>
+                    <ProductAvailabilityToggle product={product} />
                   </TableCell>
                 </TableRow>
               );

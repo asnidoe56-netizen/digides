@@ -69,6 +69,12 @@ export async function executeTransaction(input: ExecuteTransactionInput): Promis
   if (product.status !== "ACTIVE") {
     throw new Error("Produk sedang tidak tersedia");
   }
+  // Super Admin's own override (Produk page's Aktifkan/Nonaktifkan) — checked
+  // separately from `status`, which Digiflazz's catalog sync owns and can
+  // silently overwrite; this one can't be reset by a sync.
+  if (product.admin_disabled) {
+    throw new Error("Produk sedang dinonaktifkan oleh admin");
+  }
 
   if (product.category_id) {
     const category = await findCategoryById(product.category_id);

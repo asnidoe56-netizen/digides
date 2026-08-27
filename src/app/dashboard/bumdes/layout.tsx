@@ -23,7 +23,11 @@ export default async function BumdesLayout({ children }: { children: ReactNode }
   return (
     <div className="mx-auto flex min-h-dvh max-w-lg flex-col bg-background">
       <div className="flex flex-1 flex-col pb-16">{children}</div>
-      <MitraBottomNav homeHref="/dashboard/bumdes/dashboard" mitraHref="/dashboard/bumdes/mitra" />
+      <MitraBottomNav
+        homeHref="/dashboard/bumdes/dashboard"
+        mitraHref="/dashboard/bumdes/mitra"
+        akunHref="/dashboard/bumdes/akun"
+      />
     </div>
   );
 }

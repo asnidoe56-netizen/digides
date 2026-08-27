@@ -1,36 +1,16 @@
-"use client";
-
-import { Menu } from "lucide-react";
-import { LogoutButton } from "@/features/auth/components/logout-button";
 import { NotificationBell } from "@/features/notification";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
 export interface MitraHeaderProps {
   fullName: string;
   roleLabel: string;
 }
 
+// The hamburger menu that used to live here (welcome-name + role + Keluar
+// in a slide-out sheet) moved to the "Akun" bottom-nav tab instead — see
+// MitraAccountView.
 export function MitraHeader({ fullName, roleLabel }: MitraHeaderProps) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <Sheet>
-        <SheetTrigger
-          aria-label="Menu"
-          className="flex size-9 items-center justify-center rounded-full text-white/90 hover:bg-white/10"
-        >
-          <Menu className="size-5" />
-        </SheetTrigger>
-        <SheetContent side="left" className="w-72">
-          <SheetHeader>
-            <SheetTitle>{fullName}</SheetTitle>
-          </SheetHeader>
-          <div className="flex flex-col gap-1 p-4 pt-0">
-            <p className="mb-2 text-sm text-muted-foreground">{roleLabel}</p>
-            <LogoutButton />
-          </div>
-        </SheetContent>
-      </Sheet>
-
       <div className="min-w-0 flex-1 text-white">
         <p className="text-xs text-white/80">Selamat datang,</p>
         <p className="truncate text-sm font-semibold">

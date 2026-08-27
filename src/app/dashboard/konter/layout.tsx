@@ -23,7 +23,11 @@ export default async function KonterLayout({ children }: { children: ReactNode }
   return (
     <div className="mx-auto flex min-h-dvh max-w-lg flex-col bg-background">
       <div className="flex flex-1 flex-col pb-16">{children}</div>
-      <MitraBottomNav homeHref="/dashboard/konter/dashboard" mitraHref="/dashboard/konter/mitra" />
+      <MitraBottomNav
+        homeHref="/dashboard/konter/dashboard"
+        mitraHref="/dashboard/konter/mitra"
+        akunHref="/dashboard/konter/akun"
+      />
     </div>
   );
 }

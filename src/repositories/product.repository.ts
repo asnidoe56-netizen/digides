@@ -149,6 +149,7 @@ export interface UpsertProductInput {
   base_price: string | number;
   status: ProductStatus;
   provider?: string;
+  provider_type?: string | null;
 }
 
 // Used by the catalog-sync job: one row per SKU from the provider
@@ -160,14 +161,15 @@ export interface UpsertProductInput {
 // reset them back to whatever Digiflazz's last state happened to be.
 export async function upsertProduct(input: UpsertProductInput, db: Queryable = pool): Promise<Product> {
   const result = await db.query<Product>(
-    `INSERT INTO products (sku, product_name, category_id, brand_id, base_price, status, provider, last_synced_at)
-     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'digiflazz'), now())
+    `INSERT INTO products (sku, product_name, category_id, brand_id, base_price, status, provider, provider_type, last_synced_at)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'digiflazz'), $8, now())
      ON CONFLICT (sku) DO UPDATE SET
        product_name = EXCLUDED.product_name,
        category_id = EXCLUDED.category_id,
        brand_id = EXCLUDED.brand_id,
        base_price = EXCLUDED.base_price,
        status = EXCLUDED.status,
+       provider_type = EXCLUDED.provider_type,
        last_synced_at = now()
      RETURNING *`,
     [
@@ -178,6 +180,7 @@ export async function upsertProduct(input: UpsertProductInput, db: Queryable = p
       input.base_price,
       input.status,
       input.provider ?? null,
+      input.provider_type ?? null,
     ],
   );
   return result.rows[0];

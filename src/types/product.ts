@@ -29,6 +29,13 @@ export interface Product {
   /** Purely a storefront label (Super Murah/Promo/Terlaris) — no bearing
    *  on whether the product can actually be purchased. */
   merchandising_tag: MerchandisingTag | null;
+  /** Digiflazz's own `type` field from the price-list (e.g. "Umum", "Cek
+   *  Nama", "Kuota") — null for anything synced before this column
+   *  existed, or not synced from Digiflazz at all. See
+   *  isNameVerificationProduct() in pricing.service.ts for the one place
+   *  this currently matters: telling an E-Money "Cek Nama Pengguna
+   *  <Brand>" inquiry SKU apart from a real purchasable top-up. */
+  provider_type: string | null;
   provider: string;
   last_synced_at: Date | null;
   created_at: Date;

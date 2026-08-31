@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Clipboard } from "lucide-react";
+import { ArrowLeft, Clipboard, ShieldCheck } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
 import { formatMoney } from "@/lib/formatting/money";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,7 @@ import { FeatureBadges, PromoBanner, PromoFooterCard } from "./promo-highlights"
 import { PurchaseConfirmationScreen } from "./purchase-confirmation-screen";
 import { PurchasePinScreen } from "./purchase-pin-screen";
 import { PurchaseResultScreen, type PurchaseResultStatus } from "./purchase-result-screen";
-import { executePurchase, getLiveProductPrice } from "../services/purchase-api";
+import { executePurchase, getLiveProductPrice, verifyCustomerName } from "../services/purchase-api";
 
 export interface CustomerIdFieldConfig {
   /** e.g. "Nomor Tujuan" (telco/e-money/PLN) or "ID Game" (Games). */
@@ -55,6 +55,12 @@ export interface CategoryPurchaseFlowProps {
    *  one flat value per category: two products in the same category can
    *  have different markups if either has its own PRODUCT/BRAND override. */
   productMarkups: Record<string, string>;
+  /** brand_id -> its "Cek Nama Pengguna" product_id, for the Verifikasi
+   *  Pengguna card — see catalog.service.ts's getCategoryPurchaseCatalog.
+   *  Omitted/empty means this category has no verification SKUs at all
+   *  (every category except E-Money today), in which case the card never
+   *  renders. */
+  verificationProductByBrandId?: Record<string, string>;
   availableBalance: string;
   /** Override for categories whose customer_no isn't a phone number —
    *  Games needs a numeric player ID, optionally with a zone ID in
@@ -111,11 +117,15 @@ export function CategoryPurchaseFlow({
   brands,
   products,
   productMarkups,
+  verificationProductByBrandId = {},
   availableBalance,
   customerIdField = DEFAULT_CUSTOMER_ID_FIELD,
 }: CategoryPurchaseFlowProps) {
   const router = useRouter();
   const [customerId, setCustomerId] = useState("");
+  const [verifiedName, setVerifiedName] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
   // "REGULER" (no tag filter) is the neutral default — a mitra who never
   // touches the tabs and taps a provider straight away sees the normal,
   // unfiltered price list. Only tapping Super Murah/Promo/Terlaris narrows
@@ -172,6 +182,8 @@ export function CategoryPurchaseFlow({
 
   const selectedBrand = brands.find((brand) => brand.id === selectedBrandId) ?? null;
   const selectedProduct = brandProducts.find((product) => product.id === selectedProductId) ?? null;
+  const hasVerificationProducts = Object.keys(verificationProductByBrandId).length > 0;
+  const verificationProductId = selectedBrandId ? verificationProductByBrandId[selectedBrandId] : undefined;
   // Estimate from the page-load snapshot — shown while still browsing.
   // Overridden by `livePrice` (a fresh single-SKU Digiflazz check) the
   // moment the mitra taps "Lanjutkan", per Digiflazz's own guidance to
@@ -192,6 +204,30 @@ export function CategoryPurchaseFlow({
     setSelectedProductId(null);
     setLivePrice(null);
     setPriceCheckError(null);
+    setVerifiedName(null);
+    setVerifyError(null);
+  }
+
+  function handleCustomerIdChange(value: string) {
+    setCustomerId(value);
+    // A different number needs re-verification — a name checked against
+    // the old one would be actively misleading left on screen.
+    setVerifiedName(null);
+    setVerifyError(null);
+  }
+
+  async function handleVerifyName() {
+    if (!verificationProductId) return;
+    setIsVerifying(true);
+    setVerifyError(null);
+    try {
+      const { registeredName } = await verifyCustomerName(verificationProductId, normalizedCustomerId);
+      setVerifiedName(registeredName);
+    } catch (error) {
+      setVerifyError(error instanceof ApiError ? error.message : "Gagal memverifikasi nomor. Coba lagi.");
+    } finally {
+      setIsVerifying(false);
+    }
   }
 
   function handleSelectProduct(productId: string) {
@@ -366,7 +402,7 @@ export function CategoryPurchaseFlow({
                   type="text"
                   inputMode="numeric"
                   value={customerId}
-                  onChange={(event) => setCustomerId(event.target.value)}
+                  onChange={(event) => handleCustomerIdChange(event.target.value)}
                   placeholder={customerIdField.placeholder}
                   className="w-full bg-transparent font-medium outline-none placeholder:font-normal placeholder:text-muted-foreground"
                 />
@@ -387,6 +423,46 @@ export function CategoryPurchaseFlow({
               </button>
             )}
           </div>
+
+          {/* Always rendered once this category's catalog has at least
+              one "Cek Nama" SKU (E-Money today) — regardless of browse-
+              provider vs. browse-nominal step, same as the customer-id
+              row above it, so a mitra can pick a provider in the grid
+              below, scroll back up, and verify without losing their
+              place. The button itself stays disabled until a provider
+              with a verification SKU is selected — per product decision,
+              verification is a pre-purchase double-check tied to an
+              already-chosen provider, not a way to discover which
+              provider a number belongs to. */}
+          {hasVerificationProducts ? (
+            <div className="flex items-center gap-3 rounded-xl border border-red-100 bg-red-50/60 p-3">
+              <ShieldCheck className="size-8 shrink-0 text-red-600" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">Verifikasi Pengguna</p>
+                {verifiedName ? (
+                  <p className="text-xs text-emerald-700">Terdaftar atas nama: {verifiedName}</p>
+                ) : verifyError ? (
+                  <p className="text-xs text-destructive">{verifyError}</p>
+                ) : !selectedBrandId ? (
+                  <p className="text-xs text-muted-foreground">Pilih provider terlebih dahulu untuk verifikasi.</p>
+                ) : !verificationProductId ? (
+                  <p className="text-xs text-muted-foreground">Verifikasi tidak tersedia untuk provider ini.</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Pastikan nomor tujuan sudah terdaftar atas akun e-money untuk menghindari kesalahan transaksi.
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleVerifyName}
+                disabled={!verificationProductId || isVerifying}
+                className="shrink-0 rounded-full bg-red-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-40"
+              >
+                {isVerifying ? "Memeriksa..." : verifiedName || verifyError ? "Cek Ulang" : "Verifikasi Pengguna"}
+              </button>
+            </div>
+          ) : null}
 
           {!selectedBrandId ? (
             <>

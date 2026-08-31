@@ -24,6 +24,7 @@ export default async function BumdesDataPage() {
       brands={catalog.brands}
       products={catalog.products}
       productMarkups={catalog.productMarkups}
+      verificationProductByBrandId={catalog.verificationProductByBrandId}
       availableBalance={wallet?.available_balance ?? "0"}
     />
   );

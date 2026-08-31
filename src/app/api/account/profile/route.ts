@@ -10,6 +10,24 @@ import {
   updateUserProfile,
 } from "@/repositories/user.repository";
 
+// The mobile app's Akun > Profil screen (and its session-restore-on-launch
+// bootstrap, which — unlike a fresh login — has no other way to learn the
+// caller's roles again) — login's response omits `phone`, so this is the
+// one place to fetch the caller's own full public profile.
+export async function GET() {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Tidak diizinkan" }, { status: 403 });
+  }
+
+  const user = await findUserById(session.userId);
+  if (!user) {
+    return NextResponse.json({ error: "Pengguna tidak ditemukan" }, { status: 404 });
+  }
+
+  return NextResponse.json({ user: toPublicUserProfile(user), roles: session.roles });
+}
+
 const updateProfileSchema = z.object({
   fullName: z.string().trim().min(3, "Nama minimal 3 karakter").max(120),
   email: z.string().trim().min(1, "Email wajib diisi").email("Format email tidak valid"),

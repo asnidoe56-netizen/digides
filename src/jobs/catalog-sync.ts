@@ -98,6 +98,7 @@ export async function runCatalogSync(): Promise<CatalogSyncSummary> {
           brand_id: brandIds.get(item.brand) ?? null,
           base_price: item.price,
           status,
+          provider_type: item.type,
         });
 
         if (status === "DISABLED") {

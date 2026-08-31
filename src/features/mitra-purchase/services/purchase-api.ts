@@ -31,3 +31,17 @@ export interface LiveProductPrice {
 export function getLiveProductPrice(productId: string) {
   return apiFetch<LiveProductPrice>(`/api/products/${productId}/live-price`, { method: "POST" });
 }
+
+export interface VerifyCustomerNameResult {
+  registeredName: string;
+}
+
+// E-Money's "Verifikasi Pengguna" — a free Digiflazz "Cek Nama Pengguna
+// <Brand>" lookup (verification.service.ts's verifyCustomerName), never a
+// purchase: no PIN, no wallet reservation, doesn't touch executePurchase.
+export function verifyCustomerName(productId: string, customerNumber: string) {
+  return apiFetch<VerifyCustomerNameResult>(`/api/products/${productId}/verify-name`, {
+    method: "POST",
+    body: JSON.stringify({ customerNumber }),
+  });
+}

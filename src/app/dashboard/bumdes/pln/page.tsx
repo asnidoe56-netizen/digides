@@ -28,6 +28,7 @@ export default async function BumdesPlnPage() {
       brands={catalog.brands}
       products={catalog.products}
       productMarkups={catalog.productMarkups}
+      verificationProductByBrandId={catalog.verificationProductByBrandId}
       availableBalance={wallet?.available_balance ?? "0"}
       customerIdField={PLN_ID_FIELD}
     />

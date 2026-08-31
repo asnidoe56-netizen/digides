@@ -28,6 +28,7 @@ export default async function BumdesTvPage() {
       brands={catalog.brands}
       products={catalog.products}
       productMarkups={catalog.productMarkups}
+      verificationProductByBrandId={catalog.verificationProductByBrandId}
       availableBalance={wallet?.available_balance ?? "0"}
       customerIdField={TV_ID_FIELD}
     />

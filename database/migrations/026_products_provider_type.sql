@@ -1,0 +1,11 @@
+-- Digiflazz's price-list response carries a `type` field per SKU (e.g.
+-- "Umum", "Cek Nama", "Kuota") that upsertProduct previously discarded —
+-- with no way to tell an inquiry-only SKU (an E-Money "Cek Nama Pengguna
+-- <Brand>" lookup, which costs nothing and returns the registered
+-- account holder's name instead of topping anything up) apart from a
+-- real purchasable top-up product, other than eyeballing product_name.
+-- Nullable: non-Digiflazz-synced rows (none exist today, but the schema
+-- shouldn't assume every product has a provider-reported type) and rows
+-- synced before this column existed leave it null, which the app treats
+-- as "an ordinary top-up product" (never as a verification SKU).
+ALTER TABLE products ADD COLUMN provider_type text;

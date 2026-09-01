@@ -64,6 +64,16 @@ export async function findUserById(id: string, db: Queryable = pool): Promise<Us
   return result.rows[0] ?? null;
 }
 
+// Akun > Keamanan's "Batasi Perangkat" — null clears the override back to
+// "use the platform default" (security_policies.max_devices_per_user).
+export async function updateUserMaxActiveDevices(
+  id: string,
+  maxActiveDevices: number | null,
+  db: Queryable = pool,
+): Promise<void> {
+  await db.query(`UPDATE users SET max_active_devices = $2 WHERE id = $1`, [id, maxActiveDevices]);
+}
+
 // Akun > Ganti Password — the caller has already re-verified
 // currentPassword against the existing hash before calling this; this
 // function just writes the new one.

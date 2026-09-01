@@ -5,6 +5,7 @@ import type {
   MobileBiometricCredential,
   MobileBiometricCredentialSummary,
   MobileBiometricPlatform,
+  MobileBiometricPurpose,
 } from "@/types/mobile-biometric";
 
 export interface CreateMobileBiometricCredentialInput {
@@ -13,6 +14,10 @@ export interface CreateMobileBiometricCredentialInput {
   public_key: string;
   algorithm: MobileBiometricAlgorithm;
   platform: MobileBiometricPlatform;
+  purpose: MobileBiometricPurpose;
+  /** The registering session's own device (see migration 030) — required
+   *  for LOGIN, unused (but still accepted) for TRANSACTION. */
+  device_id: string | null;
   device_label: string;
 }
 
@@ -22,19 +27,29 @@ export async function createMobileBiometricCredential(
 ): Promise<MobileBiometricCredential> {
   const result = await db.query<MobileBiometricCredential>(
     `INSERT INTO user_mobile_biometric_credentials
-       (user_id, credential_id, public_key, algorithm, platform, device_label)
-     VALUES ($1, $2, $3, $4, $5, $6)
+       (user_id, credential_id, public_key, algorithm, platform, purpose, device_id, device_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [input.user_id, input.credential_id, input.public_key, input.algorithm, input.platform, input.device_label],
+    [
+      input.user_id,
+      input.credential_id,
+      input.public_key,
+      input.algorithm,
+      input.platform,
+      input.purpose,
+      input.device_id,
+      input.device_label,
+    ],
   );
   return result.rows[0];
 }
 
 // Scoped to the claimed owner up front (unlike the WebAuthn table's
 // by-credential-only lookup) — the Flutter app always sends its own
-// session alongside the credentialId, so there is no reason to defer the
-// ownership check to a separate comparison the way verifyTransactionBiometric
-// does for WebAuthn's user-agnostic credential.id lookup.
+// session alongside the credentialId for a TRANSACTION credential, so
+// there is no reason to defer the ownership check to a separate
+// comparison the way verifyTransactionBiometric does for WebAuthn's
+// user-agnostic credential.id lookup.
 export async function findMobileBiometricCredential(
   userId: string,
   credentialId: string,
@@ -48,14 +63,39 @@ export async function findMobileBiometricCredential(
   return result.rows[0] ?? null;
 }
 
+// The LOGIN counterpart to findMobileBiometricCredential above — there is
+// no session yet at this point (resolving one is the whole point of
+// biometric login), so this deliberately has no userId scope. Filtered to
+// purpose = 'LOGIN' so a TRANSACTION-only credential (which never had a
+// device_id captured, and was never meant to establish a session) can
+// never be used to log in.
+export async function findLoginMobileBiometricCredential(
+  credentialId: string,
+  db: Queryable = pool,
+): Promise<MobileBiometricCredential | null> {
+  const result = await db.query<MobileBiometricCredential>(
+    `SELECT * FROM user_mobile_biometric_credentials
+     WHERE credential_id = $1 AND purpose = 'LOGIN' AND revoked_at IS NULL`,
+    [credentialId],
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function listActiveMobileBiometricCredentials(
   userId: string,
+  purpose?: MobileBiometricPurpose,
   db: Queryable = pool,
 ): Promise<MobileBiometricCredential[]> {
-  const result = await db.query<MobileBiometricCredential>(
-    `SELECT * FROM user_mobile_biometric_credentials WHERE user_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC`,
-    [userId],
-  );
+  const result = purpose
+    ? await db.query<MobileBiometricCredential>(
+        `SELECT * FROM user_mobile_biometric_credentials
+         WHERE user_id = $1 AND purpose = $2 AND revoked_at IS NULL ORDER BY created_at DESC`,
+        [userId, purpose],
+      )
+    : await db.query<MobileBiometricCredential>(
+        `SELECT * FROM user_mobile_biometric_credentials WHERE user_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC`,
+        [userId],
+      );
   return result.rows;
 }
 
@@ -64,7 +104,7 @@ export async function listMobileBiometricCredentialSummaries(
   db: Queryable = pool,
 ): Promise<MobileBiometricCredentialSummary[]> {
   const result = await db.query<MobileBiometricCredentialSummary>(
-    `SELECT id, credential_id, platform, device_label, created_at, last_used_at
+    `SELECT id, credential_id, platform, purpose, device_label, created_at, last_used_at
      FROM user_mobile_biometric_credentials WHERE user_id = $1 AND revoked_at IS NULL
      ORDER BY created_at DESC`,
     [userId],

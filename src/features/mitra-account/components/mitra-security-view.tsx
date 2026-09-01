@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Fingerprint, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Fingerprint, ShieldCheck, ShieldOff, Trash2 } from "lucide-react";
 import { startRegistration } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
@@ -13,6 +13,7 @@ import {
   revokeBiometricCredential,
   submitBiometricRegistration,
 } from "../services/biometric-api";
+import { getMyDeviceLimit, setMyDeviceLimit, type MyDeviceLimit } from "../services/device-limit-api";
 
 export interface MitraSecurityViewProps {
   backHref: string;
@@ -37,6 +38,10 @@ export function MitraSecurityView({ backHref }: MitraSecurityViewProps) {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
+  const [deviceLimit, setDeviceLimit] = useState<MyDeviceLimit | null>(null);
+  const [limitError, setLimitError] = useState<string | null>(null);
+  const [savingLimit, setSavingLimit] = useState<number | null>(null);
+
   async function loadCredentials() {
     try {
       const { credentials: list } = await listMyBiometricCredentials();
@@ -46,9 +51,33 @@ export function MitraSecurityView({ backHref }: MitraSecurityViewProps) {
     }
   }
 
+  async function loadDeviceLimit() {
+    try {
+      const limit = await getMyDeviceLimit();
+      setDeviceLimit(limit);
+    } catch (error) {
+      setLimitError(error instanceof ApiError ? error.message : "Gagal memuat batas perangkat.");
+    }
+  }
+
   useEffect(() => {
     loadCredentials();
+    loadDeviceLimit();
   }, []);
+
+  async function handleSelectLimit(value: number) {
+    if (deviceLimit?.currentLimit === value) return;
+    setLimitError(null);
+    setSavingLimit(value);
+    try {
+      const updated = await setMyDeviceLimit(value);
+      setDeviceLimit(updated);
+    } catch (error) {
+      setLimitError(error instanceof ApiError ? error.message : "Gagal mengubah batas perangkat.");
+    } finally {
+      setSavingLimit(null);
+    }
+  }
 
   async function handleRegister() {
     setActionError(null);
@@ -166,6 +195,58 @@ export function MitraSecurityView({ backHref }: MitraSecurityViewProps) {
               </button>
             </div>
           ))}
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-2xl bg-background p-4 shadow-sm">
+          <div className="flex items-start gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+              <ShieldOff className="size-4" />
+            </span>
+            <div>
+              <p className="text-sm font-medium">Batasi Perangkat</p>
+              <p className="text-xs text-muted-foreground">
+                Batasi jumlah perangkat/aplikasi yang bisa login ke akun Anda sekaligus. Perangkat baru yang mencoba
+                login setelah batas tercapai akan ditolak.
+              </p>
+            </div>
+          </div>
+
+          {limitError ? <p className="text-sm text-destructive">{limitError}</p> : null}
+
+          {deviceLimit ? (
+            <>
+              <div className="flex gap-2">
+                {deviceLimit.options.map((option) => {
+                  const selected = deviceLimit.currentLimit === option;
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => handleSelectLimit(option)}
+                      disabled={savingLimit !== null}
+                      className={`flex size-10 items-center justify-center rounded-full border text-sm font-semibold transition-colors disabled:opacity-50 ${
+                        selected
+                          ? "border-red-600 bg-red-600 text-white"
+                          : "border-border bg-background text-foreground hover:border-red-300"
+                      }`}
+                    >
+                      {savingLimit === option ? "…" : option}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Batas saat ini: <span className="font-medium text-red-600">{deviceLimit.currentLimit} perangkat</span>
+                {deviceLimit.isCustom ? "" : " (default platform)"}
+              </p>
+              <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                <p>Batas ini hanya berlaku untuk perangkat baru yang login setelahnya — perangkat yang sudah aktif tidak otomatis keluar.</p>
+              </div>
+            </>
+          ) : limitError ? null : (
+            <p className="text-sm text-muted-foreground">Memuat...</p>
+          )}
         </div>
       </div>
     </div>

@@ -16,6 +16,7 @@ export default async function KonterAkunPage() {
       fullName={user?.full_name ?? ""}
       roleLabel="Agen"
       profilHref="/dashboard/konter/akun/profil"
+      perangkatHref="/dashboard/konter/akun/perangkat"
       gantiPasswordHref="/dashboard/konter/akun/ganti-password"
       gantiPinHref="/dashboard/konter/akun/ganti-pin"
       keamananHref="/dashboard/konter/akun/keamanan"

@@ -1,7 +1,11 @@
 import type { Queryable } from "@/lib/db/query";
 import { pool } from "@/lib/db/pool";
 
-export type WebauthnChallengePurpose = "REGISTRATION" | "TRANSACTION";
+// LOGIN added by migration 030 — the Flutter app's biometric login
+// resolves an account from its credentialId (no session exists yet) and
+// spends a challenge scoped to that account the same way a TRANSACTION
+// ceremony does, just for a different purpose.
+export type WebauthnChallengePurpose = "REGISTRATION" | "TRANSACTION" | "LOGIN";
 
 export interface WebauthnChallengeRow {
   id: string;

@@ -6,22 +6,17 @@ export interface MitraAccountViewProps {
   fullName: string;
   roleLabel: string;
   profilHref: string;
+  perangkatHref: string;
   gantiPasswordHref: string;
   gantiPinHref: string;
   keamananHref: string;
 }
 
-// Perangkat remains a placeholder (disabled, "Segera hadir") until its own
-// screen/logic is built in a later pass — Profil, Ganti Password, Ganti
-// PIN, and Keamanan are the first four of these five to get real behavior
-// (see MitraProfileView / MitraChangePasswordView / MitraChangePinView /
-// MitraSecurityView), Keluar reuses the existing LogoutButton as-is.
-const DISABLED_MENU_ITEMS = [{ label: "Perangkat", icon: Smartphone }];
-
 export function MitraAccountView({
   fullName,
   roleLabel,
   profilHref,
+  perangkatHref,
   gantiPasswordHref,
   gantiPinHref,
   keamananHref,
@@ -57,6 +52,17 @@ export function MitraAccountView({
         </Link>
 
         <Link
+          href={perangkatHref}
+          className="flex w-full items-center gap-3 rounded-2xl bg-background px-4 py-3 text-left text-sm font-medium shadow-sm"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+            <Smartphone className="size-4" />
+          </span>
+          <span className="flex-1">Perangkat</span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+
+        <Link
           href={gantiPasswordHref}
           className="flex w-full items-center gap-3 rounded-2xl bg-background px-4 py-3 text-left text-sm font-medium shadow-sm"
         >
@@ -88,22 +94,6 @@ export function MitraAccountView({
           <span className="flex-1">Keamanan</span>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
         </Link>
-
-        {DISABLED_MENU_ITEMS.map(({ label, icon: Icon }) => (
-          <button
-            key={label}
-            type="button"
-            disabled
-            title="Segera hadir"
-            className="flex w-full items-center gap-3 rounded-2xl bg-background px-4 py-3 text-left text-sm font-medium shadow-sm"
-          >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
-              <Icon className="size-4" />
-            </span>
-            <span className="flex-1">{label}</span>
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-          </button>
-        ))}
 
         <LogoutButton className="flex w-full items-center gap-3 rounded-2xl bg-red-50 px-4 py-3 text-left text-sm font-medium text-destructive shadow-sm hover:bg-red-100" />
 

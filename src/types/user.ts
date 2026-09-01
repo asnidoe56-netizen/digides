@@ -10,6 +10,10 @@ export interface User {
   /** Set when brute-force login detection trips security_policies'
    *  max_login_attempts — login is rejected while this is in the future. */
   locked_until: Date | null;
+  /** Akun > Keamanan's "Batasi Perangkat" — this account's own override of
+   *  security_policies.max_devices_per_user. Null means "use the platform
+   *  default". See security.service.ts's getEffectiveDeviceLimit. */
+  max_active_devices: number | null;
   created_at: Date;
   updated_at: Date;
 }

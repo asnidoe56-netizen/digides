@@ -1,5 +1,6 @@
 export type MobileBiometricAlgorithm = "RSA" | "ECDSA";
 export type MobileBiometricPlatform = "android" | "ios";
+export type MobileBiometricPurpose = "TRANSACTION" | "LOGIN";
 
 export interface MobileBiometricCredential {
   id: string;
@@ -8,6 +9,11 @@ export interface MobileBiometricCredential {
   public_key: string;
   algorithm: MobileBiometricAlgorithm;
   platform: MobileBiometricPlatform;
+  purpose: MobileBiometricPurpose;
+  /** The user_devices row this credential was registered from — a LOGIN
+   *  credential relies on this for device binding (see migration 030);
+   *  TRANSACTION credentials predate this column and may be null. */
+  device_id: string | null;
   device_label: string;
   created_at: Date;
   last_used_at: Date | null;
@@ -25,6 +31,7 @@ export interface MobileBiometricCredentialSummary {
   id: string;
   credential_id: string;
   platform: MobileBiometricPlatform;
+  purpose: MobileBiometricPurpose;
   device_label: string;
   created_at: Date;
   last_used_at: Date | null;

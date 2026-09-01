@@ -6,11 +6,25 @@ export interface ParsedUserAgent {
   deviceName: string;
 }
 
+// The Flutter app identifies itself with this exact User-Agent (see
+// digides_mitra's core/network/api_client.dart) instead of whatever Dio's
+// own default would be ("Dart/x.y (dart:io)") — recognized here first, so
+// a mitra logging in from the native app sees "Aplikasi DigiDes Mitra
+// (Android)" in Akun > Perangkat instead of "Browser tidak dikenal di
+// Tidak diketahui".
+const MITRA_APP_UA = /^DigidesMitraApp\/([\d.]+) \(([^)]+)\)$/;
+
 // Regex-only parsing (no dependency added) — good enough for the display
 // fields the Security module needs (platform/browser columns), not meant
 // to be a precise UA-sniffing library.
 export function parseUserAgent(userAgent: string | null | undefined): ParsedUserAgent {
   const ua = userAgent ?? "";
+
+  const appMatch = ua.match(MITRA_APP_UA);
+  if (appMatch) {
+    const platform = appMatch[2];
+    return { platform, browser: "Aplikasi DigiDes Mitra", deviceName: `Aplikasi DigiDes Mitra (${platform})` };
+  }
 
   let platform = "Tidak diketahui";
   if (/windows/i.test(ua)) platform = "Windows";

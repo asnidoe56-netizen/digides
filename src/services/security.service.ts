@@ -17,12 +17,20 @@ import {
   type ListSecurityIncidentsFilter,
 } from "@/repositories/security-incident.repository";
 import { getSecurityPolicy, updateSecurityPolicy, type UpdateSecurityPolicyInput } from "@/repositories/security-policy.repository";
-import { resetPinFailedAttempts, clearUserAccountLock, lockUserAccount } from "@/repositories/user.repository";
+import {
+  resetPinFailedAttempts,
+  clearUserAccountLock,
+  lockUserAccount,
+  findUserById,
+  updateUserMaxActiveDevices,
+} from "@/repositories/user.repository";
 import {
   countActiveDevicesForUser,
   createUserDevice,
   findDeviceByFingerprint,
+  findDeviceById,
   listDevices,
+  listDevicesForUser,
   countDevices,
   setDeviceTrustStatus,
   touchDevice,
@@ -37,7 +45,7 @@ import {
   revokeSession,
   type ListSessionsFilter,
 } from "@/repositories/user-session.repository";
-import type { DeviceTrustStatus, SecurityIncidentStatus, UserSession } from "@/types/security";
+import type { DeviceTrustStatus, SecurityIncidentStatus, UserDevice, UserSession } from "@/types/security";
 
 // --- Login-time enforcement --------------------------------------------
 // Called directly from /api/auth/login, before any session exists — kept
@@ -88,6 +96,15 @@ export async function recordFailedLogin(
   return { locked: true, lockoutMinutes: policy.login_lockout_minutes };
 }
 
+// A mitra's own "Batasi Perangkat" override never raises their limit
+// above the platform-wide default, only lowers it — even if Super Admin
+// later drops security_policies.max_devices_per_user below whatever a
+// mitra previously self-selected, the stricter of the two always wins.
+export function getEffectiveDeviceLimit(userMaxActiveDevices: number | null, policyMaxDevicesPerUser: number): number {
+  if (userMaxActiveDevices == null) return policyMaxDevicesPerUser;
+  return Math.min(userMaxActiveDevices, policyMaxDevicesPerUser);
+}
+
 export type DeviceAuthorizationResult =
   | { allowed: true; deviceId: string }
   | { allowed: false; reason: string; status: number };
@@ -97,6 +114,7 @@ export async function authorizeDeviceForLogin(
   email: string,
   ipAddress: string | null,
   userAgent: string | null,
+  userMaxActiveDevices: number | null,
 ): Promise<DeviceAuthorizationResult> {
   const policy = await getSecurityPolicy();
   const fingerprint = fingerprintDevice(userId, userAgent);
@@ -127,9 +145,10 @@ export async function authorizeDeviceForLogin(
   }
 
   const activeDeviceCount = await countActiveDevicesForUser(userId);
-  if (activeDeviceCount >= policy.max_devices_per_user) {
+  const effectiveLimit = getEffectiveDeviceLimit(userMaxActiveDevices, policy.max_devices_per_user);
+  if (activeDeviceCount >= effectiveLimit) {
     return rejectDevice(
-      "Batas jumlah perangkat tercapai. Hubungi admin untuk mencabut akses salah satu perangkat lama.",
+      "Batas jumlah perangkat tercapai. Cabut akses salah satu perangkat lama di Akun > Perangkat, atau perbesar batas di Akun > Keamanan.",
       "Batas jumlah perangkat tercapai",
     );
   }
@@ -226,6 +245,88 @@ export async function setDeviceTrust(deviceId: string, status: DeviceTrustStatus
   });
 
   return device;
+}
+
+// --- Mitra self-service (Akun > Perangkat) ------------------------------
+// A mitra's own view of the same user_devices/user_sessions rows the
+// admin-facing functions above manage platform-wide, scoped to just their
+// own account.
+
+export interface MyDevicesOverview {
+  devices: UserDevice[];
+  totalCount: number;
+  activeCount: number;
+  maxDevices: number;
+  currentDeviceId: string | null;
+}
+
+export async function getMyDevices(userId: string, currentDeviceId: string | null): Promise<MyDevicesOverview> {
+  const [devices, activeCount, policy, user] = await Promise.all([
+    listDevicesForUser(userId),
+    countActiveDevicesForUser(userId),
+    getSecurityPolicy(),
+    findUserById(userId),
+  ]);
+
+  return {
+    devices,
+    totalCount: devices.length,
+    activeCount,
+    maxDevices: getEffectiveDeviceLimit(user?.max_active_devices ?? null, policy.max_devices_per_user),
+    currentDeviceId,
+  };
+}
+
+// Akun > Keamanan's "Batasi Perangkat" — the mitra's own read/write on
+// their max_active_devices override. 1-5 is enforced by the DB check
+// constraint (029_users_max_active_devices.sql) as the final backstop;
+// the route layer validates the same range so a bad request never even
+// reaches the database.
+export interface MyDeviceLimit {
+  currentLimit: number;
+  isCustom: boolean;
+  options: number[];
+}
+
+const DEVICE_LIMIT_OPTIONS = [1, 2, 3, 4, 5];
+
+export async function getMyDeviceLimit(userId: string): Promise<MyDeviceLimit> {
+  const [user, policy] = await Promise.all([findUserById(userId), getSecurityPolicy()]);
+  return {
+    currentLimit: getEffectiveDeviceLimit(user?.max_active_devices ?? null, policy.max_devices_per_user),
+    isCustom: user?.max_active_devices != null,
+    options: DEVICE_LIMIT_OPTIONS,
+  };
+}
+
+export async function setMyDeviceLimit(userId: string, maxActiveDevices: number, actorUserId: string): Promise<void> {
+  await updateUserMaxActiveDevices(userId, maxActiveDevices);
+  await recordAuditLog({
+    actor_user_id: actorUserId,
+    action: "USER_DEVICE_LIMIT_CHANGED",
+    entity: "users",
+    entity_id: userId,
+    new_value: { max_active_devices: maxActiveDevices },
+  });
+}
+
+// setDeviceTrust (above) has no ownership check — its only other caller
+// is the Super Admin route, already role-gated — so this is where a
+// mitra's "Blokir Perangkat" is confirmed to be blocking a device that's
+// actually theirs. Blocking the device making this very request is
+// refused: it would revoke the session performing the block, an easy way
+// to lock yourself out with no way back in short of an admin restoring
+// access.
+export async function blockMyDevice(userId: string, deviceId: string, currentDeviceId: string | null) {
+  const device = await findDeviceById(deviceId);
+  if (!device || device.user_id !== userId) {
+    throw new Error("Perangkat tidak ditemukan");
+  }
+  if (deviceId === currentDeviceId) {
+    throw new Error("Tidak dapat memblokir perangkat yang sedang Anda gunakan.");
+  }
+
+  return setDeviceTrust(deviceId, "BLOCKED", userId);
 }
 
 export async function getSessions(filter: ListSessionsFilter = {}) {

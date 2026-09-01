@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/password-input";
 import { ApiError } from "@/lib/api/client";
 import { registerFormSchema, type RegisterFormValues } from "../schemas/register.schema";
 import { registerUser } from "../services/auth-api";
@@ -24,9 +25,9 @@ export function RegisterForm() {
   async function onSubmit(values: RegisterFormValues) {
     setServerError(null);
     try {
-      // confirmPassword only exists to validate the form client-side —
-      // the server schema (registerServerSchema) never sees it.
-      const { confirmPassword: _confirmPassword, ...serverInput } = values;
+      // confirmPassword/confirmPin only exist to validate the form
+      // client-side — the server schema (registerServerSchema) never sees them.
+      const { confirmPassword: _confirmPassword, confirmPin: _confirmPin, ...serverInput } = values;
       await registerUser(serverInput);
       router.push("/login?registered=1");
     } catch (error) {
@@ -89,9 +90,8 @@ export function RegisterForm() {
 
       <div className="grid gap-2">
         <Label htmlFor="password">Password</Label>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           autoComplete="new-password"
           className="h-11"
           aria-invalid={!!errors.password}
@@ -104,9 +104,8 @@ export function RegisterForm() {
 
       <div className="grid gap-2">
         <Label htmlFor="confirmPassword">Konfirmasi password</Label>
-        <Input
+        <PasswordInput
           id="confirmPassword"
-          type="password"
           autoComplete="new-password"
           className="h-11"
           aria-invalid={!!errors.confirmPassword}
@@ -114,6 +113,52 @@ export function RegisterForm() {
         />
         {errors.confirmPassword ? (
           <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>
+        ) : null}
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor="pin">PIN transaksi (6 digit)</Label>
+        <PasswordInput
+          id="pin"
+          inputMode="numeric"
+          maxLength={6}
+          autoComplete="off"
+          className="h-11"
+          aria-invalid={!!errors.pin}
+          {...register("pin")}
+        />
+        <p className="text-xs text-muted-foreground">Dipakai untuk mengonfirmasi setiap transaksi.</p>
+        {errors.pin ? <p className="text-sm text-destructive">{errors.pin.message}</p> : null}
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor="confirmPin">Konfirmasi PIN</Label>
+        <PasswordInput
+          id="confirmPin"
+          inputMode="numeric"
+          maxLength={6}
+          autoComplete="off"
+          className="h-11"
+          aria-invalid={!!errors.confirmPin}
+          {...register("confirmPin")}
+        />
+        {errors.confirmPin ? <p className="text-sm text-destructive">{errors.confirmPin.message}</p> : null}
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor="referralCode">Kode referensi (opsional)</Label>
+        <Input
+          id="referralCode"
+          className="h-11"
+          placeholder="Kode referral dari yang mengajak Anda"
+          aria-invalid={!!errors.referralCode}
+          {...register("referralCode")}
+        />
+        <p className="text-xs text-muted-foreground">
+          Isi jika Anda diajak mendaftar oleh seseorang — Anda akan tercatat sebagai downline-nya.
+        </p>
+        {errors.referralCode ? (
+          <p className="text-sm text-destructive">{errors.referralCode.message}</p>
         ) : null}
       </div>
 

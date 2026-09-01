@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: INVALID_CREDENTIALS_MESSAGE }, { status: 401 });
   }
 
-  const deviceResult = await authorizeDeviceForLogin(user.id, identifier, ipAddress, userAgent);
+  const deviceResult = await authorizeDeviceForLogin(user.id, identifier, ipAddress, userAgent, user.max_active_devices);
   if (!deviceResult.allowed) {
     return NextResponse.json({ error: deviceResult.reason }, { status: deviceResult.status });
   }

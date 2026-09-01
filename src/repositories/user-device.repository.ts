@@ -76,6 +76,18 @@ export async function setDeviceTrustStatus(
   return result.rows[0] ?? null;
 }
 
+// Akun > Perangkat's "my devices" panel — unlike listDevices (admin-wide,
+// joined to owner info), this is exactly what one mitra is allowed to see:
+// only their own rows, no join needed since the caller already knows
+// whose devices these are.
+export async function listDevicesForUser(userId: string, db: Queryable = pool): Promise<UserDevice[]> {
+  const result = await db.query<UserDevice>(
+    `SELECT * FROM user_devices WHERE user_id = $1 ORDER BY last_seen_at DESC`,
+    [userId],
+  );
+  return result.rows;
+}
+
 export interface UserDeviceWithOwner extends UserDevice {
   owner_name: string;
   owner_email: string;

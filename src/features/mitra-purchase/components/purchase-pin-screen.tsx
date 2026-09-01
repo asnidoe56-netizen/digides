@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Delete } from "lucide-react";
+import { ArrowLeft, Delete, Fingerprint } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const PIN_LENGTH = 6;
@@ -14,11 +14,22 @@ const KEYPAD_ROWS = [
 export interface PurchasePinScreenProps {
   onBack: () => void;
   onSubmit: (pin: string) => void;
+  /** Present only when this account has a biometric credential registered
+   *  for this device (see category-purchase-flow.tsx) — omitted entirely
+   *  hides the "Gunakan Biometrik" option rather than showing a button
+   *  that would always fail. */
+  onUseBiometric?: () => void;
   isSubmitting: boolean;
   error: string | null;
 }
 
-export function PurchasePinScreen({ onBack, onSubmit, isSubmitting, error }: PurchasePinScreenProps) {
+export function PurchasePinScreen({
+  onBack,
+  onSubmit,
+  onUseBiometric,
+  isSubmitting,
+  error,
+}: PurchasePinScreenProps) {
   const [digits, setDigits] = useState("");
 
   // Reset the pad after a failed attempt so the user isn't stuck re-typing
@@ -76,6 +87,18 @@ export function PurchasePinScreen({ onBack, onSubmit, isSubmitting, error }: Pur
 
         {error ? <p className="text-center text-sm text-destructive">{error}</p> : null}
         {isSubmitting ? <p className="text-center text-sm text-muted-foreground">Memproses transaksi...</p> : null}
+
+        {onUseBiometric ? (
+          <button
+            type="button"
+            onClick={onUseBiometric}
+            disabled={isSubmitting}
+            className="flex items-center gap-2 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 disabled:opacity-50"
+          >
+            <Fingerprint className="size-4" />
+            Gunakan Biometrik
+          </button>
+        ) : null}
 
         <div className="mt-2 grid grid-cols-3 gap-4">
           {KEYPAD_ROWS.flat().map((digit) => (

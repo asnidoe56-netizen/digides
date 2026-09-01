@@ -16,6 +16,9 @@ export default async function BumdesAkunPage() {
       fullName={user?.full_name ?? ""}
       roleLabel="Mitra"
       profilHref="/dashboard/bumdes/akun/profil"
+      gantiPasswordHref="/dashboard/bumdes/akun/ganti-password"
+      gantiPinHref="/dashboard/bumdes/akun/ganti-pin"
+      keamananHref="/dashboard/bumdes/akun/keamanan"
     />
   );
 }

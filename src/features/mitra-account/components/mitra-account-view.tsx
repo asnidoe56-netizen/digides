@@ -6,20 +6,26 @@ export interface MitraAccountViewProps {
   fullName: string;
   roleLabel: string;
   profilHref: string;
+  gantiPasswordHref: string;
+  gantiPinHref: string;
+  keamananHref: string;
 }
 
-// Perangkat, Keamanan, Ganti PIN, and Ganti Password remain placeholders
-// (disabled, "Segera hadir") until their own screens/logic are built in a
-// later pass — Profil is the first of these five to get real behavior
-// (see MitraProfileView), Keluar reuses the existing LogoutButton as-is.
-const DISABLED_MENU_ITEMS = [
-  { label: "Perangkat", icon: Smartphone },
-  { label: "Keamanan", icon: ShieldCheck },
-  { label: "Ganti PIN", icon: KeyRound },
-  { label: "Ganti Password", icon: Lock },
-];
+// Perangkat remains a placeholder (disabled, "Segera hadir") until its own
+// screen/logic is built in a later pass — Profil, Ganti Password, Ganti
+// PIN, and Keamanan are the first four of these five to get real behavior
+// (see MitraProfileView / MitraChangePasswordView / MitraChangePinView /
+// MitraSecurityView), Keluar reuses the existing LogoutButton as-is.
+const DISABLED_MENU_ITEMS = [{ label: "Perangkat", icon: Smartphone }];
 
-export function MitraAccountView({ fullName, roleLabel, profilHref }: MitraAccountViewProps) {
+export function MitraAccountView({
+  fullName,
+  roleLabel,
+  profilHref,
+  gantiPasswordHref,
+  gantiPinHref,
+  keamananHref,
+}: MitraAccountViewProps) {
   return (
     <div className="flex flex-col gap-4 pb-6">
       <div className="relative overflow-hidden rounded-b-3xl bg-gradient-to-br from-red-500 to-red-700 px-4 pt-4 pb-6 text-white sm:rounded-3xl">
@@ -47,6 +53,39 @@ export function MitraAccountView({ fullName, roleLabel, profilHref }: MitraAccou
             <User className="size-4" />
           </span>
           <span className="flex-1">Profil</span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+
+        <Link
+          href={gantiPasswordHref}
+          className="flex w-full items-center gap-3 rounded-2xl bg-background px-4 py-3 text-left text-sm font-medium shadow-sm"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+            <Lock className="size-4" />
+          </span>
+          <span className="flex-1">Ganti Password</span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+
+        <Link
+          href={gantiPinHref}
+          className="flex w-full items-center gap-3 rounded-2xl bg-background px-4 py-3 text-left text-sm font-medium shadow-sm"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+            <KeyRound className="size-4" />
+          </span>
+          <span className="flex-1">Ganti PIN</span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+
+        <Link
+          href={keamananHref}
+          className="flex w-full items-center gap-3 rounded-2xl bg-background px-4 py-3 text-left text-sm font-medium shadow-sm"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+            <ShieldCheck className="size-4" />
+          </span>
+          <span className="flex-1">Keamanan</span>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
         </Link>
 

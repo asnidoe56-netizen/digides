@@ -31,6 +31,7 @@ export default async function KonterPlnPage() {
       verificationProductByBrandId={catalog.verificationProductByBrandId}
       availableBalance={wallet?.available_balance ?? "0"}
       customerIdField={PLN_ID_FIELD}
+      productTypeLabel="Prabayar"
     />
   );
 }

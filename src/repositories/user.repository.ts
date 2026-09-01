@@ -64,6 +64,17 @@ export async function findUserById(id: string, db: Queryable = pool): Promise<Us
   return result.rows[0] ?? null;
 }
 
+// Akun > Ganti Password — the caller has already re-verified
+// currentPassword against the existing hash before calling this; this
+// function just writes the new one.
+export async function updateUserPassword(
+  id: string,
+  passwordHash: string,
+  db: Queryable = pool,
+): Promise<void> {
+  await db.query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [id, passwordHash]);
+}
+
 export async function updateUserStatus(
   id: string,
   status: UserStatus,

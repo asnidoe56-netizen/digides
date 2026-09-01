@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Clipboard, ShieldCheck } from "lucide-react";
+import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { ApiError } from "@/lib/api/client";
 import { formatMoney } from "@/lib/formatting/money";
 import { cn } from "@/lib/utils";
 import type { Brand, Product } from "@/types/product";
+import { getTransactionBiometricOptions, listMyBiometricCredentials } from "@/features/mitra-account/services/biometric-api";
 import { MERCHANDISING_LABELS, type MerchandisingFilter } from "../lib/merchandising-config";
 import { MerchandisingTabs } from "./merchandising-tabs";
 import { FeatureBadges, PromoBanner, PromoFooterCard } from "./promo-highlights";
@@ -67,6 +69,11 @@ export interface CategoryPurchaseFlowProps {
    *  parentheses (e.g. "123456789(1001)" for Mobile Legends). Omitted
    *  entirely defaults to phone-number validation. */
   customerIdField?: CustomerIdFieldConfig;
+  /** e.g. "Prabayar" — shown as a badge on the Confirmation screen's
+   *  product card. Only pass this when it's a verified fact about every
+   *  product in the category (PLN's page.tsx passes it since the whole
+   *  synced catalog is prepaid tokens); omit rather than guess. */
+  productTypeLabel?: string;
 }
 
 type Phase = "browse" | "confirm" | "pin" | "result";
@@ -120,10 +127,12 @@ export function CategoryPurchaseFlow({
   verificationProductByBrandId = {},
   availableBalance,
   customerIdField = DEFAULT_CUSTOMER_ID_FIELD,
+  productTypeLabel,
 }: CategoryPurchaseFlowProps) {
   const router = useRouter();
   const [customerId, setCustomerId] = useState("");
   const [verifiedName, setVerifiedName] = useState<string | null>(null);
+  const [verifiedTariffPower, setVerifiedTariffPower] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
   // "REGULER" (no tag filter) is the neutral default — a mitra who never
@@ -136,6 +145,10 @@ export function CategoryPurchaseFlow({
   const [phase, setPhase] = useState<Phase>("browse");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
+  // Only offered once the browser supports WebAuthn AND this account has
+  // at least one active credential — checked lazily when the PIN screen
+  // is actually reached, not on every page load.
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [result, setResult] = useState<{ status: PurchaseResultStatus; note?: string } | null>(null);
   // Filled in only once a live, single-SKU Digiflazz check succeeds (see
   // handleProceedToConfirm) — null means "still showing the page-load
@@ -199,12 +212,32 @@ export function CategoryPurchaseFlow({
   // repeat key as "already handled", not a new purchase).
   const idempotencyKey = useMemo(() => crypto.randomUUID(), [selectedProductId]);
 
+  // Checked once, lazily, the moment the PIN screen is actually reached —
+  // not on page load, and not re-checked on every render. A device with no
+  // platform authenticator, or an account with zero registered
+  // credentials, simply never sees the "Gunakan Biometrik" button.
+  useEffect(() => {
+    if (phase !== "pin" || !browserSupportsWebAuthn()) return;
+    let cancelled = false;
+    listMyBiometricCredentials()
+      .then(({ credentials }) => {
+        if (!cancelled) setBiometricAvailable(credentials.length > 0);
+      })
+      .catch(() => {
+        if (!cancelled) setBiometricAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [phase]);
+
   function handleSelectBrand(brandId: string) {
     setSelectedBrandId(brandId);
     setSelectedProductId(null);
     setLivePrice(null);
     setPriceCheckError(null);
     setVerifiedName(null);
+    setVerifiedTariffPower(null);
     setVerifyError(null);
   }
 
@@ -213,6 +246,7 @@ export function CategoryPurchaseFlow({
     // A different number needs re-verification — a name checked against
     // the old one would be actively misleading left on screen.
     setVerifiedName(null);
+    setVerifiedTariffPower(null);
     setVerifyError(null);
   }
 
@@ -221,8 +255,9 @@ export function CategoryPurchaseFlow({
     setIsVerifying(true);
     setVerifyError(null);
     try {
-      const { registeredName } = await verifyCustomerName(verificationProductId, normalizedCustomerId);
+      const { registeredName, tariffPower } = await verifyCustomerName(verificationProductId, normalizedCustomerId);
       setVerifiedName(registeredName);
+      setVerifiedTariffPower(tariffPower ?? null);
     } catch (error) {
       setVerifyError(error instanceof ApiError ? error.message : "Gagal memverifikasi nomor. Coba lagi.");
     } finally {
@@ -268,7 +303,11 @@ export function CategoryPurchaseFlow({
     }
   }
 
-  async function handleSubmitPin(pin: string) {
+  // Shared by both confirmation paths below — the PIN screen's keypad and
+  // its "Gunakan Biometrik" button ultimately hit the exact same
+  // executeTransaction() engine server-side, differing only in what proof
+  // of confirmation they send.
+  async function submitPurchase(auth: Parameters<typeof executePurchase>[0]["auth"]) {
     if (!selectedProduct) return;
     setIsSubmitting(true);
     setPinError(null);
@@ -276,8 +315,8 @@ export function CategoryPurchaseFlow({
       const { transaction } = await executePurchase({
         productId: selectedProduct.id,
         customerNumber: normalizedCustomerId,
-        pin,
         idempotencyKey,
+        auth,
       });
 
       if (transaction.status === "SUCCESS") {
@@ -292,7 +331,8 @@ export function CategoryPurchaseFlow({
       const message = error instanceof ApiError ? error.message : "Transaksi gagal diproses. Coba lagi.";
       // The provider genuinely didn't respond — funds are held, not lost,
       // and retyping the PIN won't change that. Everything else (wrong
-      // PIN, insufficient balance, PIN locked) is retry-able input error.
+      // PIN, insufficient balance, PIN locked, biometric verification
+      // failure) is retry-able input error.
       if (message.includes("tertunda")) {
         setResult({ status: "PENDING", note: message });
         setPhase("result");
@@ -301,6 +341,28 @@ export function CategoryPurchaseFlow({
       }
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  function handleSubmitPin(pin: string) {
+    return submitPurchase({ method: "PIN", pin });
+  }
+
+  // Runs the full WebAuthn "get an assertion" ceremony (challenge from the
+  // server, then the browser's own biometric prompt) before handing the
+  // result to the same submitPurchase() the keypad uses. A cancelled/failed
+  // prompt (startAuthentication throwing) surfaces as a normal retry-able
+  // pinError — the mitra can just use the keypad instead.
+  async function handleBiometricSubmit() {
+    setIsSubmitting(true);
+    setPinError(null);
+    try {
+      const optionsJSON = await getTransactionBiometricOptions();
+      const assertion = await startAuthentication({ optionsJSON });
+      await submitPurchase({ method: "BIOMETRIC", assertion });
+    } catch (error) {
+      setIsSubmitting(false);
+      setPinError(error instanceof ApiError ? error.message : "Verifikasi biometrik gagal. Gunakan PIN.");
     }
   }
 
@@ -327,6 +389,7 @@ export function CategoryPurchaseFlow({
       <PurchasePinScreen
         onBack={() => setPhase("confirm")}
         onSubmit={handleSubmitPin}
+        onUseBiometric={biometricAvailable ? handleBiometricSubmit : undefined}
         isSubmitting={isSubmitting}
         error={pinError}
       />
@@ -339,11 +402,15 @@ export function CategoryPurchaseFlow({
         categoryName={categoryName}
         brandName={selectedBrand.name}
         brandInitials={selectedBrand.name.slice(0, 2).toUpperCase()}
+        productTypeLabel={productTypeLabel}
         customerIdLabel={customerIdField.label}
         customerId={customerId}
+        verifiedName={verifiedName}
+        verifiedTariffPower={verifiedTariffPower}
         nominalLabel={extractNominalLabel(selectedProduct.product_name, categoryName, selectedBrand.name)}
         price={sellingPrice}
         availableBalance={availableBalance}
+        referenceId={idempotencyKey}
         onBack={() => {
           setLivePrice(null);
           setPhase("browse");

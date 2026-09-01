@@ -3,6 +3,9 @@ import { getActiveDigiflazzCredentials, getDigiflazzWebhookSecret } from "@/serv
 import { submitDigiflazzTransaction, type DigiflazzTransactionResult } from "@/lib/digiflazz/transaction";
 import { verifyDigiflazzWebhookSignature } from "@/lib/digiflazz/webhook";
 import { verifyTransactionPin } from "@/services/auth.service";
+import { verifyTransactionBiometric } from "@/services/biometric.service";
+import { verifyMobileBiometricTransaction, type MobileBiometricAssertion } from "@/services/mobile-biometric.service";
+import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 import { awardCommissionForTransaction } from "@/services/commission.service";
 import { findBrandById, findCategoryById, findProductById } from "@/repositories/product.repository";
 import { getLiveProductPricing } from "@/services/pricing.service";
@@ -40,14 +43,27 @@ export async function getReservedTransactionsSummary() {
   return sumReservedTransactions();
 }
 
+// A buyer confirms a purchase by typing their transaction PIN, or — once
+// Akun > Keamanan has a biometric credential registered for this device —
+// with a biometric assertion instead: a WebAuthn assertion from the web
+// app's browser, or a biometric_signature-signed challenge from the
+// Flutter app (two different protocols for the same product feature,
+// since a native app has no WebAuthn browser API to run that ceremony
+// in — see mobile-biometric.service.ts). Exactly one of the three, so
+// executeTransaction never has to guess which one to check.
+export type TransactionAuth =
+  | { method: "PIN"; pin: string }
+  | { method: "BIOMETRIC"; assertion: AuthenticationResponseJSON }
+  | { method: "MOBILE_BIOMETRIC"; assertion: MobileBiometricAssertion };
+
 export interface ExecuteTransactionInput {
   walletId: string;
   productId: string;
   customerNumber: string;
-  pin: string;
+  auth: TransactionAuth;
   idempotencyKey: string;
   channel: WalletChannel;
-  /** The wallet owner confirming with their own PIN. */
+  /** The wallet owner confirming with their own PIN or biometric. */
   actorUserId: string;
 }
 
@@ -60,7 +76,13 @@ export interface ExecuteTransactionInput {
 // codebase (Konter/BUMDes/Affiliate dashboards aren't built) — but this is
 // the real, complete engine those future pages will call, not a stub.
 export async function executeTransaction(input: ExecuteTransactionInput): Promise<Transaction> {
-  await verifyTransactionPin(input.actorUserId, input.pin);
+  if (input.auth.method === "PIN") {
+    await verifyTransactionPin(input.actorUserId, input.auth.pin);
+  } else if (input.auth.method === "BIOMETRIC") {
+    await verifyTransactionBiometric(input.actorUserId, input.auth.assertion);
+  } else {
+    await verifyMobileBiometricTransaction(input.actorUserId, input.auth.assertion);
+  }
 
   const product = await findProductById(input.productId);
   if (!product) {

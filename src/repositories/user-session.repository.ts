@@ -79,6 +79,23 @@ export async function revokeAllSessionsForUser(
   return result.rowCount ?? 0;
 }
 
+// Ganti Password — signs the account out everywhere else without ending
+// the session the mitra just used to change it, so the confirmation they
+// see isn't immediately followed by their own screen logging them out.
+export async function revokeAllOtherSessionsForUser(
+  userId: string,
+  exceptSessionId: string,
+  reason: string,
+  db: Queryable = pool,
+): Promise<number> {
+  const result = await db.query(
+    `UPDATE user_sessions SET revoked_at = now(), revoked_reason = $3
+     WHERE user_id = $1 AND id != $2 AND revoked_at IS NULL`,
+    [userId, exceptSessionId, reason],
+  );
+  return result.rowCount ?? 0;
+}
+
 export async function revokeAllSessionsForDevice(
   deviceId: string,
   reason: string,

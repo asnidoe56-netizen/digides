@@ -7,10 +7,32 @@ import { isNameVerificationProduct } from "@/services/catalog.service";
 
 export interface NameVerificationResult {
   registeredName: string;
+  /** Only present for meter-based utility inquiries (PLN's "Cek Nama
+   *  Token PLN" today) whose Digiflazz `sn` is a "/"-delimited composite
+   *  — never for a plain-name SKU like E-Money's Cek Nama. */
+  tariffPower?: string;
 }
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// E-Money's "Cek Nama <Brand>" SKUs return `sn` as a plain registered name
+// (e.g. "DNID NURXXXXX IX MOHXXXX") — no "/" in it, ever. PLN's "Cek Nama
+// Token PLN" SKU instead returns a "/"-delimited composite: confirmed
+// empirically against the real provider, `sn` looks like
+// "3214339475/SAIPUL ATAS/R1/450 VA" (no_meter/nama/tarif/daya), which
+// would otherwise render as one garbled string. Only a 4-part split is
+// treated as that composite shape — anything else (including formats we
+// haven't seen from Gas/TV, which have no Cek Nama SKU synced yet) falls
+// back to treating the whole string as a plain name, so this can never
+// misparse a name that happens not to fit PLN's exact shape.
+function parseRegisteredCustomer(sn: string): NameVerificationResult {
+  const parts = sn.split("/");
+  if (parts.length >= 4) {
+    return { registeredName: parts[1].trim(), tariffPower: `${parts[2].trim()}/${parts[3].trim()}` };
+  }
+  return { registeredName: sn };
 }
 
 // A real purchase left "Pending" just sits as RESERVED until a later
@@ -90,5 +112,5 @@ export async function verifyCustomerName(
     throw new Error(result.message || "Nomor tidak terdaftar pada provider ini.");
   }
 
-  return { registeredName: result.sn };
+  return parseRegisteredCustomer(result.sn);
 }

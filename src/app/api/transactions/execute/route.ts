@@ -1,26 +1,46 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 import { getSession } from "@/lib/auth/session";
-import { executeTransaction } from "@/services/transaction.service";
+import { executeTransaction, type TransactionAuth } from "@/services/transaction.service";
 import { getWalletForMitraSession } from "@/services/wallet.service";
 
-const executeSchema = z.object({
-  productId: z.string().uuid(),
-  // Not phone-number-shaped for every category — Games' customer_no is a
-  // numeric player ID, optionally with a zone ID in parentheses (see
-  // CategoryPurchaseFlow's customerIdField). Real format validation for
-  // whatever category this product belongs to already happened client-side
-  // against that category's own pattern; this is just a sane server-side
-  // bound (Digiflazz itself is the actual authority on validity — an
-  // unrecognized customer_no comes back as a clear provider error, not a
-  // silent failure).
-  customerNumber: z
-    .string()
-    .trim()
-    .regex(/^[0-9A-Za-z()]{3,30}$/, "Nomor tujuan/ID tidak valid"),
-  pin: z.string().regex(/^[0-9]{6}$/, "PIN harus 6 digit"),
-  idempotencyKey: z.string().uuid(),
+const mobileBiometricAssertionSchema = z.object({
+  credentialId: z.string().min(1),
+  challenge: z.string().min(1),
+  signature: z.string().min(1),
 });
+
+const executeSchema = z
+  .object({
+    productId: z.string().uuid(),
+    // Not phone-number-shaped for every category — Games' customer_no is a
+    // numeric player ID, optionally with a zone ID in parentheses (see
+    // CategoryPurchaseFlow's customerIdField). Real format validation for
+    // whatever category this product belongs to already happened client-side
+    // against that category's own pattern; this is just a sane server-side
+    // bound (Digiflazz itself is the actual authority on validity — an
+    // unrecognized customer_no comes back as a clear provider error, not a
+    // silent failure).
+    customerNumber: z
+      .string()
+      .trim()
+      .regex(/^[0-9A-Za-z()]{3,30}$/, "Nomor tujuan/ID tidak valid"),
+    idempotencyKey: z.string().uuid(),
+    // Confirm with exactly one of the three — the web PIN screen's
+    // "Gunakan Biometrik" sends biometricAssertion (a WebAuthn response
+    // from @simplewebauthn/browser), the Flutter app's equivalent sends
+    // mobileBiometricAssertion (a biometric_signature-signed challenge),
+    // never more than one together with pin.
+    pin: z.string().regex(/^[0-9]{6}$/, "PIN harus 6 digit").optional(),
+    biometricAssertion: z.record(z.string(), z.unknown()).optional(),
+    mobileBiometricAssertion: mobileBiometricAssertionSchema.optional(),
+  })
+  .refine(
+    (data) =>
+      (data.pin ? 1 : 0) + (data.biometricAssertion ? 1 : 0) + (data.mobileBiometricAssertion ? 1 : 0) === 1,
+    { message: "Sertakan PIN atau konfirmasi biometrik." },
+  );
 
 // The buyer-facing counterpart to transaction.service.ts's executeTransaction
 // — walletId is always resolved server-side from the caller's own session
@@ -46,12 +66,18 @@ export async function POST(request: Request) {
     );
   }
 
+  const auth: TransactionAuth = parsed.data.pin
+    ? { method: "PIN", pin: parsed.data.pin }
+    : parsed.data.mobileBiometricAssertion
+      ? { method: "MOBILE_BIOMETRIC", assertion: parsed.data.mobileBiometricAssertion }
+      : { method: "BIOMETRIC", assertion: parsed.data.biometricAssertion as unknown as AuthenticationResponseJSON };
+
   try {
     const transaction = await executeTransaction({
       walletId: wallet.id,
       productId: parsed.data.productId,
       customerNumber: parsed.data.customerNumber,
-      pin: parsed.data.pin,
+      auth,
       idempotencyKey: parsed.data.idempotencyKey,
       channel: "WEB",
       actorUserId: session.userId,

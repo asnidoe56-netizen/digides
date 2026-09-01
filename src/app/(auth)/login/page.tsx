@@ -15,7 +15,7 @@ export default async function LoginPage({
         {/* Hero — decorative only, matches the app's established red-gradient
             "mitra" branding (WalletSummaryCard/PromoBanner) rather than a
             literal illustrated asset we don't have. */}
-        <div className="relative flex flex-col items-center gap-3 overflow-hidden bg-gradient-to-br from-red-500 via-red-600 to-red-800 px-6 pt-12 pb-16 text-center text-white">
+        <div className="relative flex flex-col items-center gap-3 overflow-hidden bg-linear-to-br from-red-500 via-red-600 to-red-800 px-6 pt-12 pb-16 text-center text-white">
           <VillageSilhouette />
 
           <div className="relative z-10 flex size-16 items-center justify-center rounded-2xl bg-white shadow-lg">

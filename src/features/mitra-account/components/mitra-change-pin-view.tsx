@@ -53,7 +53,7 @@ export function MitraChangePinView({ backHref }: MitraChangePinViewProps) {
 
   return (
     <div className="flex flex-col gap-6 pb-6">
-      <div className="flex items-center gap-3 rounded-b-3xl bg-gradient-to-br from-red-500 to-red-700 px-4 pt-4 pb-6 text-white sm:rounded-3xl">
+      <div className="flex items-center gap-3 rounded-b-3xl bg-linear-to-br from-red-500 to-red-700 px-4 pt-4 pb-6 text-white sm:rounded-3xl">
         <Link
           href={backHref}
           aria-label="Kembali"

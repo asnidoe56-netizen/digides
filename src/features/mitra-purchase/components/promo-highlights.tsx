@@ -15,7 +15,7 @@ export interface PromoBannerProps {
 export function PromoBanner({ filter, brandName }: PromoBannerProps) {
   const copy = MERCHANDISING_BANNER_COPY[filter];
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-red-500 via-red-600 to-red-700 p-4 text-white">
+    <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-red-500 via-red-600 to-red-700 p-4 text-white">
       <Sparkles className="absolute top-3 right-4 size-5 text-yellow-200/80" aria-hidden />
       <Gift className="absolute right-6 bottom-3 size-14 text-white/10" aria-hidden />
       <p className="text-[11px] font-medium tracking-wide text-yellow-200">• KATALOG SPESIAL</p>

@@ -23,7 +23,7 @@ export function MitraAccountView({
 }: MitraAccountViewProps) {
   return (
     <div className="flex flex-col gap-4 pb-6">
-      <div className="relative overflow-hidden rounded-b-3xl bg-gradient-to-br from-red-500 to-red-700 px-4 pt-4 pb-6 text-white sm:rounded-3xl">
+      <div className="relative overflow-hidden rounded-b-3xl bg-linear-to-br from-red-500 to-red-700 px-4 pt-4 pb-6 text-white sm:rounded-3xl">
         <span className="absolute top-4 right-4 flex size-11 items-center justify-center rounded-full bg-white text-red-600">
           <Briefcase className="size-5" />
         </span>

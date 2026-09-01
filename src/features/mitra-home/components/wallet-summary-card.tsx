@@ -49,7 +49,7 @@ export function WalletSummaryCard({
   }
 
   return (
-    <div className="sticky top-0 z-20 flex flex-col gap-4 rounded-b-3xl bg-gradient-to-br from-red-500 to-red-700 px-4 pt-4 pb-6 sm:rounded-3xl sm:pb-4">
+    <div className="sticky top-0 z-20 flex flex-col gap-4 rounded-b-3xl bg-linear-to-br from-red-500 to-red-700 px-4 pt-4 pb-6 sm:rounded-3xl sm:pb-4">
       <MitraHeader fullName={fullName} roleLabel={roleLabel} />
 
       <div className="flex items-start justify-between gap-3 rounded-2xl bg-white/10 p-4 text-white backdrop-blur-sm">

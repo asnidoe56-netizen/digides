@@ -5,7 +5,7 @@ import { Trophy } from "lucide-react";
 // real points balance is a separate future feature, not fabricated here.
 export function PromoBanner() {
   return (
-    <div className="flex items-center justify-between gap-4 overflow-hidden rounded-2xl bg-gradient-to-r from-red-600 to-red-500 p-4 text-white">
+    <div className="flex items-center justify-between gap-4 overflow-hidden rounded-2xl bg-linear-to-r from-red-600 to-red-500 p-4 text-white">
       <div>
         <p className="font-semibold">Dapatkan Poin!</p>
         <p className="text-sm text-white/85">Raih lebih banyak hadiah</p>

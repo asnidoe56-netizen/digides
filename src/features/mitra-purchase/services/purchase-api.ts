@@ -53,6 +53,14 @@ export function getLiveProductPrice(productId: string) {
   return apiFetch<LiveProductPrice>(`/api/products/${productId}/live-price`, { method: "POST" });
 }
 
+// The purchase result screen's bounded poll while a transaction is still
+// PENDING (category-purchase-flow.tsx) — reads /api/transactions/[id],
+// the mitra-scoped read-only counterpart to the SUPER_ADMIN-only
+// check-status route. Never calls Digiflazz, never writes anything.
+export function getTransaction(transactionId: string) {
+  return apiFetch<{ transaction: Transaction }>(`/api/transactions/${transactionId}`);
+}
+
 export interface VerifyCustomerNameResult {
   registeredName: string;
   /** Only present for meter-based utility inquiries (PLN today) — see

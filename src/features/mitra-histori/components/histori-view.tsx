@@ -27,7 +27,7 @@ export function HistoriView({ homeHref, historiHref, transactions, page, totalPa
       </header>
 
       <div className="flex flex-1 flex-col gap-4 p-4">
-        <HistoriList transactions={transactions} />
+        <HistoriList transactions={transactions} historiHref={historiHref} />
         <PaginationControls
           page={page}
           totalPages={totalPages}

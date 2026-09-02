@@ -17,7 +17,7 @@ import { FeatureBadges, PromoBanner, PromoFooterCard } from "./promo-highlights"
 import { PurchaseConfirmationScreen } from "./purchase-confirmation-screen";
 import { PurchasePinScreen } from "./purchase-pin-screen";
 import { PurchaseResultScreen, type PurchaseResultStatus } from "./purchase-result-screen";
-import { executePurchase, getLiveProductPrice, verifyCustomerName } from "../services/purchase-api";
+import { executePurchase, getLiveProductPrice, getTransaction, verifyCustomerName } from "../services/purchase-api";
 
 export interface CustomerIdFieldConfig {
   /** e.g. "Nomor Tujuan" (telco/e-money/PLN) or "ID Game" (Games). */
@@ -160,7 +160,13 @@ export function CategoryPurchaseFlow({
   // at least one active credential — checked lazily when the PIN screen
   // is actually reached, not on every page load.
   const [biometricAvailable, setBiometricAvailable] = useState(false);
-  const [result, setResult] = useState<{ status: PurchaseResultStatus; note?: string } | null>(null);
+  const [result, setResult] = useState<{
+    status: PurchaseResultStatus;
+    transactionId?: string;
+    providerTransactionId?: string | null;
+    note?: string;
+    timedOut?: boolean;
+  } | null>(null);
   // Filled in only once a live, single-SKU Digiflazz check succeeds (see
   // handleProceedToConfirm) — null means "still showing the page-load
   // estimate," which is what the browse screen's bottom bar shows.
@@ -331,11 +337,17 @@ export function CategoryPurchaseFlow({
       });
 
       if (transaction.status === "SUCCESS") {
-        setResult({ status: "SUCCESS" });
+        setResult({
+          status: "SUCCESS",
+          transactionId: transaction.id,
+          providerTransactionId: transaction.provider_transaction_id,
+        });
       } else if (transaction.status === "FAILED") {
-        setResult({ status: "FAILED" });
+        setResult({ status: "FAILED", transactionId: transaction.id });
       } else {
-        setResult({ status: "PENDING" });
+        // RESERVED (or anything else not-yet-final) — the bounded poll
+        // below picks up from here once phase flips to "result".
+        setResult({ status: "PENDING", transactionId: transaction.id });
       }
       setPhase("result");
     } catch (error) {
@@ -343,7 +355,9 @@ export function CategoryPurchaseFlow({
       // The provider genuinely didn't respond — funds are held, not lost,
       // and retyping the PIN won't change that. Everything else (wrong
       // PIN, insufficient balance, PIN locked, biometric verification
-      // failure) is retry-able input error.
+      // failure) is retry-able input error. No transactionId here — the
+      // execute call itself never returned a transaction to poll for, so
+      // the mitra is pointed at Histori (see PurchaseResultScreen) instead.
       if (message.includes("tertunda")) {
         setResult({ status: "PENDING", note: message });
         setPhase("result");
@@ -377,6 +391,61 @@ export function CategoryPurchaseFlow({
     }
   }
 
+  // Bagian 2/3 of the PLN-token fix: the webhook (transaction.service.ts)
+  // is the only thing that ever writes SUCCESS/FAILED — this effect only
+  // *reads* /api/transactions/[id] (itself a pure PostgreSQL read, never
+  // Digiflazz) to notice that write. Bounded: every 3s, capped at 20
+  // attempts (~1 minute), stops immediately on SUCCESS/FAILED/REFUNDED/
+  // not-found, and the cleanup function (return below) both cancels the
+  // in-flight chain and clears the pending timer — so navigating away,
+  // the phase changing, or the component unmounting all stop it, and a
+  // re-render never starts a second overlapping chain (setTimeout
+  // recursion only ever schedules its *own* next call, one at a time).
+  useEffect(() => {
+    if (phase !== "result" || result?.status !== "PENDING" || !result.transactionId) return;
+    const transactionId = result.transactionId;
+
+    let cancelled = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function poll() {
+      if (cancelled) return;
+      attempts += 1;
+      try {
+        const { transaction } = await getTransaction(transactionId);
+        if (cancelled) return;
+        if (transaction.status === "SUCCESS") {
+          setResult({
+            status: "SUCCESS",
+            transactionId: transaction.id,
+            providerTransactionId: transaction.provider_transaction_id,
+          });
+          return;
+        }
+        if (transaction.status === "FAILED" || transaction.status === "REFUNDED") {
+          setResult({ status: "FAILED", transactionId: transaction.id });
+          return;
+        }
+        // Still RESERVED — keep waiting, unless the attempt budget is spent.
+        if (attempts >= 20) {
+          setResult((prev) => (prev && prev.status === "PENDING" ? { ...prev, timedOut: true } : prev));
+          return;
+        }
+        timer = setTimeout(poll, 3000);
+      } catch {
+        // Transaction genuinely not found, or a network hiccup — either
+        // way, stop rather than keep hammering; Histori is the fallback.
+      }
+    }
+
+    timer = setTimeout(poll, 3000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [phase, result?.status, result?.transactionId]);
+
   if (phase === "result" && result) {
     return (
       <PurchaseResultScreen
@@ -391,6 +460,9 @@ export function CategoryPurchaseFlow({
         }
         price={String(sellingPrice)}
         homeHref={homeHref}
+        historiHref={homeHref.replace(/\/dashboard$/, "/histori")}
+        providerTransactionId={result.providerTransactionId}
+        timedOut={result.timedOut}
       />
     );
   }

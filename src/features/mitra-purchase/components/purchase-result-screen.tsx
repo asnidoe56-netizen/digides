@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
-import { CheckCircle2, Clock, XCircle } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, Clock, Copy, XCircle } from "lucide-react";
 import { formatMoney } from "@/lib/formatting/money";
 
 export type PurchaseResultStatus = "SUCCESS" | "FAILED" | "PENDING";
@@ -14,8 +17,47 @@ export interface PurchaseResultScreenProps {
   nominalLabel: string;
   price: string;
   homeHref: string;
+  /** Where "Lihat di Histori" points while still PENDING/timed out —
+   *  category-purchase-flow.tsx derives this from homeHref. */
+  historiHref?: string;
   /** Only set for PENDING — the network/provider message explaining why. */
   note?: string;
+  /** SUCCESS only — transactions.provider_transaction_id straight from
+   *  PostgreSQL (the webhook capture already wrote it; never re-fetched
+   *  from Digiflazz here). For PLN this is the full "token/nama/tarif/
+   *  daya/kwh" string Digiflazz returns in `sn` — shown verbatim, no
+   *  parsing, so nothing about the real value is ever altered. */
+  providerTransactionId?: string | null;
+  /** Bagian 8: the bounded poll (category-purchase-flow.tsx) ran out of
+   *  attempts while still PENDING — still not a failure, just tells the
+   *  mitra to check Histori instead of continuing to wait on this screen. */
+  timedOut?: boolean;
+}
+
+function CopyTokenButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API unavailable (e.g. insecure context) — the token is
+      // already shown as selectable text, so this is a soft failure.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="flex items-center justify-center gap-1.5 rounded-full border border-red-600 px-4 py-2 text-xs font-semibold text-red-600"
+    >
+      <Copy className="size-3.5" />
+      {copied ? "Tersalin!" : "Salin Token"}
+    </button>
+  );
 }
 
 // The "-foreground" tokens are the darker, saturated variants meant for
@@ -37,7 +79,10 @@ export function PurchaseResultScreen({
   nominalLabel,
   price,
   homeHref,
+  historiHref,
   note,
+  providerTransactionId,
+  timedOut,
 }: PurchaseResultScreenProps) {
   const { icon: Icon, color, title } = STATUS_CONFIG[status];
 
@@ -56,7 +101,9 @@ export function PurchaseResultScreen({
           {status === "SUCCESS"
             ? `${productLabel} ${nominalLabel} untuk ${customerId} telah berhasil dikirim.`
             : status === "PENDING"
-              ? (note ?? "Saldo Anda sudah ditahan — transaksi akan diperbarui otomatis begitu provider merespons.")
+              ? timedOut
+                ? "Transaksi masih diproses provider. Saldo Anda sudah ditahan — cek Histori beberapa saat lagi untuk hasil akhirnya."
+                : (note ?? "Saldo Anda sudah ditahan — transaksi akan diperbarui otomatis begitu provider merespons.")
               : `${categoryName} gagal dikirim. Saldo yang tertahan sudah dikembalikan ke wallet Anda.`}
         </p>
       </div>
@@ -80,9 +127,22 @@ export function PurchaseResultScreen({
         </div>
       </div>
 
+      {status === "SUCCESS" && providerTransactionId && categoryName === "PLN" ? (
+        <div className="flex w-full max-w-xs flex-col gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-left">
+          <p className="text-xs font-semibold text-red-700">Token PLN</p>
+          <p className="text-sm font-semibold break-all select-all">{providerTransactionId}</p>
+          <CopyTokenButton value={providerTransactionId} />
+        </div>
+      ) : null}
+
       <Link href={homeHref} className="w-full max-w-xs rounded-full bg-red-600 py-3 text-center font-semibold text-white">
         Kembali ke Beranda
       </Link>
+      {status === "PENDING" && historiHref ? (
+        <Link href={historiHref} className="text-sm font-semibold text-red-600 underline">
+          Lihat di Histori
+        </Link>
+      ) : null}
     </div>
   );
 }

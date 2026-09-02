@@ -32,6 +32,7 @@ export default async function BumdesPlnPage() {
       availableBalance={wallet?.available_balance ?? "0"}
       customerIdField={PLN_ID_FIELD}
       productTypeLabel="Prabayar"
+      showMerchandisingTabs={false}
     />
   );
 }

@@ -26,6 +26,7 @@ export default async function BumdesEMoneyPage() {
       productMarkups={catalog.productMarkups}
       verificationProductByBrandId={catalog.verificationProductByBrandId}
       availableBalance={wallet?.available_balance ?? "0"}
+      showMerchandisingTabs={false}
     />
   );
 }

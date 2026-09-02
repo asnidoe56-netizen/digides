@@ -76,6 +76,14 @@ export interface CategoryPurchaseFlowProps {
    *  product in the category (PLN's page.tsx passes it since the whole
    *  synced catalog is prepaid tokens); omit rather than guess. */
   productTypeLabel?: string;
+  /** The Super Murah/Promo/Terlaris/Reguler tab row only makes sense for
+   *  categories with genuine merchandising_tag variety across many SKUs
+   *  per provider (Pulsa, Voucher, ...) — E-Money and PLN's catalogs are a
+   *  handful of fixed nominal products with no such tiers, so the tabs
+   *  have nothing real to filter. Defaults to shown; PLN/E-Money's
+   *  page.tsx pass false. The hero PromoBanner above it stays either way
+   *  (it's not tab-driven), just always showing its "Reguler" copy. */
+  showMerchandisingTabs?: boolean;
 }
 
 type Phase = "browse" | "confirm" | "pin" | "result";
@@ -130,6 +138,7 @@ export function CategoryPurchaseFlow({
   availableBalance,
   customerIdField = DEFAULT_CUSTOMER_ID_FIELD,
   productTypeLabel,
+  showMerchandisingTabs = true,
 }: CategoryPurchaseFlowProps) {
   const router = useRouter();
   const [customerId, setCustomerId] = useState("");
@@ -536,7 +545,9 @@ export function CategoryPurchaseFlow({
           {!selectedBrandId ? (
             <>
               <PromoBanner filter={merchandisingFilter} brandName={featuredBrand?.name ?? null} />
-              <MerchandisingTabs value={merchandisingFilter} onChange={setMerchandisingFilter} />
+              {showMerchandisingTabs ? (
+                <MerchandisingTabs value={merchandisingFilter} onChange={setMerchandisingFilter} />
+              ) : null}
             </>
           ) : null}
         </div>

@@ -270,7 +270,10 @@ async function applyDigiflazzResult(
 // has no session, so authenticity rests entirely on the HMAC), then
 // applies the exact same capture/release logic a synchronous response
 // would have gone through.
-export async function processDigiflazzWebhookEvent(rawBody: string, signatureHeader: string | null): Promise<Transaction> {
+export async function processDigiflazzWebhookEvent(
+  rawBody: string,
+  signatureHeader: string | null,
+): Promise<Transaction | null> {
   const secret = await getDigiflazzWebhookSecret();
   if (!secret) {
     throw new Error("Webhook Digiflazz belum dikonfigurasi (Webhook Secret kosong)");
@@ -279,7 +282,18 @@ export async function processDigiflazzWebhookEvent(rawBody: string, signatureHea
     throw new Error("Signature Digiflazz tidak valid");
   }
 
-  const parsed = JSON.parse(rawBody) as { data?: DigiflazzTransactionResult };
+  const parsed = JSON.parse(rawBody) as { data?: DigiflazzTransactionResult; hook_id?: string };
+
+  // Digiflazz sends this shape (no `data`, just `sed`/`hook_id`/`hook`) once
+  // when a webhook is first configured, purely to verify the URL answers
+  // with a 2xx — see https://developer.digiflazz.com/api/buyer/webhook/
+  // ("Ping Event"). Never persisted on their side, no transaction to touch
+  // here either — just acknowledge it so their dashboard shows the webhook
+  // as verified instead of failed.
+  if (!parsed.data?.ref_id && parsed.hook_id) {
+    return null;
+  }
+
   const result = parsed.data;
   if (!result?.ref_id) {
     throw new Error("Payload webhook tidak lengkap");

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { CheckCircle2, Clock, Copy, XCircle } from "lucide-react";
 import { formatMoney } from "@/lib/formatting/money";
+import { parsePlnToken } from "@/lib/formatting/pln-token";
 
 export type PurchaseResultStatus = "SUCCESS" | "FAILED" | "PENDING";
 
@@ -24,9 +25,11 @@ export interface PurchaseResultScreenProps {
   note?: string;
   /** SUCCESS only — transactions.provider_transaction_id straight from
    *  PostgreSQL (the webhook capture already wrote it; never re-fetched
-   *  from Digiflazz here). For PLN this is the full "token/nama/tarif/
-   *  daya/kwh" string Digiflazz returns in `sn` — shown verbatim, no
-   *  parsing, so nothing about the real value is ever altered. */
+   *  from Digiflazz here, never altered in storage). For PLN this is the
+   *  full "token/nama/tarif/daya/kwh" string Digiflazz returns in `sn` —
+   *  split for display by parsePlnToken() so the copyable token shows as
+   *  just the number, with name/tariff/power/kwh broken out as their own
+   *  rows above it. */
   providerTransactionId?: string | null;
   /** Bagian 8: the bounded poll (category-purchase-flow.tsx) ran out of
    *  attempts while still PENDING — still not a failure, just tells the
@@ -92,6 +95,10 @@ export function PurchaseResultScreen({
   const productLabel =
     categoryName.toLowerCase() === brandName.toLowerCase() ? categoryName : `${categoryName} ${brandName}`;
 
+  const isPln = categoryName === "PLN";
+  const parsedToken =
+    status === "SUCCESS" && providerTransactionId && isPln ? parsePlnToken(providerTransactionId) : null;
+
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 p-6 text-center">
       <Icon className={`size-16 ${color}`} />
@@ -117,6 +124,26 @@ export function PurchaseResultScreen({
           <span className="text-muted-foreground">{customerIdLabel}</span>
           <span className="font-medium">{customerId}</span>
         </div>
+        {parsedToken?.customerName ? (
+          <div className="flex justify-between py-2 text-sm">
+            <span className="text-muted-foreground">Nama Pelanggan</span>
+            <span className="font-medium">{parsedToken.customerName}</span>
+          </div>
+        ) : null}
+        {parsedToken?.tariff && parsedToken?.power ? (
+          <div className="flex justify-between py-2 text-sm">
+            <span className="text-muted-foreground">Tarif/Daya</span>
+            <span className="font-medium">
+              {parsedToken.tariff}/{parsedToken.power}
+            </span>
+          </div>
+        ) : null}
+        {parsedToken?.kwh ? (
+          <div className="flex justify-between py-2 text-sm">
+            <span className="text-muted-foreground">Kwh Didapat</span>
+            <span className="font-medium">{parsedToken.kwh}</span>
+          </div>
+        ) : null}
         <div className="flex justify-between py-2 text-sm">
           <span className="text-muted-foreground">Nominal</span>
           <span className="font-medium">{nominalLabel}</span>
@@ -127,11 +154,11 @@ export function PurchaseResultScreen({
         </div>
       </div>
 
-      {status === "SUCCESS" && providerTransactionId && categoryName === "PLN" ? (
+      {status === "SUCCESS" && providerTransactionId && isPln ? (
         <div className="flex w-full max-w-xs flex-col gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-left">
           <p className="text-xs font-semibold text-red-700">Token PLN</p>
-          <p className="text-sm font-semibold break-all select-all">{providerTransactionId}</p>
-          <CopyTokenButton value={providerTransactionId} />
+          <p className="text-sm font-semibold break-all select-all">{parsedToken?.token ?? providerTransactionId}</p>
+          <CopyTokenButton value={parsedToken?.token ?? providerTransactionId} />
         </div>
       ) : null}
 

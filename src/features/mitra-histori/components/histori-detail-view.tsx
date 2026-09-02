@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ArrowLeft, Copy } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import { formatMoney } from "@/lib/formatting/money";
+import { parsePlnToken } from "@/lib/formatting/pln-token";
 import type { TransactionWithDetail } from "@/repositories/transaction.repository";
 
 const dateFormatter = new Intl.DateTimeFormat("id-ID", {
@@ -47,11 +48,13 @@ export interface HistoriDetailViewProps {
 
 // PLN's provider_transaction_id is the "sn" Digiflazz's webhook wrote
 // straight into PostgreSQL (transaction.service.ts's captureTransaction)
-// — read verbatim here, never re-fetched from Digiflazz and never
-// reformatted, so what's shown always matches what's actually stored.
+// — read verbatim here, never re-fetched from Digiflazz and never altered
+// in storage; parsePlnToken() only splits it apart for display so the
+// copyable token shows as just the number.
 export function HistoriDetailView({ historiHref, transaction }: HistoriDetailViewProps) {
   const isPln = transaction.category_name === "PLN";
   const showToken = isPln && transaction.status === "SUCCESS" && transaction.provider_transaction_id;
+  const parsedToken = showToken ? parsePlnToken(transaction.provider_transaction_id!) : null;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -80,6 +83,26 @@ export function HistoriDetailView({ historiHref, transaction }: HistoriDetailVie
             <span className="text-muted-foreground">ID Pelanggan / Nomor Tujuan</span>
             <span className="font-medium">{transaction.customer_number}</span>
           </div>
+          {parsedToken?.customerName ? (
+            <div className="flex justify-between py-3 text-sm">
+              <span className="text-muted-foreground">Nama Pelanggan</span>
+              <span className="font-medium">{parsedToken.customerName}</span>
+            </div>
+          ) : null}
+          {parsedToken?.tariff && parsedToken?.power ? (
+            <div className="flex justify-between py-3 text-sm">
+              <span className="text-muted-foreground">Tarif/Daya</span>
+              <span className="font-medium">
+                {parsedToken.tariff}/{parsedToken.power}
+              </span>
+            </div>
+          ) : null}
+          {parsedToken?.kwh ? (
+            <div className="flex justify-between py-3 text-sm">
+              <span className="text-muted-foreground">Kwh Didapat</span>
+              <span className="font-medium">{parsedToken.kwh}</span>
+            </div>
+          ) : null}
           <div className="flex justify-between py-3 text-sm">
             <span className="text-muted-foreground">Harga</span>
             <span className="font-semibold">{formatMoney(transaction.selling_price)}</span>
@@ -93,8 +116,8 @@ export function HistoriDetailView({ historiHref, transaction }: HistoriDetailVie
         {showToken ? (
           <div className="flex flex-col gap-2 rounded-xl border border-red-200 bg-red-50 p-4">
             <p className="text-xs font-semibold text-red-700">Token PLN</p>
-            <p className="text-sm font-semibold break-all select-all">{transaction.provider_transaction_id}</p>
-            <CopyTokenButton value={transaction.provider_transaction_id!} />
+            <p className="text-sm font-semibold break-all select-all">{parsedToken?.token}</p>
+            <CopyTokenButton value={parsedToken!.token} />
           </div>
         ) : null}
 

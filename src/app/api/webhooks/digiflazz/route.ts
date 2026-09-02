@@ -16,6 +16,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: "ok" }, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal memproses webhook.";
+    // Temporary diagnostic: a real Digiflazz delivery has been rejected in
+    // production with a status this handler's own known error strings
+    // don't account for. Logs only the raw body/signature/error — nothing
+    // secret — to find out which branch actually threw. Remove once the
+    // cause is confirmed.
+    console.error("[digiflazz-webhook] rejected:", { message, signature, rawBody });
     if (message.includes("Signature") || message.includes("belum dikonfigurasi")) {
       return NextResponse.json({ error: message }, { status: 401 });
     }

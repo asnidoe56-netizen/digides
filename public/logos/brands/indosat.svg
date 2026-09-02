@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="16" fill="#ffffff"/>
+  <rect x="1" y="1" width="62" height="62" rx="15" fill="none" stroke="#E8ECF1" stroke-width="1.5"/>
+  <circle cx="32" cy="24" r="9" fill="#FFD200"/>
+  <circle cx="32" cy="24" r="9" fill="none" stroke="#ED1C24" stroke-width="3"/>
+  <text x="32" y="49" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#ED1C24" text-anchor="middle" letter-spacing="0.2">indosat</text>
+</svg>

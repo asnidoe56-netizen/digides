@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { ArrowLeft, Clipboard, ShieldCheck } from "lucide-react";
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { ApiError } from "@/lib/api/client";
 import { formatMoney } from "@/lib/formatting/money";
+import { getBrandLogo } from "@/lib/brand-logo";
 import { cn } from "@/lib/utils";
 import type { Brand, Product } from "@/types/product";
 import { getTransactionBiometricOptions, listMyBiometricCredentials } from "@/features/mitra-account/services/biometric-api";
@@ -551,25 +553,34 @@ export function CategoryPurchaseFlow({
                   <p className="text-xs text-destructive">{customerIdField.invalidMessage}</p>
                 ) : null}
                 <div className="grid grid-cols-4 gap-x-2 gap-y-3 sm:gap-x-3">
-                  {filteredBrands.map((brand) => (
-                    <button
-                      key={brand.id}
-                      type="button"
-                      disabled={!isCustomerIdValid}
-                      onClick={() => handleSelectBrand(brand.id)}
-                      className={cn(
-                        "flex h-24 min-w-0 flex-col items-center justify-center gap-2 rounded-xl border p-2 text-center disabled:opacity-40",
-                        featuredBrand?.id === brand.id && "border-red-500 bg-red-50",
-                      )}
-                    >
-                      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-xs font-bold text-red-600">
-                        {brand.name.slice(0, 2).toUpperCase()}
-                      </span>
-                      <span className="line-clamp-2 w-full break-words text-[11px] leading-tight font-medium">
-                        {brand.name}
-                      </span>
-                    </button>
-                  ))}
+                  {filteredBrands.map((brand) => {
+                    const logo = getBrandLogo(brand.name);
+                    return (
+                      <button
+                        key={brand.id}
+                        type="button"
+                        disabled={!isCustomerIdValid}
+                        onClick={() => handleSelectBrand(brand.id)}
+                        className={cn(
+                          "flex h-24 min-w-0 flex-col items-center justify-center gap-2 rounded-xl border p-2 text-center disabled:opacity-40",
+                          featuredBrand?.id === brand.id && "border-red-500 bg-red-50",
+                        )}
+                      >
+                        {logo ? (
+                          <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border">
+                            <Image src={logo} alt="" width={40} height={40} className="size-full object-cover" />
+                          </span>
+                        ) : (
+                          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-xs font-bold text-red-600">
+                            {brand.name.slice(0, 2).toUpperCase()}
+                          </span>
+                        )}
+                        <span className="line-clamp-2 w-full break-words text-[11px] leading-tight font-medium">
+                          {brand.name}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
                 {!isCustomerIdValid ? (
                   <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">{customerIdField.helperMessage}</p>

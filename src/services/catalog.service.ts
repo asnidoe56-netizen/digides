@@ -5,15 +5,18 @@ import type { Brand, Category, Product } from "@/types/product";
 // A Digiflazz "Cek Nama Pengguna <Brand>" SKU (E-Money's account-holder
 // name lookup) is a real row in `products` like any other, but it isn't a
 // top-up a buyer picks a nominal for — it's a free inquiry the Verifikasi
-// Pengguna feature calls instead (see verification.service.ts). Detected
-// primarily via Digiflazz's own reported `provider_type` (populated by
-// catalog-sync.ts since migration 026); products synced before that
-// column existed, or from a provider that reports no type at all, fall
-// back to matching the product_name pattern Digiflazz consistently uses
-// for these SKUs.
+// Pengguna feature calls instead (see verification.service.ts). Digiflazz
+// does not reliably tag these with a distinctive `provider_type` in
+// practice — real synced rows have come through as the same generic type
+// ("Umum") an ordinary top-up gets, which made `provider_type` alone
+// silently miss every verification SKU production actually syncs. The
+// product_name pattern Digiflazz consistently uses for these SKUs is
+// checked unconditionally now (not just as a fallback when provider_type
+// is empty), with a same-intent provider_type match as a second, additive
+// signal rather than a gate that can skip the name check entirely.
 export function isNameVerificationProduct(product: Pick<Product, "provider_type" | "product_name">): boolean {
-  if (product.provider_type) {
-    return product.provider_type.toLowerCase().includes("cek nama");
+  if (product.provider_type?.toLowerCase().includes("cek nama")) {
+    return true;
   }
   return /cek\s*nama/i.test(product.product_name);
 }

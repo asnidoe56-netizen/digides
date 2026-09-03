@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { CheckCircle2, Clock, Copy, XCircle } from "lucide-react";
+import { CheckCircle2, Clock, Copy, Loader2, XCircle } from "lucide-react";
 import { formatMoney } from "@/lib/formatting/money";
 import { parsePlnToken } from "@/lib/formatting/pln-token";
 
@@ -88,6 +88,14 @@ export function PurchaseResultScreen({
   timedOut,
 }: PurchaseResultScreenProps) {
   const { icon: Icon, color, title } = STATUS_CONFIG[status];
+  // Bagian 8's bounded poll is still actively watching (hasn't timed out)
+  // — a spinning icon here keeps the "still working on it" feel going
+  // continuously from the PIN screen's own spinner, instead of the static
+  // clock reading as "stalled". Once polling gives up (timedOut), the
+  // static clock is the honest signal: we're no longer watching, go check
+  // Histori instead of staring at a spinner that will never resolve here.
+  const isPendingActive = status === "PENDING" && !timedOut;
+  const DisplayIcon = isPendingActive ? Loader2 : Icon;
 
   // "PLN PLN 20.000" reads as a typo when the category and its only
   // brand share the same name (PLN has no separate providers) — collapse
@@ -101,7 +109,7 @@ export function PurchaseResultScreen({
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 p-6 text-center">
-      <Icon className={`size-16 ${color}`} />
+      <DisplayIcon className={`size-16 ${color} ${isPendingActive ? "animate-spin" : ""}`} />
       <div>
         <h1 className="text-lg font-semibold">{title}</h1>
         <p className="mt-1 text-sm text-muted-foreground">

@@ -1,9 +1,11 @@
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
 import { MoneyDisplay } from "@/components/money-display";
 import { PageHeader } from "@/components/page-header";
 import { getRecentActivity, getSuperAdminDashboardSummary } from "@/services/dashboard.service";
 import { getDigiflazzBalanceForDisplay } from "@/services/digiflazz.service";
+import { getTransactionProfitSummary } from "@/services/transaction.service";
 
 // This page reads live counts/balances straight from the database on every
 // request — it must never be statically prerendered at build time (Next.js
@@ -16,10 +18,11 @@ export const dynamic = "force-dynamic";
 // (that HTTP boundary exists for Client Components, not for a page that's
 // already server-side). See M03 planning doc section 7-8.
 export default async function SuperAdminDashboardPage() {
-  const [summary, recentActivity, digiflazzBalance] = await Promise.all([
+  const [summary, recentActivity, digiflazzBalance, profitSummary] = await Promise.all([
     getSuperAdminDashboardSummary(),
     getRecentActivity(5),
     getDigiflazzBalanceForDisplay(),
+    getTransactionProfitSummary(),
   ]);
 
   return (
@@ -57,6 +60,19 @@ export default async function SuperAdminDashboardPage() {
             )}
           </CardContent>
         </Card>
+        <Link href="/dashboard/super-admin/keuntungan" className="block">
+          <Card className="h-full transition-colors hover:bg-accent/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Keuntungan</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <MoneyDisplay amount={profitSummary.total_profit} size="lg" className="text-status-success" />
+              <p className="text-xs text-muted-foreground">
+                {profitSummary.count} transaksi berhasil · sepanjang waktu
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       <div className="flex flex-col gap-3">

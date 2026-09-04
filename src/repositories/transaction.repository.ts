@@ -304,6 +304,52 @@ export async function sumTransactionVolume(
   return { count: Number(result.rows[0].count), total_value: result.rows[0].total_value ?? "0" };
 }
 
+export interface TransactionProfitSummary {
+  count: number;
+  /** Sum of base_price — what Digiflazz actually charged us. */
+  total_base: string;
+  /** Sum of selling_price — what the mitra was charged (base + markup). */
+  total_selling: string;
+  /** total_selling - total_base — the platform's margin on these transactions. */
+  total_profit: string;
+}
+
+// The Keuntungan menu's headline metric: base_price is what Digiflazz
+// billed us for a product, selling_price is base_price plus whatever
+// Markup added on top (see markup_rules) — the gap between them, summed
+// over every completed (SUCCESS) purchase in the filtered window, is the
+// platform's actual profit. Same filter shape/reasoning as
+// sumTransactionVolume (status always pinned to SUCCESS — a failed or
+// still-reserved transaction never actually earned anything).
+export async function sumTransactionProfit(
+  filter: Omit<ListTransactionsFilter, "status" | "search" | "limit" | "offset"> = {},
+  db: Queryable = pool,
+): Promise<TransactionProfitSummary> {
+  const { where, params } = buildTransactionFilterConditions({ ...filter, status: "SUCCESS" });
+  const result = await db.query<{
+    count: string;
+    total_base: string | null;
+    total_selling: string | null;
+    total_profit: string | null;
+  }>(
+    `SELECT COUNT(*) AS count,
+            COALESCE(SUM(t.base_price), 0) AS total_base,
+            COALESCE(SUM(t.selling_price), 0) AS total_selling,
+            COALESCE(SUM(t.selling_price - t.base_price), 0) AS total_profit
+     FROM transactions t
+     ${OWNER_JOIN}
+     ${where}`,
+    params,
+  );
+  const row = result.rows[0];
+  return {
+    count: Number(row.count),
+    total_base: row.total_base ?? "0",
+    total_selling: row.total_selling ?? "0",
+    total_profit: row.total_profit ?? "0",
+  };
+}
+
 // The Transaksi Tertahan page's headline metric — count and total selling
 // value of transactions still stuck in RESERVED (funds held but neither
 // debited nor released back to the wallet).

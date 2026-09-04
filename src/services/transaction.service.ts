@@ -20,6 +20,7 @@ import {
   findTransactionWithDetailById,
   recordTransactionEvent,
   sumReservedTransactions,
+  sumTransactionProfit,
   transitionTransactionStatus,
   type ListTransactionsFilter,
 } from "@/repositories/transaction.repository";
@@ -44,6 +45,12 @@ export async function getTransactionDetail(id: string) {
 
 export async function getReservedTransactionsSummary() {
   return sumReservedTransactions();
+}
+
+export async function getTransactionProfitSummary(
+  filter: Omit<ListTransactionsFilter, "status" | "search" | "limit" | "offset"> = {},
+) {
+  return sumTransactionProfit(filter);
 }
 
 // A buyer confirms a purchase by typing their transaction PIN, or — once

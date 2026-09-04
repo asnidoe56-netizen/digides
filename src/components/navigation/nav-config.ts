@@ -16,6 +16,7 @@ import {
   Share2,
   Shield,
   Tags,
+  TrendingUp,
   Users,
   Wallet,
 } from "lucide-react";
@@ -46,6 +47,7 @@ export const NAV_ITEMS: Record<RoleCode, NavItem[]> = {
     { label: "Referral", href: "/dashboard/super-admin/referrals", icon: Share2 },
     { label: "Komisi", href: "/dashboard/super-admin/commissions", icon: Coins },
     { label: "Laporan", href: "/dashboard/super-admin/reports", icon: FileBarChart2 },
+    { label: "Keuntungan", href: "/dashboard/super-admin/keuntungan", icon: TrendingUp },
     { label: "Rekonsiliasi", href: "/dashboard/super-admin/reconciliation", icon: Scale },
     { label: "Audit Log", href: "/dashboard/super-admin/audit-logs", icon: ClipboardList },
     { label: "Tim Support", href: "/dashboard/super-admin/support", icon: LifeBuoy },

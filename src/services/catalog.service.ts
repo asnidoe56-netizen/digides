@@ -14,11 +14,21 @@ import type { Brand, Category, Product } from "@/types/product";
 // checked unconditionally now (not just as a fallback when provider_type
 // is empty), with a same-intent provider_type match as a second, additive
 // signal rather than a gate that can skip the name check entirely.
+//
+// "Cek Nama" isn't the only wording Digiflazz uses for this same kind of
+// free inquiry SKU — Games brands sync theirs as "Cek Username" (confirmed
+// in production: "Mobile Legends Cek Username"), which the "cek nama"-only
+// pattern never matched, so it fell through and sat in the ordinary
+// nominal list as a purchasable ~Rp6 product instead of driving Verifikasi
+// Pengguna like its E-Money/PLN counterparts do. Matched here as a second,
+// equally-valid alternative — additive, same as the provider_type check
+// above, never a replacement for the original "cek nama" pattern.
 export function isNameVerificationProduct(product: Pick<Product, "provider_type" | "product_name">): boolean {
-  if (product.provider_type?.toLowerCase().includes("cek nama")) {
+  const providerType = product.provider_type?.toLowerCase();
+  if (providerType?.includes("cek nama") || providerType?.includes("cek username")) {
     return true;
   }
-  return /cek\s*nama/i.test(product.product_name);
+  return /cek\s*(nama|username)/i.test(product.product_name);
 }
 
 export interface CategoryPurchaseCatalog {

@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/empty-state";
 import { MoneyDisplay } from "@/components/money-display";
 import { PageHeader } from "@/components/page-header";
 import { getRecentActivity, getSuperAdminDashboardSummary } from "@/services/dashboard.service";
+import { getDigiflazzBalanceForDisplay } from "@/services/digiflazz.service";
 
 // This page reads live counts/balances straight from the database on every
 // request — it must never be statically prerendered at build time (Next.js
@@ -15,9 +16,10 @@ export const dynamic = "force-dynamic";
 // (that HTTP boundary exists for Client Components, not for a page that's
 // already server-side). See M03 planning doc section 7-8.
 export default async function SuperAdminDashboardPage() {
-  const [summary, recentActivity] = await Promise.all([
+  const [summary, recentActivity, digiflazzBalance] = await Promise.all([
     getSuperAdminDashboardSummary(),
     getRecentActivity(5),
+    getDigiflazzBalanceForDisplay(),
   ]);
 
   return (
@@ -36,6 +38,23 @@ export default async function SuperAdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <MoneyDisplay amount={summary.totalPlatformBalance} size="lg" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Saldo Digiflazz
+              {digiflazzBalance.mode ? ` (${digiflazzBalance.mode})` : ""}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {digiflazzBalance.success ? (
+              <MoneyDisplay amount={digiflazzBalance.balance ?? 0} size="lg" />
+            ) : (
+              <p className="text-sm text-destructive">
+                {digiflazzBalance.message ?? "Gagal memuat saldo Digiflazz."}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

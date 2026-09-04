@@ -4,6 +4,7 @@ import {
 } from "@/repositories/product.repository";
 import { decryptSecret, encryptSecret, maskSecret } from "@/lib/crypto/credentials";
 import { fetchDigiflazzPriceList } from "@/lib/digiflazz/price-list";
+import { fetchDigiflazzBalance } from "@/lib/digiflazz/balance";
 import type { DigiflazzMode } from "@/types/product";
 
 export interface DigiflazzSettingsView {
@@ -132,6 +133,45 @@ export async function testDigiflazzConnection(): Promise<DigiflazzConnectionTest
     return {
       success: false,
       message: error instanceof Error ? error.message : "Gagal terhubung ke Digiflazz.",
+    };
+  }
+}
+
+export interface DigiflazzBalanceView {
+  success: boolean;
+  balance?: number;
+  mode?: DigiflazzMode;
+  message?: string;
+}
+
+// The Dashboard's "Saldo Digiflazz" card — a live call to Digiflazz's own
+// /cek-saldo on every page load (never a cached/stored figure), same
+// "always call the real API, never guess" spirit as testDigiflazzConnection.
+// Never throws: a missing-credentials or Digiflazz-side failure becomes
+// success: false with a message, so one bad call doesn't take down the
+// rest of the dashboard.
+export async function getDigiflazzBalanceForDisplay(): Promise<DigiflazzBalanceView> {
+  const credentials = await getActiveDigiflazzCredentials();
+
+  if (!credentials) {
+    return {
+      success: false,
+      message: "Kredensial Digiflazz belum diatur atau tidak aktif.",
+    };
+  }
+
+  try {
+    const balance = await fetchDigiflazzBalance({
+      baseUrl: credentials.baseUrl,
+      username: credentials.username,
+      apiKey: credentials.apiKey,
+    });
+    return { success: true, balance, mode: credentials.mode };
+  } catch (error) {
+    return {
+      success: false,
+      mode: credentials.mode,
+      message: error instanceof Error ? error.message : "Gagal memuat saldo Digiflazz.",
     };
   }
 }

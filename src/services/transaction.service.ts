@@ -9,7 +9,7 @@ import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 import { awardCommissionForTransaction } from "@/services/commission.service";
 import { findBrandById, findCategoryById, findProductById } from "@/repositories/product.repository";
 import { getLiveProductPricing } from "@/services/pricing.service";
-import { postLedgerEntry } from "@/repositories/wallet.repository";
+import { getTransactionBalanceSummary, postLedgerEntry } from "@/repositories/wallet.repository";
 import {
   createTransaction,
   findTransactionById,
@@ -36,7 +36,10 @@ export async function getTransactionCount(filter: ListTransactionsFilter = {}) {
 
 export async function getTransactionDetail(id: string) {
   const [transaction, events] = await Promise.all([findTransactionWithDetailById(id), listTransactionEvents(id)]);
-  return { transaction, events };
+  // Histori's "Saldo Awal / Total Bayar / Saldo Akhir" summary — reads
+  // wallet_ledger, never touches the RESERVE/DEBIT/RELEASE write path.
+  const balanceSummary = transaction ? await getTransactionBalanceSummary(id) : null;
+  return { transaction, events, balanceSummary };
 }
 
 export async function getReservedTransactionsSummary() {

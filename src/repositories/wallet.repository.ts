@@ -310,6 +310,43 @@ export async function listLedgerForWallet(
   return result.rows;
 }
 
+export interface TransactionBalanceSummary {
+  /** available_balance right before this transaction touched anything —
+   *  the RESERVE entry's balance_before, always the first ledger row
+   *  posted for a transaction_id (transaction.service.ts's executeTransaction). */
+  balance_before: string;
+  /** available_balance as of the most recent ledger entry for this
+   *  transaction: still the RESERVE's balance_after while status is
+   *  PENDING/RESERVED (provisional — available_balance doesn't move again
+   *  until the transaction resolves), the DEBIT's balance_after once
+   *  SUCCESS (equal to the RESERVE's, since DEBIT only converts the hold
+   *  into a permanent deduction), or the RELEASE's balance_after once
+   *  FAILED (back to balance_before, since a release fully refunds the
+   *  hold). Caller decides how to label a still-provisional value using
+   *  the transaction's own status — this only reports what the ledger has
+   *  recorded so far. */
+  balance_after: string;
+}
+
+// Read-only lookup for Histori's transaction detail — never used by, and
+// never touches, the RESERVE/DEBIT/RELEASE write path itself (postLedgerEntry
+// above), which stays exactly as locked in FLOW_KERJA_DAN_BATASAN_KERJA_TRANSAKSI.md.
+export async function getTransactionBalanceSummary(
+  transactionId: string,
+  db: Queryable = pool,
+): Promise<TransactionBalanceSummary | null> {
+  const result = await db.query<Pick<WalletLedgerEntry, "balance_before" | "balance_after">>(
+    `SELECT balance_before, balance_after FROM wallet_ledger
+     WHERE transaction_id = $1 ORDER BY created_at ASC`,
+    [transactionId],
+  );
+  if (result.rows.length === 0) return null;
+  return {
+    balance_before: result.rows[0].balance_before,
+    balance_after: result.rows[result.rows.length - 1].balance_after,
+  };
+}
+
 // Health-check for the reconciliation job — the ledger must always sum to
 // the wallet's current available_balance. Any mismatch is a bug, not
 // something this function fixes.

@@ -22,12 +22,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Transaksi tidak ditemukan" }, { status: 404 });
   }
 
-  const { transaction } = await getTransactionDetail(id);
+  const { transaction, balanceSummary } = await getTransactionDetail(id);
   // Same "tidak ditemukan" for a real 404 and an ownership mismatch —
   // never reveal that a transaction id exists but belongs to someone else.
   if (!transaction || transaction.wallet_id !== wallet.id) {
     return NextResponse.json({ error: "Transaksi tidak ditemukan" }, { status: 404 });
   }
 
-  return NextResponse.json({ transaction });
+  return NextResponse.json({ transaction, balance_summary: balanceSummary });
 }

@@ -33,6 +33,7 @@ export default async function KonterGamesPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Games"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/konter/dashboard"
       brands={catalog.brands}
       products={catalog.products}

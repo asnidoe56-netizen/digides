@@ -20,6 +20,7 @@ export default async function BumdesAktivasiPerdanaPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Aktivasi Perdana"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/bumdes/dashboard"
       brands={catalog.brands}
       products={catalog.products}

@@ -20,6 +20,7 @@ export default async function KonterMasaAktifPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Masa Aktif"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/konter/dashboard"
       brands={catalog.brands}
       products={catalog.products}

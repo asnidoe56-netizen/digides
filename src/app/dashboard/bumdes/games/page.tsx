@@ -33,6 +33,7 @@ export default async function BumdesGamesPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Games"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/bumdes/dashboard"
       brands={catalog.brands}
       products={catalog.products}

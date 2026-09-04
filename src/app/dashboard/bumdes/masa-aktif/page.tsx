@@ -20,6 +20,7 @@ export default async function BumdesMasaAktifPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Masa Aktif"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/bumdes/dashboard"
       brands={catalog.brands}
       products={catalog.products}

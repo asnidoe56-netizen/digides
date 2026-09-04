@@ -24,6 +24,7 @@ export default async function BumdesTvPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="TV"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/bumdes/dashboard"
       brands={catalog.brands}
       products={catalog.products}

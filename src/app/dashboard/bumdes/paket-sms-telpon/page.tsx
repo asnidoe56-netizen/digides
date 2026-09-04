@@ -20,6 +20,7 @@ export default async function BumdesPaketSmsTelponPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Paket SMS & Telpon"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/bumdes/dashboard"
       brands={catalog.brands}
       products={catalog.products}

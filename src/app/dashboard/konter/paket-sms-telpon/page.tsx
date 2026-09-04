@@ -20,6 +20,7 @@ export default async function KonterPaketSmsTelponPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Paket SMS & Telpon"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/konter/dashboard"
       brands={catalog.brands}
       products={catalog.products}

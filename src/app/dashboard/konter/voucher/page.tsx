@@ -20,6 +20,7 @@ export default async function KonterVoucherPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Voucher"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/konter/dashboard"
       brands={catalog.brands}
       products={catalog.products}

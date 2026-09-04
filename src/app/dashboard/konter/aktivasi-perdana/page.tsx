@@ -20,6 +20,7 @@ export default async function KonterAktivasiPerdanaPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Aktivasi Perdana"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/konter/dashboard"
       brands={catalog.brands}
       products={catalog.products}

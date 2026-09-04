@@ -24,6 +24,7 @@ export default async function BumdesGasPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Gas"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/bumdes/dashboard"
       brands={catalog.brands}
       products={catalog.products}

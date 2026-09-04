@@ -20,6 +20,7 @@ export default async function BumdesVoucherPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Voucher"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/bumdes/dashboard"
       brands={catalog.brands}
       products={catalog.products}

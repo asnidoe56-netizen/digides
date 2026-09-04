@@ -24,6 +24,7 @@ export default async function KonterTvPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="TV"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/konter/dashboard"
       brands={catalog.brands}
       products={catalog.products}

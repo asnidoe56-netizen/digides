@@ -20,6 +20,7 @@ export default async function KonterAktivasiVoucherPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Aktivasi Voucher"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/konter/dashboard"
       brands={catalog.brands}
       products={catalog.products}

@@ -24,6 +24,7 @@ export default async function KonterGasPage() {
   return (
     <CategoryPurchaseFlow
       categoryName="Gas"
+      showMerchandisingTabs={false}
       homeHref="/dashboard/konter/dashboard"
       brands={catalog.brands}
       products={catalog.products}

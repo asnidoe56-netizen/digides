@@ -16,14 +16,27 @@ export interface CreateUserInput {
   password_hash: string;
   full_name: string;
   phone?: string | null;
+  /** Only set for self-registration (POST /api/auth/register), which is
+   *  gated on agreeing to the Syarat & Ketentuan — left null for accounts
+   *  an admin provisions directly (registerMitra), which has no consent
+   *  screen of its own. */
+  terms_accepted_at?: Date | null;
+  terms_version?: string | null;
 }
 
 export async function createUser(input: CreateUserInput, db: Queryable = pool): Promise<User> {
   const result = await db.query<User>(
-    `INSERT INTO users (email, password_hash, full_name, phone)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO users (email, password_hash, full_name, phone, terms_accepted_at, terms_version)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [input.email, input.password_hash, input.full_name, input.phone ?? null],
+    [
+      input.email,
+      input.password_hash,
+      input.full_name,
+      input.phone ?? null,
+      input.terms_accepted_at ?? null,
+      input.terms_version ?? null,
+    ],
   );
   return result.rows[0];
 }

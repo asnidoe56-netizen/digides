@@ -2,9 +2,11 @@ import { PageHeader } from "@/components/page-header";
 import { SettingsTabs, type SettingsTabKey } from "@/features/settings";
 import { DigiflazzSettingsForm, ServerIpCard } from "@/features/digiflazz";
 import { MidtransSettingsForm } from "@/features/midtrans";
+import { SupportSettingsForm } from "@/features/support-settings";
 import { getDigiflazzSettingsForDisplay } from "@/services/digiflazz.service";
 import { getMidtransSettingsForDisplay } from "@/services/midtrans.service";
 import { getServerPublicIp } from "@/services/network-info.service";
+import { getSupportSettings } from "@/repositories/support-settings.repository";
 
 // Reads live, never cached — credential state (is a key set? which mode is
 // active?) must always reflect what's actually in the database.
@@ -15,7 +17,7 @@ interface SuperAdminSettingsPageProps {
 }
 
 function isValidTab(value: string | undefined): value is SettingsTabKey {
-  return value === "digiflazz" || value === "midtrans";
+  return value === "digiflazz" || value === "midtrans" || value === "support";
 }
 
 export default async function SuperAdminSettingsPage({ searchParams }: SuperAdminSettingsPageProps) {
@@ -33,6 +35,30 @@ export default async function SuperAdminSettingsPage({ searchParams }: SuperAdmi
 
       {tab === "digiflazz" ? <DigiflazzTab /> : null}
       {tab === "midtrans" ? <MidtransTab /> : null}
+      {tab === "support" ? <SupportTab /> : null}
+    </div>
+  );
+}
+
+// support_settings.whatsapp_number is stored international ("6281...") so
+// every reader can build a wa.me link with no normalization of its own —
+// converted back to the locally-familiar "08xx" shape only here, for the
+// form field an admin actually looks at and edits.
+function toLocalFormat(internationalNumber: string): string {
+  return internationalNumber.startsWith("62") ? `0${internationalNumber.slice(2)}` : internationalNumber;
+}
+
+async function SupportTab() {
+  const settings = await getSupportSettings();
+
+  return (
+    <div className="flex flex-col gap-6">
+      <p className="max-w-lg text-sm text-muted-foreground">
+        Nomor WhatsApp yang dibuka saat pengguna menekan ikon tanda tanya di Beranda aplikasi Mitra —
+        ganti di sini kapan saja, tidak perlu rilis aplikasi baru.
+      </p>
+
+      <SupportSettingsForm initialWhatsappNumber={toLocalFormat(settings.whatsapp_number)} />
     </div>
   );
 }

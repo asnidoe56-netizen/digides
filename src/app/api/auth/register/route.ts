@@ -7,6 +7,7 @@ import { recordAuditLog } from "@/repositories/audit.repository";
 import { hashPassword } from "@/lib/auth/password";
 import { hashPin } from "@/lib/auth/pin";
 import { withTransaction } from "@/lib/db/transaction";
+import { CURRENT_TERMS_VERSION } from "@/lib/legal/terms";
 
 // Public self-registration always lands as AFFILIATE — SUPER_ADMIN,
 // BUMDES_ADMIN, and KONTER accounts are provisioned by an admin, not
@@ -53,7 +54,17 @@ export async function POST(request: Request) {
   // shouldn't leave a user with no role, no wallet, no PIN, or a silently
   // dropped referral.
   const user = await withTransaction(async (client) => {
-    const createdUser = await createUser({ email, password_hash, full_name, phone: phone || null }, client);
+    const createdUser = await createUser(
+      {
+        email,
+        password_hash,
+        full_name,
+        phone: phone || null,
+        terms_accepted_at: new Date(),
+        terms_version: CURRENT_TERMS_VERSION,
+      },
+      client,
+    );
     await assignRole(createdUser.id, DEFAULT_ROLE, client);
     await provisionWalletForAccount({ account_type: "USER", user_id: createdUser.id }, client);
     await createTransactionPin(createdUser.id, pin_hash, client);

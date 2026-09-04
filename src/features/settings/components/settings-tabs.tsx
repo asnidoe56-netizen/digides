@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-export type SettingsTabKey = "digiflazz" | "midtrans";
+export type SettingsTabKey = "digiflazz" | "midtrans" | "support";
 
 const TABS: Array<{ key: SettingsTabKey; label: string }> = [
   { key: "digiflazz", label: "Digiflazz" },
   { key: "midtrans", label: "Midtrans" },
+  { key: "support", label: "Bantuan" },
 ];
 
 export interface SettingsTabsProps {

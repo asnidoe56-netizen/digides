@@ -25,6 +25,13 @@ export const registerServerSchema = z.object({
   // An existing referral_codes.code — its owner becomes this account's
   // referrer in referral_relationships (mirrors register-mitra.schema.ts).
   referralCode: z.string().trim().max(50).optional().or(z.literal("")),
+  // Pasal 39 of the Syarat & Ketentuan: registration may only proceed after
+  // the user has agreed. The client shows the terms and only sends `true`
+  // once the user taps "Saya Setuju" — the server still refuses anything
+  // else, never trusting the client to have actually shown that screen.
+  agreedToTerms: z.literal(true, {
+    message: "Anda harus menyetujui Syarat & Ketentuan",
+  }),
 });
 
 export const registerFormSchema = registerServerSchema

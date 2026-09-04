@@ -14,6 +14,11 @@ export interface User {
    *  security_policies.max_devices_per_user. Null means "use the platform
    *  default". See security.service.ts's getEffectiveDeviceLimit. */
   max_active_devices: number | null;
+  /** Which Syarat & Ketentuan version this user agreed to at self-
+   *  registration, and when — null for accounts an admin provisioned
+   *  (registerMitra), which never goes through that consent screen. */
+  terms_accepted_at: Date | null;
+  terms_version: string | null;
   created_at: Date;
   updated_at: Date;
 }

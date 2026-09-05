@@ -39,17 +39,19 @@ SET account_number = d.bank_account_number, account_name = d.bank_account_name, 
 FROM manual_topup_destinations d
 WHERE manual_payment_methods.code = UPPER(TRIM(d.bank_name)) AND d.bank_account_number <> 'BELUM DIATUR';
 
+-- Widen the CHECK first — the old one only allowed ('DANA','TRANSFER_BANK')
+-- and would reject the specific-bank-code UPDATE below before it ever ran.
+ALTER TABLE payments DROP CONSTRAINT payments_manual_channel_check;
+ALTER TABLE payments ADD CONSTRAINT payments_manual_channel_check
+  CHECK (manual_channel IN ('DANA', 'GOPAY', 'MANDIRI', 'BRI', 'BCA'));
+
 -- Existing MANUAL payments recorded before per-bank codes existed used the
 -- generic 'TRANSFER_BANK' tag — repoint them at whichever bank was
 -- actually configured at the time, so history stays accurate instead of
--- becoming an orphaned value the new CHECK constraint would reject.
+-- becoming an orphaned value the new CHECK constraint would otherwise reject.
 UPDATE payments p
 SET manual_channel = UPPER(TRIM(d.bank_name))
 FROM manual_topup_destinations d
 WHERE p.manual_channel = 'TRANSFER_BANK';
-
-ALTER TABLE payments DROP CONSTRAINT payments_manual_channel_check;
-ALTER TABLE payments ADD CONSTRAINT payments_manual_channel_check
-  CHECK (manual_channel IN ('DANA', 'GOPAY', 'MANDIRI', 'BRI', 'BCA'));
 
 DROP TABLE manual_topup_destinations;

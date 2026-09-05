@@ -4,7 +4,10 @@ import {
   createCommissionLedgerEntry,
   createCommissionPayout,
   createCommissionRule,
+  deactivateUniversalCommissionRuleForCategory,
+  findActiveCommissionRuleByCategoryAndHolderStatus,
   findCommissionRuleById,
+  getCommissionSettings as getCommissionSettingsRow,
   listActiveCommissionRules,
   listCommissionLedgerForBeneficiary,
   listCommissionLedgerForBeneficiaryDetail,
@@ -12,55 +15,133 @@ import {
   listCommissionPayouts,
   listCommissionRules,
   listSettleableCommissionLedgerIds,
+  markCommissionAutoRunMonth,
   markCommissionAvailable,
   markCommissionLedgerPaid,
   markCommissionPayoutStatus,
   summarizeAvailableCommissionByBeneficiary,
   summarizeCommissionForBeneficiary,
   updateCommissionRule,
-  type CreateCommissionRuleInput,
+  updateCommissionSettings,
   type ListCommissionLedgerFilter,
 } from "@/repositories/commission.repository";
 import { findProductById } from "@/repositories/product.repository";
 import { findRelationshipByReferredUser, findReferralCodeByUserId } from "@/repositories/referral.repository";
 import { findTransactionById } from "@/repositories/transaction.repository";
 import { getOwningUserId, getWalletByOwningUserId, postLedgerEntry } from "@/repositories/wallet.repository";
-import type { CommissionLedgerEntry, CommissionRule } from "@/types/commission";
+import type { CommissionLedgerEntry, CommissionRule, CommissionType } from "@/types/commission";
 import type { ReferralCodeHolderStatus } from "@/types/referral";
 
 export async function getCommissionRules() {
   return listCommissionRules();
 }
 
-export async function saveCommissionRule(
-  input: CreateCommissionRuleInput,
+export interface SaveCommissionRuleForCategoryInput {
+  eligibleCategoryId: string | null;
+  commissionType: CommissionType;
+  /** Reward a direct downline's transaction pays this category's USER-tier
+   *  referrer — null/0 means USER referrers earn nothing for this category. */
+  userAmount: number | null;
+  /** Same, for MITRA-tier referrers. */
+  mitraAmount: number | null;
+  minTransaction: number | null;
+  maxCommission: number | null;
+  minPayout: number;
+  holdingPeriodDays: number;
+}
+
+// The Aturan tab's editor — one form sets both tiers' reward for one
+// category at once, rather than an admin having to create two separate
+// rules and keep their shared fields (holding period, min/max) in sync by
+// hand. Superseding a pre-existing NULL-holder_status ("applies to both")
+// legacy rule for this category is intentional: see
+// deactivateUniversalCommissionRuleForCategory.
+export async function saveCommissionRuleForCategory(
+  input: SaveCommissionRuleForCategoryInput,
   actorUserId: string,
-  ruleId?: string,
-  isActive: boolean = true,
 ) {
-  const rule = ruleId
-    ? await updateCommissionRule(ruleId, { ...input, is_active: isActive })
-    : await createCommissionRule(input);
+  const shared = {
+    level: 1,
+    commission_type: input.commissionType,
+    min_transaction: input.minTransaction,
+    min_payout: input.minPayout,
+    holding_period_days: input.holdingPeriodDays,
+    eligible_category_id: input.eligibleCategoryId,
+    max_commission: input.maxCommission,
+  };
 
-  if (!rule) {
-    throw new Error("Aturan komisi tidak ditemukan");
-  }
+  return withTransaction(async (client) => {
+    await deactivateUniversalCommissionRuleForCategory(input.eligibleCategoryId, client);
 
-  await recordAuditLog({
-    actor_user_id: actorUserId,
-    action: ruleId ? "COMMISSION_RULE_UPDATED" : "COMMISSION_RULE_CREATED",
-    entity: "commission_rules",
-    entity_id: rule.id,
-    new_value: {
-      commission_type: rule.commission_type,
-      percentage: rule.percentage,
-      flat_amount: rule.flat_amount,
-      applies_to_holder_status: rule.applies_to_holder_status,
-      eligible_category_id: rule.eligible_category_id,
-    },
+    async function saveTier(holderStatus: ReferralCodeHolderStatus, amount: number | null): Promise<CommissionRule | null> {
+      const existing = await findActiveCommissionRuleByCategoryAndHolderStatus(input.eligibleCategoryId, holderStatus, client);
+      const hasAmount = amount != null && amount > 0;
+
+      if (!hasAmount) {
+        if (!existing) return null;
+        // Deactivating only — the amount fields must stay whatever they
+        // already were (never re-derived from the form's, possibly just
+        // changed, commissionType), or a PERCENTAGE row could end up with
+        // a non-null flat_amount/null percentage and trip the
+        // commission_rules_amount_matches_type CHECK constraint.
+        return updateCommissionRule(
+          existing.id,
+          {
+            level: shared.level,
+            commission_type: existing.commission_type,
+            percentage: existing.percentage,
+            flat_amount: existing.flat_amount,
+            applies_to_holder_status: holderStatus,
+            min_transaction: shared.min_transaction,
+            min_payout: shared.min_payout,
+            holding_period_days: shared.holding_period_days,
+            eligible_category_id: shared.eligible_category_id,
+            max_commission: shared.max_commission,
+            is_active: false,
+          },
+          client,
+        );
+      }
+
+      const amountFields =
+        input.commissionType === "FLAT" ? { percentage: null, flat_amount: amount } : { percentage: amount, flat_amount: null };
+
+      if (existing) {
+        return updateCommissionRule(
+          existing.id,
+          { ...shared, ...amountFields, applies_to_holder_status: holderStatus, is_active: true },
+          client,
+        );
+      }
+      return createCommissionRule({ ...shared, ...amountFields, applies_to_holder_status: holderStatus }, client);
+    }
+
+    // Sequential, not Promise.all — both calls share one `client`, and a
+    // pooled connection can't run two queries concurrently on it.
+    const userRule = await saveTier("USER", input.userAmount);
+    const mitraRule = await saveTier("MITRA", input.mitraAmount);
+
+    const loggedEntityId = userRule?.id ?? mitraRule?.id;
+    if (loggedEntityId) {
+      await recordAuditLog(
+        {
+          actor_user_id: actorUserId,
+          action: "COMMISSION_RULE_SAVED",
+          entity: "commission_rules",
+          entity_id: loggedEntityId,
+          new_value: {
+            eligible_category_id: input.eligibleCategoryId,
+            commission_type: input.commissionType,
+            user_amount: input.userAmount,
+            mitra_amount: input.mitraAmount,
+          },
+        },
+        client,
+      );
+    }
+
+    return { userRule, mitraRule };
   });
-
-  return rule;
 }
 
 export async function setCommissionRuleActive(ruleId: string, isActive: boolean, actorUserId: string) {
@@ -238,9 +319,10 @@ export async function awardCommissionForTransaction(
 }
 
 // PENDING -> AVAILABLE once a commission's holding period has passed —
-// there's no cron/job runner in this app yet, so this is triggered by an
-// explicit "Proses Komisi Tertunda" action on the Ledger tab.
-export async function settlePendingCommissions(actorUserId: string): Promise<number> {
+// triggered either by an explicit "Proses Komisi Tertunda"/"Proses Bulan
+// Ini" admin action (actorUserId set) or by the unattended monthly job
+// (actorUserId null, same convention as pending-transaction-check).
+export async function settlePendingCommissions(actorUserId: string | null): Promise<number> {
   const ids = await listSettleableCommissionLedgerIds();
   if (ids.length === 0) {
     return 0;
@@ -265,10 +347,10 @@ export async function settlePendingCommissions(actorUserId: string): Promise<num
 }
 
 // Cashes out every AVAILABLE commission_ledger entry a beneficiary has
-// into their own wallet — a direct, admin-authoritative action (same
-// shape as sendTopupToMitra), always via postLedgerEntry(type="COMMISSION")
-// so the credit is ledgered, never a raw balance write.
-export async function payCommissionToBeneficiary(beneficiaryUserId: string, actorUserId: string) {
+// into their own wallet, always via postLedgerEntry(type="COMMISSION") so
+// the credit is ledgered, never a raw balance write. actorUserId is null
+// for the unattended monthly job, matching settlePendingCommissions.
+export async function payCommissionToBeneficiary(beneficiaryUserId: string, actorUserId: string | null) {
   const availableEntries = await listCommissionLedgerForBeneficiary(beneficiaryUserId, "AVAILABLE");
   const total = availableEntries.reduce((sum, entry) => sum + Number(entry.amount), 0);
   if (total <= 0) {
@@ -287,7 +369,7 @@ export async function payCommissionToBeneficiary(beneficiaryUserId: string, acto
       walletId: wallet.id,
       type: "COMMISSION",
       amount: total,
-      channel: "ADMIN",
+      channel: actorUserId ? "ADMIN" : "SYSTEM",
       reference: payout.id,
       createdBy: actorUserId,
     });
@@ -315,4 +397,69 @@ export async function payCommissionToBeneficiary(beneficiaryUserId: string, acto
 
     return { payout: paidPayout ?? payout, wallet: updatedWallet, ledgerEntry };
   });
+}
+
+export async function getCommissionSettings() {
+  return getCommissionSettingsRow();
+}
+
+export interface SetCommissionAutoPayoutInput {
+  autoPayoutEnabled: boolean;
+  payoutDayOfMonth: number;
+}
+
+export async function setCommissionAutoPayout(input: SetCommissionAutoPayoutInput, actorUserId: string) {
+  const current = await getCommissionSettingsRow();
+  const settings = await updateCommissionSettings(
+    current.id,
+    { auto_payout_enabled: input.autoPayoutEnabled, payout_day_of_month: input.payoutDayOfMonth },
+    actorUserId,
+  );
+
+  await recordAuditLog({
+    actor_user_id: actorUserId,
+    action: input.autoPayoutEnabled ? "COMMISSION_AUTO_PAYOUT_ENABLED" : "COMMISSION_AUTO_PAYOUT_DISABLED",
+    entity: "commission_settings",
+    entity_id: settings.id,
+    new_value: { payout_day_of_month: input.payoutDayOfMonth },
+  });
+
+  return settings;
+}
+
+export interface MonthlyCommissionPayoutSummary {
+  settledCount: number;
+  paidBeneficiaryCount: number;
+  totalPaidAmount: number;
+  errors: number;
+}
+
+// The full monthly cycle: PENDING -> AVAILABLE for anything whose holding
+// period has passed, then AVAILABLE -> PAID (credited to each
+// beneficiary's own wallet) for everyone who has something to cash out.
+// Reuses settlePendingCommissions/payCommissionToBeneficiary verbatim —
+// this is pure orchestration, no new money-movement logic — so it's safe
+// to call both from an explicit admin click (actorUserId set) and from the
+// unattended monthly job (actorUserId null, same as
+// pending-transaction-check's re-checks).
+export async function runMonthlyCommissionPayout(actorUserId: string | null): Promise<MonthlyCommissionPayoutSummary> {
+  const settledCount = await settlePendingCommissions(actorUserId);
+  const summary = await summarizeAvailableCommissionByBeneficiary();
+
+  let paidBeneficiaryCount = 0;
+  let totalPaidAmount = 0;
+  let errors = 0;
+
+  for (const row of summary) {
+    try {
+      const result = await payCommissionToBeneficiary(row.beneficiary_user_id, actorUserId);
+      paidBeneficiaryCount += 1;
+      totalPaidAmount += Number(result.payout.amount);
+    } catch (error) {
+      errors += 1;
+      console.error(`[monthly-commission-payout] failed for beneficiary ${row.beneficiary_user_id}:`, error);
+    }
+  }
+
+  return { settledCount, paidBeneficiaryCount, totalPaidAmount, errors };
 }

@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { commissionRuleSchema } from "@/features/commission/schemas/commission-rule.schema";
 import { requireRole } from "@/lib/auth/session";
-import { saveCommissionRule } from "@/services/commission.service";
+import { saveCommissionRuleForCategory } from "@/services/commission.service";
 
+// Upserts both tiers' rule for one category at once — see
+// commission.service.ts's saveCommissionRuleForCategory. Always POST,
+// whether this category already had rules or not; there's no separate
+// PATCH-by-id endpoint anymore since editing is keyed by category, not by
+// an individual rule row.
 export async function POST(request: Request) {
   const session = await requireRole("SUPER_ADMIN");
   if (!session) {
@@ -20,22 +25,20 @@ export async function POST(request: Request) {
   }
 
   try {
-    const rule = await saveCommissionRule(
+    const result = await saveCommissionRuleForCategory(
       {
-        level: 1,
-        commission_type: parsed.data.commissionType,
-        percentage: parsed.data.percentage ?? null,
-        flat_amount: parsed.data.flatAmount ?? null,
-        applies_to_holder_status: parsed.data.appliesToHolderStatus ?? null,
-        min_transaction: parsed.data.minTransaction ?? null,
-        min_payout: parsed.data.minPayout,
-        holding_period_days: parsed.data.holdingPeriodDays,
-        eligible_category_id: parsed.data.eligibleCategoryId ?? null,
-        max_commission: parsed.data.maxCommission ?? null,
+        eligibleCategoryId: parsed.data.eligibleCategoryId ?? null,
+        commissionType: parsed.data.commissionType,
+        userAmount: parsed.data.userAmount ?? null,
+        mitraAmount: parsed.data.mitraAmount ?? null,
+        minTransaction: parsed.data.minTransaction ?? null,
+        maxCommission: parsed.data.maxCommission ?? null,
+        minPayout: parsed.data.minPayout,
+        holdingPeriodDays: parsed.data.holdingPeriodDays,
       },
       session.userId,
     );
-    return NextResponse.json({ rule }, { status: 201 });
+    return NextResponse.json(result, { status: 200 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Gagal menyimpan aturan komisi." },

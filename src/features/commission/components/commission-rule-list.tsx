@@ -7,11 +7,57 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { Category } from "@/types/product";
 import type { CommissionRule } from "@/types/commission";
 import { CommissionRuleFormDialog } from "./commission-rule-form-dialog";
-import { CommissionRuleStatusToggle } from "./commission-rule-status-toggle";
+import { CommissionRulePairStatusToggle } from "./commission-rule-pair-status-toggle";
 
 export interface CommissionRuleListProps {
   rules: CommissionRule[];
   categories: Category[];
+}
+
+interface CategoryRulePair {
+  categoryId: string | null;
+  categoryLabel: string;
+  userRule?: CommissionRule;
+  mitraRule?: CommissionRule;
+  allRuleIds: string[];
+  isActive: boolean;
+}
+
+// Groups the flat commission_rules list by category — the Aturan tab
+// presents "one category = one setting with two nominals" (see
+// CommissionRuleFormDialog), even though under the hood it's still up to
+// two rows (plus, for a category nobody has touched since this UI existed,
+// a third legacy row with applies_to_holder_status = NULL — pre-filled
+// into both tiers so editing it splits it into the new shape).
+function groupByCategoryLabel(rules: CommissionRule[], categoryNameById: Map<string, string>): CategoryRulePair[] {
+  const groups = new Map<string, CommissionRule[]>();
+  for (const rule of rules) {
+    const key = rule.eligible_category_id ?? "GLOBAL";
+    groups.set(key, [...(groups.get(key) ?? []), rule]);
+  }
+
+  return Array.from(groups.entries()).map(([key, groupRules]) => {
+    const categoryId = key === "GLOBAL" ? null : key;
+    const userRule = groupRules.find((r) => r.applies_to_holder_status === "USER" && r.is_active) ?? groupRules.find((r) => r.applies_to_holder_status === "USER");
+    const mitraRule = groupRules.find((r) => r.applies_to_holder_status === "MITRA" && r.is_active) ?? groupRules.find((r) => r.applies_to_holder_status === "MITRA");
+    const legacyRule = groupRules.find((r) => r.applies_to_holder_status === null);
+
+    return {
+      categoryId,
+      categoryLabel: categoryId ? (categoryNameById.get(categoryId) ?? "-") : "Semua Kategori",
+      userRule: userRule ?? legacyRule,
+      mitraRule: mitraRule ?? legacyRule,
+      allRuleIds: groupRules.map((r) => r.id),
+      isActive: groupRules.some((r) => r.is_active),
+    };
+  });
+}
+
+function amountLabel(rule?: CommissionRule): string {
+  if (!rule) return "-";
+  return rule.commission_type === "FLAT"
+    ? `Rp${Number(rule.flat_amount).toLocaleString("id-ID")}`
+    : `${rule.percentage}%`;
 }
 
 export function CommissionRuleList({ rules, categories }: CommissionRuleListProps) {
@@ -25,47 +71,40 @@ export function CommissionRuleList({ rules, categories }: CommissionRuleListProp
   }
 
   const categoryNameById = new Map(categories.map((category) => [category.id, category.name]));
-  const holderStatusLabel = (status: CommissionRule["applies_to_holder_status"]) =>
-    status === "MITRA" ? "Mitra" : status === "USER" ? "User Biasa" : "Semua Status";
-  const amountLabel = (rule: CommissionRule) =>
-    rule.commission_type === "FLAT" ? `Rp${Number(rule.flat_amount).toLocaleString("id-ID")}` : `${rule.percentage}%`;
+  const pairs = groupByCategoryLabel(rules, categoryNameById);
 
   return (
     <>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:hidden">
-        {rules.map((rule) => (
-          <div key={rule.id} className="flex flex-col gap-3 rounded-lg border p-4">
+        {pairs.map((pair) => (
+          <div key={pair.categoryId ?? "GLOBAL"} className="flex flex-col gap-3 rounded-lg border p-4">
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-medium">{holderStatusLabel(rule.applies_to_holder_status)}</p>
-                <p className="text-sm text-muted-foreground">
-                  {rule.eligible_category_id ? (categoryNameById.get(rule.eligible_category_id) ?? "-") : "Semua Kategori"}
-                </p>
-              </div>
-              <Badge variant={rule.is_active ? "default" : "outline"}>{rule.is_active ? "Aktif" : "Nonaktif"}</Badge>
+              <p className="font-medium">{pair.categoryLabel}</p>
+              <Badge variant={pair.isActive ? "default" : "outline"}>{pair.isActive ? "Aktif" : "Nonaktif"}</Badge>
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div>
-                <p className="text-xs text-muted-foreground">Reward</p>
-                <p className="font-medium">{amountLabel(rule)}</p>
+                <p className="text-xs text-muted-foreground">User Biasa</p>
+                <p className="font-medium">{amountLabel(pair.userRule)}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Holding Period</p>
-                <p className="font-medium">{rule.holding_period_days} hari</p>
+                <p className="text-xs text-muted-foreground">Mitra</p>
+                <p className="font-medium">{amountLabel(pair.mitraRule)}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Min. Payout</p>
-                <MoneyDisplay amount={rule.min_payout} size="sm" />
+                <MoneyDisplay amount={(pair.userRule ?? pair.mitraRule)?.min_payout ?? "0"} size="sm" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Maks. Komisi</p>
-                {rule.max_commission ? <MoneyDisplay amount={rule.max_commission} size="sm" /> : <p>-</p>}
+                <p className="text-xs text-muted-foreground">Holding</p>
+                <p className="font-medium">{(pair.userRule ?? pair.mitraRule)?.holding_period_days ?? 0} hari</p>
               </div>
             </div>
             <div className="flex gap-2">
               <CommissionRuleFormDialog
                 categories={categories}
-                rule={rule}
+                userRule={pair.userRule}
+                mitraRule={pair.mitraRule}
                 trigger={
                   <Button type="button" variant="outline" size="sm" className="h-9 flex-1 gap-2">
                     <Pencil className="size-3.5" />
@@ -73,7 +112,11 @@ export function CommissionRuleList({ rules, categories }: CommissionRuleListProp
                   </Button>
                 }
               />
-              <CommissionRuleStatusToggle rule={rule} />
+              <CommissionRulePairStatusToggle
+                ruleIds={pair.allRuleIds}
+                categoryLabel={pair.categoryLabel}
+                isActive={pair.isActive}
+              />
             </div>
           </div>
         ))}
@@ -83,39 +126,36 @@ export function CommissionRuleList({ rules, categories }: CommissionRuleListProp
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Berlaku Untuk</TableHead>
               <TableHead>Kategori</TableHead>
-              <TableHead className="text-right">Reward</TableHead>
+              <TableHead className="text-right">Reward User Biasa</TableHead>
+              <TableHead className="text-right">Reward Mitra</TableHead>
               <TableHead className="text-right">Min. Payout</TableHead>
-              <TableHead className="text-right">Maks. Komisi</TableHead>
               <TableHead>Holding</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-px" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rules.map((rule) => (
-              <TableRow key={rule.id}>
-                <TableCell className="font-medium">{holderStatusLabel(rule.applies_to_holder_status)}</TableCell>
+            {pairs.map((pair) => (
+              <TableRow key={pair.categoryId ?? "GLOBAL"}>
+                <TableCell className="font-medium">{pair.categoryLabel}</TableCell>
+                <TableCell className="text-right">{amountLabel(pair.userRule)}</TableCell>
+                <TableCell className="text-right">{amountLabel(pair.mitraRule)}</TableCell>
+                <TableCell className="text-right">
+                  <MoneyDisplay amount={(pair.userRule ?? pair.mitraRule)?.min_payout ?? "0"} size="sm" />
+                </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {rule.eligible_category_id ? (categoryNameById.get(rule.eligible_category_id) ?? "-") : "Semua Kategori"}
+                  {(pair.userRule ?? pair.mitraRule)?.holding_period_days ?? 0} hari
                 </TableCell>
-                <TableCell className="text-right">{amountLabel(rule)}</TableCell>
-                <TableCell className="text-right">
-                  <MoneyDisplay amount={rule.min_payout} size="sm" />
-                </TableCell>
-                <TableCell className="text-right">
-                  {rule.max_commission ? <MoneyDisplay amount={rule.max_commission} size="sm" /> : "-"}
-                </TableCell>
-                <TableCell className="text-muted-foreground">{rule.holding_period_days} hari</TableCell>
                 <TableCell>
-                  <Badge variant={rule.is_active ? "default" : "outline"}>{rule.is_active ? "Aktif" : "Nonaktif"}</Badge>
+                  <Badge variant={pair.isActive ? "default" : "outline"}>{pair.isActive ? "Aktif" : "Nonaktif"}</Badge>
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2">
                     <CommissionRuleFormDialog
                       categories={categories}
-                      rule={rule}
+                      userRule={pair.userRule}
+                      mitraRule={pair.mitraRule}
                       trigger={
                         <Button type="button" variant="outline" size="sm" className="h-9 gap-2">
                           <Pencil className="size-3.5" />
@@ -123,7 +163,11 @@ export function CommissionRuleList({ rules, categories }: CommissionRuleListProp
                         </Button>
                       }
                     />
-                    <CommissionRuleStatusToggle rule={rule} />
+                    <CommissionRulePairStatusToggle
+                      ruleIds={pair.allRuleIds}
+                      categoryLabel={pair.categoryLabel}
+                      isActive={pair.isActive}
+                    />
                   </div>
                 </TableCell>
               </TableRow>

@@ -2,8 +2,10 @@ import { PageHeader } from "@/components/page-header";
 import { PaginationControls } from "@/components/pagination-controls";
 import { Button } from "@/components/ui/button";
 import {
+  CommissionAutoPayoutSettings,
   CommissionLedgerFilters,
   CommissionLedgerList,
+  CommissionMonthlyPayoutButton,
   CommissionPayoutHistory,
   CommissionPayoutSummary,
   CommissionRuleFormDialog,
@@ -17,6 +19,7 @@ import {
   getCommissionLedger,
   getCommissionPayoutHistory,
   getCommissionRules,
+  getCommissionSettings,
 } from "@/services/commission.service";
 import { countCommissionLedgerGlobal } from "@/repositories/commission.repository";
 import { listCategories } from "@/repositories/product.repository";
@@ -117,10 +120,27 @@ async function LedgerTab(props: { status?: string; search?: string; page: number
 }
 
 async function PayoutsTab() {
-  const [summary, history] = await Promise.all([getAvailableCommissionSummary(), getCommissionPayoutHistory()]);
+  const [summary, history, settings] = await Promise.all([
+    getAvailableCommissionSummary(),
+    getCommissionPayoutHistory(),
+    getCommissionSettings(),
+  ]);
 
   return (
     <div className="flex flex-col gap-8">
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Pencairan Bulanan</h2>
+        <CommissionAutoPayoutSettings
+          settings={{
+            id: settings.id,
+            auto_payout_enabled: settings.auto_payout_enabled,
+            payout_day_of_month: settings.payout_day_of_month,
+            last_auto_run_month: settings.last_auto_run_month,
+          }}
+        />
+        {!settings.auto_payout_enabled ? <CommissionMonthlyPayoutButton /> : null}
+      </section>
+
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Siap Dibayarkan</h2>
         <CommissionPayoutSummary summary={summary} />

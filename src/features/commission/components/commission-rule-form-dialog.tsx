@@ -13,44 +13,50 @@ import { ApiError } from "@/lib/api/client";
 import type { Category } from "@/types/product";
 import type { CommissionRule } from "@/types/commission";
 import { commissionRuleSchema, type CommissionRuleFormValues } from "../schemas/commission-rule.schema";
-import { createCommissionRule, updateCommissionRule } from "../services/commission-api";
+import { saveCommissionRuleForCategory } from "../services/commission-api";
 
 const ALL_CATEGORIES = "ALL";
 
 export interface CommissionRuleFormDialogProps {
   categories: Category[];
-  rule?: CommissionRule;
+  /** This category's existing USER-tier rule, if any — present only when
+   *  editing (the trigger came from an existing row), absent for "Tambah
+   *  Aturan". */
+  userRule?: CommissionRule;
+  mitraRule?: CommissionRule;
   trigger: ReactNode;
 }
 
-function toFormValues(rule?: CommissionRule): CommissionRuleFormValues {
+function amountOf(rule?: CommissionRule): number | null {
+  if (!rule) return null;
+  return Number(rule.commission_type === "FLAT" ? rule.flat_amount : rule.percentage);
+}
+
+function toFormValues(userRule?: CommissionRule, mitraRule?: CommissionRule): CommissionRuleFormValues {
+  const anyRule = userRule ?? mitraRule;
   return {
-    commissionType: rule ? rule.commission_type : "FLAT",
-    percentage: rule?.percentage != null ? Number(rule.percentage) : null,
-    flatAmount: rule?.flat_amount != null ? Number(rule.flat_amount) : null,
-    appliesToHolderStatus: rule?.applies_to_holder_status ?? null,
-    minTransaction: rule?.min_transaction != null ? Number(rule.min_transaction) : null,
-    minPayout: rule ? Number(rule.min_payout) : 0,
-    holdingPeriodDays: rule ? rule.holding_period_days : 0,
-    eligibleCategoryId: rule?.eligible_category_id ?? null,
-    maxCommission: rule?.max_commission != null ? Number(rule.max_commission) : null,
+    eligibleCategoryId: anyRule?.eligible_category_id ?? null,
+    commissionType: anyRule?.commission_type ?? "FLAT",
+    userAmount: amountOf(userRule),
+    mitraAmount: amountOf(mitraRule),
+    minTransaction: anyRule?.min_transaction != null ? Number(anyRule.min_transaction) : null,
+    minPayout: anyRule ? Number(anyRule.min_payout) : 0,
+    holdingPeriodDays: anyRule ? anyRule.holding_period_days : 0,
+    maxCommission: anyRule?.max_commission != null ? Number(anyRule.max_commission) : null,
   };
 }
 
-const ALL_HOLDER_STATUSES = "ALL";
-
-// One dialog for both create and edit — commissionType/percentage-or-
-// flatAmount/appliesToHolderStatus/category define *when* a commission
-// applies and *how much*, min_transaction/max_commission bound it further,
-// min_payout/holding_period_days control *when it can be cashed out* (see
-// commission.service.ts's awardCommissionForTransaction and
-// settlePendingCommissions for exactly how each field is used). Every
-// reward is direct-reference-only — there is no level/depth field
-// anymore.
-export function CommissionRuleFormDialog({ categories, rule, trigger }: CommissionRuleFormDialogProps) {
+// One dialog, keyed by category — sets how much a category's direct
+// downline transaction rewards a USER-tier referrer AND a MITRA-tier
+// referrer at once, rather than editing one rule row at a time (see
+// commission.service.ts's saveCommissionRuleForCategory). Editing an
+// existing category locks the category selector — changing it would
+// create a new pair instead of updating this one.
+export function CommissionRuleFormDialog({ categories, userRule, mitraRule, trigger }: CommissionRuleFormDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const isEditing = !!(userRule || mitraRule);
 
   const {
     register,
@@ -61,18 +67,14 @@ export function CommissionRuleFormDialog({ categories, rule, trigger }: Commissi
     formState: { errors, isSubmitting },
   } = useForm<CommissionRuleFormValues>({
     resolver: zodResolver(commissionRuleSchema),
-    defaultValues: toFormValues(rule),
+    defaultValues: toFormValues(userRule, mitraRule),
   });
   const commissionType = watch("commissionType");
 
   async function onSubmit(values: CommissionRuleFormValues) {
     setServerError(null);
     try {
-      if (rule) {
-        await updateCommissionRule(rule.id, values, rule.is_active);
-      } else {
-        await createCommissionRule(values);
-      }
+      await saveCommissionRuleForCategory(values);
       setOpen(false);
       router.refresh();
     } catch (error) {
@@ -82,15 +84,18 @@ export function CommissionRuleFormDialog({ categories, rule, trigger }: Commissi
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
-    if (next) reset(toFormValues(rule));
+    if (next) reset(toFormValues(userRule, mitraRule));
   }
+
+  const amountLabel = commissionType === "FLAT" ? "Nominal (Rupiah)" : "Persentase (%)";
+  const amountFieldProps = commissionType === "FLAT" ? { min: 0 } : { min: 0, max: 100, step: "0.01" };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{rule ? "Ubah Aturan Komisi" : "Tambah Aturan Komisi"}</DialogTitle>
+          <DialogTitle>{isEditing ? "Ubah Aturan Komisi" : "Tambah Aturan Komisi"}</DialogTitle>
         </DialogHeader>
 
         <form
@@ -104,80 +109,6 @@ export function CommissionRuleFormDialog({ categories, rule, trigger }: Commissi
             </p>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="rule-commission-type">Tipe Komisi</Label>
-              <Controller
-                control={control}
-                name="commissionType"
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger id="rule-commission-type" className="h-11 w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="FLAT">Nominal Tetap</SelectItem>
-                      <SelectItem value="PERCENTAGE">Persentase</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </div>
-
-            {commissionType === "FLAT" ? (
-              <div className="grid gap-2">
-                <Label htmlFor="rule-flat-amount">Nominal (Rupiah)</Label>
-                <Input
-                  id="rule-flat-amount"
-                  type="number"
-                  min={0}
-                  className="h-11"
-                  aria-invalid={!!errors.flatAmount}
-                  {...register("flatAmount", { setValueAs: (v) => (v === "" ? null : Number(v)) })}
-                />
-                {errors.flatAmount ? <p className="text-sm text-destructive">{errors.flatAmount.message}</p> : null}
-              </div>
-            ) : (
-              <div className="grid gap-2">
-                <Label htmlFor="rule-percentage">Persentase (%)</Label>
-                <Input
-                  id="rule-percentage"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  max={100}
-                  className="h-11"
-                  aria-invalid={!!errors.percentage}
-                  {...register("percentage", { setValueAs: (v) => (v === "" ? null : Number(v)) })}
-                />
-                {errors.percentage ? <p className="text-sm text-destructive">{errors.percentage.message}</p> : null}
-              </div>
-            )}
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="rule-holder-status">Berlaku untuk Pereferensi</Label>
-            <Controller
-              control={control}
-              name="appliesToHolderStatus"
-              render={({ field }) => (
-                <Select
-                  value={field.value ?? ALL_HOLDER_STATUSES}
-                  onValueChange={(value) => field.onChange(value === ALL_HOLDER_STATUSES ? null : value)}
-                >
-                  <SelectTrigger id="rule-holder-status" className="h-11 w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_HOLDER_STATUSES}>Semua Status</SelectItem>
-                    <SelectItem value="USER">User Biasa</SelectItem>
-                    <SelectItem value="MITRA">Mitra</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </div>
-
           <div className="grid gap-2">
             <Label htmlFor="rule-category">Kategori</Label>
             <Controller
@@ -187,6 +118,7 @@ export function CommissionRuleFormDialog({ categories, rule, trigger }: Commissi
                 <Select
                   value={field.value ?? ALL_CATEGORIES}
                   onValueChange={(value) => field.onChange(value === ALL_CATEGORIES ? null : value)}
+                  disabled={isEditing}
                 >
                   <SelectTrigger id="rule-category" className="h-11 w-full">
                     <SelectValue />
@@ -203,6 +135,58 @@ export function CommissionRuleFormDialog({ categories, rule, trigger }: Commissi
               )}
             />
           </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="rule-commission-type">Tipe Komisi</Label>
+            <Controller
+              control={control}
+              name="commissionType"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger id="rule-commission-type" className="h-11 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="FLAT">Nominal Tetap</SelectItem>
+                    <SelectItem value="PERCENTAGE">Persentase</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="rule-user-amount">{amountLabel} — User Biasa</Label>
+              <Input
+                id="rule-user-amount"
+                type="number"
+                {...amountFieldProps}
+                className="h-11"
+                placeholder="0"
+                aria-invalid={!!errors.userAmount}
+                {...register("userAmount", { setValueAs: (v) => (v === "" ? null : Number(v)) })}
+              />
+              {errors.userAmount ? <p className="text-sm text-destructive">{errors.userAmount.message}</p> : null}
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="rule-mitra-amount">{amountLabel} — Mitra</Label>
+              <Input
+                id="rule-mitra-amount"
+                type="number"
+                {...amountFieldProps}
+                className="h-11"
+                placeholder="0"
+                aria-invalid={!!errors.mitraAmount}
+                {...register("mitraAmount", { setValueAs: (v) => (v === "" ? null : Number(v)) })}
+              />
+              {errors.mitraAmount ? <p className="text-sm text-destructive">{errors.mitraAmount.message}</p> : null}
+            </div>
+          </div>
+          <p className="-mt-2 text-xs text-muted-foreground">
+            Kosongkan atau isi 0 pada salah satu kolom jika status itu tidak mendapat komisi untuk kategori ini.
+          </p>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">

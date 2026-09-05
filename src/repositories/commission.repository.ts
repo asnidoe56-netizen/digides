@@ -1,6 +1,13 @@
 import type { Queryable } from "@/lib/db/query";
 import { pool } from "@/lib/db/pool";
-import type { CommissionLedgerEntry, CommissionLedgerStatus, CommissionPayout, CommissionRule, CommissionType } from "@/types/commission";
+import type {
+  CommissionLedgerEntry,
+  CommissionLedgerStatus,
+  CommissionPayout,
+  CommissionRule,
+  CommissionSettings,
+  CommissionType,
+} from "@/types/commission";
 import type { ReferralCodeHolderStatus } from "@/types/referral";
 
 export interface CreateCommissionRuleInput {
@@ -43,6 +50,44 @@ export async function createCommissionRule(
     ],
   );
   return result.rows[0];
+}
+
+// The Aturan tab's "one form, two nominals" editor is keyed by category —
+// this is how it finds what (if anything) already exists for a given
+// category + tier before deciding to create vs. update.
+export async function findActiveCommissionRuleByCategoryAndHolderStatus(
+  categoryId: string | null,
+  holderStatus: ReferralCodeHolderStatus,
+  db: Queryable = pool,
+): Promise<CommissionRule | null> {
+  const result = await db.query<CommissionRule>(
+    `SELECT * FROM commission_rules
+     WHERE eligible_category_id IS NOT DISTINCT FROM $1
+       AND applies_to_holder_status = $2
+       AND is_active = true
+     LIMIT 1`,
+    [categoryId, holderStatus],
+  );
+  return result.rows[0] ?? null;
+}
+
+// Legacy rules created before the "one form, two nominals" editor existed
+// have applies_to_holder_status = NULL (applies to both tiers at once) —
+// saving a category through the new editor supersedes one of these with
+// two explicit rows, so it gets deactivated rather than left to silently
+// keep matching alongside them.
+export async function deactivateUniversalCommissionRuleForCategory(
+  categoryId: string | null,
+  db: Queryable = pool,
+): Promise<void> {
+  await db.query(
+    `UPDATE commission_rules
+     SET is_active = false
+     WHERE eligible_category_id IS NOT DISTINCT FROM $1
+       AND applies_to_holder_status IS NULL
+       AND is_active = true`,
+    [categoryId],
+  );
 }
 
 export async function findCommissionRuleById(id: string, db: Queryable = pool): Promise<CommissionRule | null> {
@@ -395,4 +440,45 @@ export async function listCommissionPayouts(
     [limit],
   );
   return result.rows;
+}
+
+// Singleton row seeded by migration 034_commission_settings.sql — same
+// shape/reasoning as support-settings.repository.ts, so this never needs
+// an upsert.
+export async function getCommissionSettings(db: Queryable = pool): Promise<CommissionSettings> {
+  const result = await db.query<CommissionSettings>(`SELECT * FROM commission_settings LIMIT 1`);
+  return result.rows[0];
+}
+
+export interface UpdateCommissionSettingsInput {
+  auto_payout_enabled: boolean;
+  payout_day_of_month: number;
+}
+
+export async function updateCommissionSettings(
+  id: string,
+  input: UpdateCommissionSettingsInput,
+  actorUserId: string,
+  db: Queryable = pool,
+): Promise<CommissionSettings> {
+  const result = await db.query<CommissionSettings>(
+    `UPDATE commission_settings
+     SET auto_payout_enabled = $2, payout_day_of_month = $3, updated_by = $4
+     WHERE id = $1
+     RETURNING *`,
+    [id, input.auto_payout_enabled, input.payout_day_of_month, actorUserId],
+  );
+  return result.rows[0];
+}
+
+// Marks this calendar month ('YYYY-MM') as already run — the monthly job
+// (src/jobs/monthly-commission-payout.ts) checks this before running so a
+// server restart mid-month can't trigger a second payout for the same
+// month.
+export async function markCommissionAutoRunMonth(
+  id: string,
+  yearMonth: string,
+  db: Queryable = pool,
+): Promise<void> {
+  await db.query(`UPDATE commission_settings SET last_auto_run_month = $2 WHERE id = $1`, [id, yearMonth]);
 }

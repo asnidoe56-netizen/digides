@@ -56,3 +56,15 @@ export interface CommissionPayout {
   paid_at: Date | null;
   reference: string | null;
 }
+
+// Singleton row — whether the monthly settle+payout cycle
+// (runMonthlyCommissionPayout) runs on its own or waits for an explicit
+// Super Admin click on the Payout tab.
+export interface CommissionSettings {
+  id: string;
+  auto_payout_enabled: boolean;
+  payout_day_of_month: number;
+  last_auto_run_month: string | null;
+  updated_at: Date;
+  updated_by: string | null;
+}

@@ -10,5 +10,8 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { startPendingTransactionCheckJob } = await import("@/jobs/pending-transaction-check");
     startPendingTransactionCheckJob();
+
+    const { startMonthlyCommissionPayoutJob } = await import("@/jobs/monthly-commission-payout");
+    startMonthlyCommissionPayoutJob();
   }
 }

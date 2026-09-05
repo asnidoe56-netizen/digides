@@ -25,8 +25,10 @@ export interface CommissionRuleFormDialogProps {
 
 function toFormValues(rule?: CommissionRule): CommissionRuleFormValues {
   return {
-    level: rule ? rule.level : 1,
-    percentage: rule ? Number(rule.percentage) : 0,
+    commissionType: rule ? rule.commission_type : "FLAT",
+    percentage: rule?.percentage != null ? Number(rule.percentage) : null,
+    flatAmount: rule?.flat_amount != null ? Number(rule.flat_amount) : null,
+    appliesToHolderStatus: rule?.applies_to_holder_status ?? null,
     minTransaction: rule?.min_transaction != null ? Number(rule.min_transaction) : null,
     minPayout: rule ? Number(rule.min_payout) : 0,
     holdingPeriodDays: rule ? rule.holding_period_days : 0,
@@ -35,11 +37,16 @@ function toFormValues(rule?: CommissionRule): CommissionRuleFormValues {
   };
 }
 
-// One dialog for both create and edit — level/percentage/category define
-// *when* a commission applies, min_transaction/max_commission bound *how
-// much*, min_payout/holding_period_days control *when it can be cashed
-// out* (see commission.service.ts's awardCommissionForTransaction and
-// settlePendingCommissions for exactly how each field is used).
+const ALL_HOLDER_STATUSES = "ALL";
+
+// One dialog for both create and edit — commissionType/percentage-or-
+// flatAmount/appliesToHolderStatus/category define *when* a commission
+// applies and *how much*, min_transaction/max_commission bound it further,
+// min_payout/holding_period_days control *when it can be cashed out* (see
+// commission.service.ts's awardCommissionForTransaction and
+// settlePendingCommissions for exactly how each field is used). Every
+// reward is direct-reference-only — there is no level/depth field
+// anymore.
 export function CommissionRuleFormDialog({ categories, rule, trigger }: CommissionRuleFormDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -50,11 +57,13 @@ export function CommissionRuleFormDialog({ categories, rule, trigger }: Commissi
     control,
     handleSubmit,
     reset,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<CommissionRuleFormValues>({
     resolver: zodResolver(commissionRuleSchema),
     defaultValues: toFormValues(rule),
   });
+  const commissionType = watch("commissionType");
 
   async function onSubmit(values: CommissionRuleFormValues) {
     setServerError(null);
@@ -97,32 +106,76 @@ export function CommissionRuleFormDialog({ categories, rule, trigger }: Commissi
 
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
-              <Label htmlFor="rule-level">Level Referral</Label>
-              <Input
-                id="rule-level"
-                type="number"
-                min={1}
-                className="h-11"
-                aria-invalid={!!errors.level}
-                {...register("level", { valueAsNumber: true })}
+              <Label htmlFor="rule-commission-type">Tipe Komisi</Label>
+              <Controller
+                control={control}
+                name="commissionType"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger id="rule-commission-type" className="h-11 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FLAT">Nominal Tetap</SelectItem>
+                      <SelectItem value="PERCENTAGE">Persentase</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               />
-              {errors.level ? <p className="text-sm text-destructive">{errors.level.message}</p> : null}
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="rule-percentage">Persentase (%)</Label>
-              <Input
-                id="rule-percentage"
-                type="number"
-                step="0.01"
-                min={0}
-                max={100}
-                className="h-11"
-                aria-invalid={!!errors.percentage}
-                {...register("percentage", { valueAsNumber: true })}
-              />
-              {errors.percentage ? <p className="text-sm text-destructive">{errors.percentage.message}</p> : null}
-            </div>
+            {commissionType === "FLAT" ? (
+              <div className="grid gap-2">
+                <Label htmlFor="rule-flat-amount">Nominal (Rupiah)</Label>
+                <Input
+                  id="rule-flat-amount"
+                  type="number"
+                  min={0}
+                  className="h-11"
+                  aria-invalid={!!errors.flatAmount}
+                  {...register("flatAmount", { setValueAs: (v) => (v === "" ? null : Number(v)) })}
+                />
+                {errors.flatAmount ? <p className="text-sm text-destructive">{errors.flatAmount.message}</p> : null}
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                <Label htmlFor="rule-percentage">Persentase (%)</Label>
+                <Input
+                  id="rule-percentage"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  max={100}
+                  className="h-11"
+                  aria-invalid={!!errors.percentage}
+                  {...register("percentage", { setValueAs: (v) => (v === "" ? null : Number(v)) })}
+                />
+                {errors.percentage ? <p className="text-sm text-destructive">{errors.percentage.message}</p> : null}
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="rule-holder-status">Berlaku untuk Pereferensi</Label>
+            <Controller
+              control={control}
+              name="appliesToHolderStatus"
+              render={({ field }) => (
+                <Select
+                  value={field.value ?? ALL_HOLDER_STATUSES}
+                  onValueChange={(value) => field.onChange(value === ALL_HOLDER_STATUSES ? null : value)}
+                >
+                  <SelectTrigger id="rule-holder-status" className="h-11 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_HOLDER_STATUSES}>Semua Status</SelectItem>
+                    <SelectItem value="USER">User Biasa</SelectItem>
+                    <SelectItem value="MITRA">Mitra</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
 
           <div className="grid gap-2">

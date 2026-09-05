@@ -7,12 +7,13 @@ import {
   listReferralCodes,
   listReferralRelationships,
   setReferralCodeActive,
+  setReferralCodeHolderStatus as updateReferralCodeHolderStatusRow,
   setReferralRelationshipStatus as updateReferralRelationshipStatusRow,
 } from "@/repositories/referral.repository";
 import { findUserById } from "@/repositories/user.repository";
 import { getWalletForMitraSession } from "@/services/wallet.service";
 import { maskBalance } from "@/lib/formatting/money";
-import type { ReferralRelationshipStatus } from "@/types/referral";
+import type { ReferralCodeHolderStatus, ReferralRelationshipStatus } from "@/types/referral";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I — avoids misreads when shared aloud
 
@@ -138,9 +139,33 @@ export async function setReferralCodeStatus(id: string, isActive: boolean, actor
   return code;
 }
 
-// Blocking a relationship stops the Commission Engine's referrer-chain
-// walk from crossing it (findReferrerChain only follows status='ACTIVE')
-// — the standard fraud/abuse lever without deleting history.
+// USER vs MITRA — the tier the Commission Engine looks up on this code's
+// owner to decide their direct referral reward rate (commission.service.ts's
+// awardCommissionForTransaction). Independent of the owner's user_roles.
+export async function setReferralCodeHolderStatus(
+  id: string,
+  holderStatus: ReferralCodeHolderStatus,
+  actorUserId: string,
+) {
+  const code = await updateReferralCodeHolderStatusRow(id, holderStatus);
+  if (!code) {
+    throw new Error("Kode referral tidak ditemukan");
+  }
+
+  await recordAuditLog({
+    actor_user_id: actorUserId,
+    action: "REFERRAL_CODE_HOLDER_STATUS_CHANGED",
+    entity: "referral_codes",
+    entity_id: code.id,
+    new_value: { holder_status: holderStatus },
+  });
+
+  return code;
+}
+
+// Blocking a relationship stops the Commission Engine from awarding on it
+// (awardCommissionForTransaction only honors status='ACTIVE') — the
+// standard fraud/abuse lever without deleting history.
 export async function setReferralRelationshipStatus(
   id: string,
   status: ReferralRelationshipStatus,

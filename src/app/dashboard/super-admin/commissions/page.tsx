@@ -32,7 +32,6 @@ interface SuperAdminCommissionsPageProps {
   searchParams: Promise<{
     tab?: string;
     status?: string;
-    level?: string;
     search?: string;
     page?: string;
   }>;
@@ -58,7 +57,7 @@ export default async function SuperAdminCommissionsPage({ searchParams }: SuperA
 
       {tab === "rules" ? <RulesTab /> : null}
       {tab === "ledger" ? (
-        <LedgerTab status={params.status} level={params.level} search={params.search} page={page} />
+        <LedgerTab status={params.status} search={params.search} page={page} />
       ) : null}
       {tab === "payouts" ? <PayoutsTab /> : null}
     </div>
@@ -85,10 +84,9 @@ async function RulesTab() {
   );
 }
 
-async function LedgerTab(props: { status?: string; level?: string; search?: string; page: number }) {
+async function LedgerTab(props: { status?: string; search?: string; page: number }) {
   const filter = {
     status: (props.status as CommissionLedgerStatus | undefined) || undefined,
-    level: props.level ? Number(props.level) : undefined,
     search: props.search || undefined,
     limit: PAGE_SIZE,
     offset: (props.page - 1) * PAGE_SIZE,
@@ -109,7 +107,6 @@ async function LedgerTab(props: { status?: string; level?: string; search?: stri
           const query = new URLSearchParams();
           query.set("tab", "ledger");
           if (props.status) query.set("status", props.status);
-          if (props.level) query.set("level", props.level);
           if (props.search) query.set("search", props.search);
           if (targetPage > 1) query.set("page", String(targetPage));
           return `/dashboard/super-admin/commissions?${query.toString()}`;

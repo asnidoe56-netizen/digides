@@ -5,21 +5,22 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/feedback/confirm-dialog";
 import { ApiError } from "@/lib/api/client";
-import type { CommissionRule } from "@/types/commission";
-import { setCommissionRuleStatus } from "../services/commission-api";
+import type { ReferralCodeWithDetail } from "@/repositories/referral.repository";
+import { setReferralCodeHolderStatus } from "../services/referral-api";
 
-export function CommissionRuleStatusToggle({ rule }: { rule: CommissionRule }) {
+export function ReferralCodeHolderStatusToggle({ code }: { code: ReferralCodeWithDetail }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const amountLabel = rule.commission_type === "FLAT" ? `Rp${Number(rule.flat_amount).toLocaleString("id-ID")}` : `${rule.percentage}%`;
+  const isMitra = code.holder_status === "MITRA";
+  const nextStatus = isMitra ? "USER" : "MITRA";
 
   async function handleConfirm() {
     setIsConfirming(true);
     setError(null);
     try {
-      await setCommissionRuleStatus(rule.id, !rule.is_active);
+      await setReferralCodeHolderStatus(code.id, nextStatus);
       setOpen(false);
       router.refresh();
     } catch (err) {
@@ -32,21 +33,20 @@ export function CommissionRuleStatusToggle({ rule }: { rule: CommissionRule }) {
   return (
     <>
       <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => setOpen(true)}>
-        {rule.is_active ? "Nonaktifkan" : "Aktifkan"}
+        {isMitra ? "Jadikan User Biasa" : "Jadikan Mitra"}
       </Button>
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}
-        title={rule.is_active ? "Nonaktifkan Aturan Komisi?" : "Aktifkan Aturan Komisi?"}
+        title={isMitra ? "Jadikan User Biasa?" : "Jadikan Mitra?"}
         description={
-          rule.is_active
-            ? `Aturan reward ${amountLabel} ini tidak akan lagi dipakai untuk transaksi baru.`
-            : `Aturan reward ${amountLabel} ini akan kembali dipakai untuk transaksi baru.`
+          isMitra
+            ? `${code.owner_name} akan menerima tarif reward "User Biasa" untuk setiap transaksi downline-nya mulai sekarang.`
+            : `${code.owner_name} akan menerima tarif reward "Mitra" untuk setiap transaksi downline-nya mulai sekarang.`
         }
-        confirmLabel={rule.is_active ? "Nonaktifkan" : "Aktifkan"}
+        confirmLabel={isMitra ? "Jadikan User Biasa" : "Jadikan Mitra"}
         onConfirm={handleConfirm}
         isConfirming={isConfirming}
-        variant={rule.is_active ? "destructive" : "default"}
       />
       {error ? <p className="mt-1 text-xs text-destructive">{error}</p> : null}
     </>

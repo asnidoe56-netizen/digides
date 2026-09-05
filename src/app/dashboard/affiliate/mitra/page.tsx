@@ -8,7 +8,7 @@ import { findUserById } from "@/repositories/user.repository";
 // prerendered.
 export const dynamic = "force-dynamic";
 
-export default async function KonterMitraPage() {
+export default async function AffiliateMitraPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
@@ -17,7 +17,7 @@ export default async function KonterMitraPage() {
   return (
     <MitraReferralView
       fullName={user?.full_name ?? ""}
-      roleLabel="Agen"
+      roleLabel="User Biasa"
       referralCode={overview.referralCode.code}
       holderStatus={overview.referralCode.holder_status}
       downlines={overview.downlines}

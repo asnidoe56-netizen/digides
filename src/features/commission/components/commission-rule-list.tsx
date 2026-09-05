@@ -19,12 +19,16 @@ export function CommissionRuleList({ rules, categories }: CommissionRuleListProp
     return (
       <EmptyState
         title="Belum ada aturan komisi"
-        description='Klik "Tambah Aturan" untuk menentukan persentase komisi per level referral.'
+        description='Klik "Tambah Aturan" untuk menentukan reward per transaksi downline, per status pereferensi (User Biasa/Mitra).'
       />
     );
   }
 
   const categoryNameById = new Map(categories.map((category) => [category.id, category.name]));
+  const holderStatusLabel = (status: CommissionRule["applies_to_holder_status"]) =>
+    status === "MITRA" ? "Mitra" : status === "USER" ? "User Biasa" : "Semua Status";
+  const amountLabel = (rule: CommissionRule) =>
+    rule.commission_type === "FLAT" ? `Rp${Number(rule.flat_amount).toLocaleString("id-ID")}` : `${rule.percentage}%`;
 
   return (
     <>
@@ -33,7 +37,7 @@ export function CommissionRuleList({ rules, categories }: CommissionRuleListProp
           <div key={rule.id} className="flex flex-col gap-3 rounded-lg border p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-medium">Level {rule.level}</p>
+                <p className="font-medium">{holderStatusLabel(rule.applies_to_holder_status)}</p>
                 <p className="text-sm text-muted-foreground">
                   {rule.eligible_category_id ? (categoryNameById.get(rule.eligible_category_id) ?? "-") : "Semua Kategori"}
                 </p>
@@ -42,8 +46,8 @@ export function CommissionRuleList({ rules, categories }: CommissionRuleListProp
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div>
-                <p className="text-xs text-muted-foreground">Persentase</p>
-                <p className="font-medium">{rule.percentage}%</p>
+                <p className="text-xs text-muted-foreground">Reward</p>
+                <p className="font-medium">{amountLabel(rule)}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Holding Period</p>
@@ -79,9 +83,9 @@ export function CommissionRuleList({ rules, categories }: CommissionRuleListProp
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Level</TableHead>
+              <TableHead>Berlaku Untuk</TableHead>
               <TableHead>Kategori</TableHead>
-              <TableHead className="text-right">Persentase</TableHead>
+              <TableHead className="text-right">Reward</TableHead>
               <TableHead className="text-right">Min. Payout</TableHead>
               <TableHead className="text-right">Maks. Komisi</TableHead>
               <TableHead>Holding</TableHead>
@@ -92,11 +96,11 @@ export function CommissionRuleList({ rules, categories }: CommissionRuleListProp
           <TableBody>
             {rules.map((rule) => (
               <TableRow key={rule.id}>
-                <TableCell className="font-medium">{rule.level}</TableCell>
+                <TableCell className="font-medium">{holderStatusLabel(rule.applies_to_holder_status)}</TableCell>
                 <TableCell className="text-muted-foreground">
                   {rule.eligible_category_id ? (categoryNameById.get(rule.eligible_category_id) ?? "-") : "Semua Kategori"}
                 </TableCell>
-                <TableCell className="text-right">{rule.percentage}%</TableCell>
+                <TableCell className="text-right">{amountLabel(rule)}</TableCell>
                 <TableCell className="text-right">
                   <MoneyDisplay amount={rule.min_payout} size="sm" />
                 </TableCell>

@@ -22,8 +22,11 @@ export async function POST(request: Request) {
   try {
     const rule = await saveCommissionRule(
       {
-        level: parsed.data.level,
-        percentage: parsed.data.percentage,
+        level: 1,
+        commission_type: parsed.data.commissionType,
+        percentage: parsed.data.percentage ?? null,
+        flat_amount: parsed.data.flatAmount ?? null,
+        applies_to_holder_status: parsed.data.appliesToHolderStatus ?? null,
         min_transaction: parsed.data.minTransaction ?? null,
         min_payout: parsed.data.minPayout,
         holding_period_days: parsed.data.holdingPeriodDays,

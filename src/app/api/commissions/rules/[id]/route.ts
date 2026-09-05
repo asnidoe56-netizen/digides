@@ -4,7 +4,7 @@ import { commissionRuleSchema } from "@/features/commission/schemas/commission-r
 import { requireRole } from "@/lib/auth/session";
 import { saveCommissionRule } from "@/services/commission.service";
 
-const updateSchema = commissionRuleSchema.extend({ isActive: z.boolean() });
+const updateSchema = commissionRuleSchema.and(z.object({ isActive: z.boolean() }));
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireRole("SUPER_ADMIN");
@@ -26,8 +26,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     const rule = await saveCommissionRule(
       {
-        level: parsed.data.level,
-        percentage: parsed.data.percentage,
+        level: 1,
+        commission_type: parsed.data.commissionType,
+        percentage: parsed.data.percentage ?? null,
+        flat_amount: parsed.data.flatAmount ?? null,
+        applies_to_holder_status: parsed.data.appliesToHolderStatus ?? null,
         min_transaction: parsed.data.minTransaction ?? null,
         min_payout: parsed.data.minPayout,
         holding_period_days: parsed.data.holdingPeriodDays,

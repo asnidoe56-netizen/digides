@@ -2,8 +2,14 @@
 
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
+import type { ReferralCodeHolderStatus } from "@/types/referral";
 
-export function ReferralCodeCard({ code }: { code: string }) {
+export interface ReferralCodeCardProps {
+  code: string;
+  holderStatus: ReferralCodeHolderStatus;
+}
+
+export function ReferralCodeCard({ code, holderStatus }: ReferralCodeCardProps) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -20,7 +26,12 @@ export function ReferralCodeCard({ code }: { code: string }) {
 
   return (
     <div className="flex flex-col gap-3 rounded-xl bg-white/10 p-4 text-white backdrop-blur-sm">
-      <p className="text-xs text-white/80">ID Referensi Anda</p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-white/80">ID Referensi Anda</p>
+        <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase">
+          Status {holderStatus === "MITRA" ? "Mitra" : "User Biasa"}
+        </span>
+      </div>
       <div className="flex items-center justify-between gap-3">
         <span className="font-mono text-2xl font-bold tracking-widest">{code}</span>
         <button

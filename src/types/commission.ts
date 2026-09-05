@@ -1,7 +1,21 @@
+import type { ReferralCodeHolderStatus } from "./referral";
+
+export type CommissionType = "PERCENTAGE" | "FLAT";
+
 export interface CommissionRule {
   id: string;
+  /** Vestigial — direct-reference-only means this is always 1 now; kept so
+   *  existing rows/queries that still order by it don't need a migration
+   *  of their own. */
   level: number;
-  percentage: string;
+  /** Required when commission_type is PERCENTAGE, null for FLAT. */
+  percentage: string | null;
+  commission_type: CommissionType;
+  /** Required when commission_type is FLAT, null for PERCENTAGE. */
+  flat_amount: string | null;
+  /** Which referrer holder_status this rule rewards — null applies to
+   *  both USER and MITRA referrers alike. */
+  applies_to_holder_status: ReferralCodeHolderStatus | null;
   min_transaction: string | null;
   min_payout: string;
   holding_period_days: number;

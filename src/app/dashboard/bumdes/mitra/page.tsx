@@ -19,6 +19,7 @@ export default async function BumdesMitraPage() {
       fullName={user?.full_name ?? ""}
       roleLabel="Mitra"
       referralCode={overview.referralCode.code}
+      holderStatus={overview.referralCode.holder_status}
       downlines={overview.downlines}
     />
   );

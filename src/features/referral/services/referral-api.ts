@@ -26,6 +26,13 @@ export function setReferralCodeStatus(codeId: string, isActive: boolean) {
   });
 }
 
+export function setReferralCodeHolderStatus(codeId: string, holderStatus: "USER" | "MITRA") {
+  return apiFetch(`/api/referrals/codes/${codeId}/holder-status`, {
+    method: "PATCH",
+    body: JSON.stringify({ holderStatus }),
+  });
+}
+
 export function setReferralRelationshipStatus(relationshipId: string, status: "ACTIVE" | "BLOCKED") {
   return apiFetch(`/api/referrals/relationships/${relationshipId}/status`, {
     method: "PATCH",

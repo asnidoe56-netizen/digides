@@ -27,11 +27,9 @@ export function CommissionLedgerFilters() {
   const [searchValue, setSearchValue] = useState(searchParams.get("search") ?? "");
   const [filterOpen, setFilterOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState(searchParams.get("status") ?? "ALL");
-  const [pendingLevel, setPendingLevel] = useState(searchParams.get("level") ?? "");
 
   const appliedStatus = searchParams.get("status") ?? "ALL";
-  const appliedLevel = searchParams.get("level") ?? "";
-  const activeFilterCount = [appliedStatus !== "ALL", appliedLevel !== ""].filter(Boolean).length;
+  const activeFilterCount = [appliedStatus !== "ALL"].filter(Boolean).length;
 
   function updateParams(updates: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -54,7 +52,6 @@ export function CommissionLedgerFilters() {
 
   function handleOpenFilter() {
     setPendingStatus(appliedStatus);
-    setPendingLevel(appliedLevel);
     setFilterOpen(true);
   }
 
@@ -93,12 +90,11 @@ export function CommissionLedgerFilters() {
         title="Filter Ledger Komisi"
         onReset={() => {
           setPendingStatus("ALL");
-          setPendingLevel("");
-          updateParams({ status: null, level: null });
+          updateParams({ status: null });
           setFilterOpen(false);
         }}
         onApply={() => {
-          updateParams({ status: pendingStatus, level: pendingLevel || null });
+          updateParams({ status: pendingStatus });
           setFilterOpen(false);
         }}
       >
@@ -117,18 +113,6 @@ export function CommissionLedgerFilters() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="commission-filter-level">Level</Label>
-            <Input
-              id="commission-filter-level"
-              type="number"
-              min={1}
-              className="h-11"
-              value={pendingLevel}
-              onChange={(event) => setPendingLevel(event.target.value)}
-            />
           </div>
         </div>
       </FilterSheet>

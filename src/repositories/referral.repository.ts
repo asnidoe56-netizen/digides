@@ -59,6 +59,18 @@ export async function setReferralCodeActive(
   return result.rows[0] ?? null;
 }
 
+export async function setReferralCodeHolderStatus(
+  id: string,
+  holderStatus: ReferralCode["holder_status"],
+  db: Queryable = pool,
+): Promise<ReferralCode | null> {
+  const result = await db.query<ReferralCode>(
+    `UPDATE referral_codes SET holder_status = $2 WHERE id = $1 RETURNING *`,
+    [id, holderStatus],
+  );
+  return result.rows[0] ?? null;
+}
+
 export interface ReferralCodeWithDetail extends ReferralCode {
   owner_name: string;
   owner_email: string;
@@ -201,34 +213,3 @@ export async function listDirectDownlines(referrerId: string, db: Queryable = po
   return result.rows;
 }
 
-export interface ReferrerChainEntry {
-  /** The referral_relationships row this hop came from — commission_ledger.referral_relationship_id points here. */
-  relationship_id: string;
-  user_id: string;
-  depth: number;
-}
-
-// Walks referrer_id upward from `userId` up to `maxLevel` hops — this is
-// how the commission engine finds "level 2", "level 3" beneficiaries
-// without ever storing a stale level number. depth 1 = direct referrer.
-export async function findReferrerChain(
-  userId: string,
-  maxLevel: number,
-  db: Queryable = pool,
-): Promise<ReferrerChainEntry[]> {
-  const result = await db.query<ReferrerChainEntry>(
-    `WITH RECURSIVE chain AS (
-       SELECT id AS relationship_id, referrer_id AS user_id, 1 AS depth
-       FROM referral_relationships
-       WHERE referred_id = $1 AND status = 'ACTIVE'
-       UNION ALL
-       SELECT rr.id, rr.referrer_id, chain.depth + 1
-       FROM referral_relationships rr
-       JOIN chain ON rr.referred_id = chain.user_id
-       WHERE rr.status = 'ACTIVE' AND chain.depth < $2
-     )
-     SELECT relationship_id, user_id, depth FROM chain ORDER BY depth ASC`,
-    [userId, maxLevel],
-  );
-  return result.rows;
-}

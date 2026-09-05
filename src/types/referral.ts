@@ -1,8 +1,15 @@
+// "Mitra" is a status a code's owner holds, not a user_roles entry — any
+// AFFILIATE, BUMDES_ADMIN, or KONTER can be granted either one. It's what
+// the commission engine looks up to decide a direct referral's reward
+// rate (see commission.service.ts's awardCommissionForTransaction).
+export type ReferralCodeHolderStatus = "USER" | "MITRA";
+
 export interface ReferralCode {
   id: string;
   user_id: string;
   code: string;
   is_active: boolean;
+  holder_status: ReferralCodeHolderStatus;
   created_at: Date;
   expires_at: Date | null;
 }

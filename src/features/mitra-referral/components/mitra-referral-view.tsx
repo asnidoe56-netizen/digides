@@ -1,4 +1,5 @@
 import type { DownlineWithMaskedBalance } from "@/services/referral.service";
+import type { ReferralCodeHolderStatus } from "@/types/referral";
 import { DownlineList } from "./downline-list";
 import { ReferralCodeCard } from "./referral-code-card";
 
@@ -6,10 +7,11 @@ export interface MitraReferralViewProps {
   fullName: string;
   roleLabel: string;
   referralCode: string;
+  holderStatus: ReferralCodeHolderStatus;
   downlines: DownlineWithMaskedBalance[];
 }
 
-export function MitraReferralView({ fullName, roleLabel, referralCode, downlines }: MitraReferralViewProps) {
+export function MitraReferralView({ fullName, roleLabel, referralCode, holderStatus, downlines }: MitraReferralViewProps) {
   return (
     <div className="flex flex-col gap-6 pb-6">
       <div className="flex flex-col gap-4 rounded-b-3xl bg-linear-to-br from-red-500 to-red-700 px-4 pt-4 pb-6 text-white sm:rounded-3xl">
@@ -19,7 +21,7 @@ export function MitraReferralView({ fullName, roleLabel, referralCode, downlines
             {fullName} <span className="font-normal text-white/80">({roleLabel})</span>
           </p>
         </div>
-        <ReferralCodeCard code={referralCode} />
+        <ReferralCodeCard code={referralCode} holderStatus={holderStatus} />
       </div>
 
       <div className="flex flex-col gap-3 px-4">

@@ -21,10 +21,13 @@ export function CommissionLedgerList({ entries }: CommissionLedgerListProps) {
     return (
       <EmptyState
         title="Belum ada komisi"
-        description="Komisi tercatat di sini setelah transaksi pembelian berhasil dan referral terhubung."
+        description='Komisi tercatat di sini setelah seseorang yang direferensikan (bukan yang mereferensikan) menyelesaikan transaksi. Cek tab "Referral" untuk melihat siapa mereferensikan siapa.'
       />
     );
   }
+
+  const amountLabel = (entry: CommissionLedgerEntryWithDetail) =>
+    entry.rule_commission_type === "FLAT" ? `Rp${Number(entry.rule_flat_amount).toLocaleString("id-ID")}` : `${entry.rule_percentage}%`;
 
   return (
     <>
@@ -39,7 +42,7 @@ export function CommissionLedgerList({ entries }: CommissionLedgerListProps) {
               <StatusBadge status={entry.status} />
             </div>
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">Level {entry.level} · {entry.rule_percentage}%</p>
+              <p className="text-xs text-muted-foreground">Tarif {amountLabel(entry)}</p>
               <MoneyDisplay amount={entry.amount} size="md" />
             </div>
             <p className="text-xs text-muted-foreground">{dateFormatter.format(new Date(entry.created_at))}</p>
@@ -53,7 +56,7 @@ export function CommissionLedgerList({ entries }: CommissionLedgerListProps) {
             <TableRow>
               <TableHead>Waktu</TableHead>
               <TableHead>Penerima</TableHead>
-              <TableHead>Level</TableHead>
+              <TableHead>Tarif</TableHead>
               <TableHead className="text-right">Nominal</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Tersedia Mulai</TableHead>
@@ -69,9 +72,7 @@ export function CommissionLedgerList({ entries }: CommissionLedgerListProps) {
                   <p className="font-medium">{entry.beneficiary_name}</p>
                   <p className="text-xs text-muted-foreground">{entry.beneficiary_email}</p>
                 </TableCell>
-                <TableCell>
-                  Level {entry.level} · {entry.rule_percentage}%
-                </TableCell>
+                <TableCell>{amountLabel(entry)}</TableCell>
                 <TableCell className="text-right">
                   <MoneyDisplay amount={entry.amount} size="sm" />
                 </TableCell>

@@ -1,10 +1,17 @@
 import type { Queryable } from "@/lib/db/query";
 import { pool } from "@/lib/db/pool";
-import type { CommissionLedgerEntry, CommissionLedgerStatus, CommissionPayout, CommissionRule } from "@/types/commission";
+import type { CommissionLedgerEntry, CommissionLedgerStatus, CommissionPayout, CommissionRule, CommissionType } from "@/types/commission";
+import type { ReferralCodeHolderStatus } from "@/types/referral";
 
 export interface CreateCommissionRuleInput {
   level: number;
-  percentage: string | number;
+  commission_type: CommissionType;
+  /** Required when commission_type is PERCENTAGE. */
+  percentage?: string | number | null;
+  /** Required when commission_type is FLAT. */
+  flat_amount?: string | number | null;
+  /** Null applies the rule to both USER and MITRA referrers. */
+  applies_to_holder_status?: ReferralCodeHolderStatus | null;
   min_transaction?: string | number | null;
   min_payout?: string | number;
   holding_period_days?: number;
@@ -18,12 +25,16 @@ export async function createCommissionRule(
 ): Promise<CommissionRule> {
   const result = await db.query<CommissionRule>(
     `INSERT INTO commission_rules (
-       level, percentage, min_transaction, min_payout, holding_period_days, eligible_category_id, max_commission
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+       level, commission_type, percentage, flat_amount, applies_to_holder_status,
+       min_transaction, min_payout, holding_period_days, eligible_category_id, max_commission
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
       input.level,
-      input.percentage,
+      input.commission_type,
+      input.percentage ?? null,
+      input.flat_amount ?? null,
+      input.applies_to_holder_status ?? null,
       input.min_transaction ?? null,
       input.min_payout ?? 0,
       input.holding_period_days ?? 0,
@@ -48,14 +59,18 @@ export async function updateCommissionRule(
 ): Promise<CommissionRule | null> {
   const result = await db.query<CommissionRule>(
     `UPDATE commission_rules SET
-       level = $2, percentage = $3, min_transaction = $4, min_payout = $5,
-       holding_period_days = $6, eligible_category_id = $7, max_commission = $8, is_active = $9
+       level = $2, commission_type = $3, percentage = $4, flat_amount = $5, applies_to_holder_status = $6,
+       min_transaction = $7, min_payout = $8, holding_period_days = $9, eligible_category_id = $10,
+       max_commission = $11, is_active = $12
      WHERE id = $1
      RETURNING *`,
     [
       id,
       input.level,
-      input.percentage,
+      input.commission_type,
+      input.percentage ?? null,
+      input.flat_amount ?? null,
+      input.applies_to_holder_status ?? null,
       input.min_transaction ?? null,
       input.min_payout ?? 0,
       input.holding_period_days ?? 0,
@@ -219,12 +234,13 @@ export async function markCommissionPayoutStatus(
 export interface CommissionLedgerEntryWithDetail extends CommissionLedgerEntry {
   beneficiary_name: string;
   beneficiary_email: string;
-  rule_percentage: string;
+  rule_commission_type: CommissionType;
+  rule_percentage: string | null;
+  rule_flat_amount: string | null;
 }
 
 export interface ListCommissionLedgerFilter {
   status?: CommissionLedgerStatus;
-  level?: number;
   search?: string;
   limit?: number;
   offset?: number;
@@ -239,10 +255,6 @@ function buildCommissionLedgerFilterConditions(
   if (filter.status) {
     params.push(filter.status);
     conditions.push(`cl.status = $${params.length}`);
-  }
-  if (filter.level) {
-    params.push(filter.level);
-    conditions.push(`cl.level = $${params.length}`);
   }
   if (filter.search) {
     params.push(`%${filter.search}%`);
@@ -264,7 +276,8 @@ export async function listCommissionLedgerGlobal(
   params.push(limit, offset);
 
   const result = await db.query<CommissionLedgerEntryWithDetail>(
-    `SELECT cl.*, u.full_name AS beneficiary_name, u.email AS beneficiary_email, cr.percentage AS rule_percentage
+    `SELECT cl.*, u.full_name AS beneficiary_name, u.email AS beneficiary_email,
+       cr.commission_type AS rule_commission_type, cr.percentage AS rule_percentage, cr.flat_amount AS rule_flat_amount
      FROM commission_ledger cl
      JOIN users u ON u.id = cl.beneficiary_user_id
      JOIN commission_rules cr ON cr.id = cl.commission_rule_id

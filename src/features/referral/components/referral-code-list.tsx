@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ReferralCodeWithDetail } from "@/repositories/referral.repository";
+import { ReferralCodeHolderStatusToggle } from "./referral-code-holder-status-toggle";
 import { ReferralCodeStatusToggle } from "./referral-code-status-toggle";
 
 const dateFormatter = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric" });
@@ -32,7 +33,13 @@ export function ReferralCodeList({ codes }: { codes: ReferralCodeWithDetail[] })
               <code className="rounded bg-muted px-2 py-1 text-sm font-medium tracking-wide">{code.code}</code>
               <p className="text-xs text-muted-foreground">{code.referred_count} direferensikan</p>
             </div>
-            <ReferralCodeStatusToggle code={code} />
+            <Badge variant={code.holder_status === "MITRA" ? "default" : "outline"} className="w-fit">
+              {code.holder_status === "MITRA" ? "Mitra" : "User Biasa"}
+            </Badge>
+            <div className="flex gap-2">
+              <ReferralCodeStatusToggle code={code} />
+              <ReferralCodeHolderStatusToggle code={code} />
+            </div>
           </div>
         ))}
       </div>
@@ -46,6 +53,7 @@ export function ReferralCodeList({ codes }: { codes: ReferralCodeWithDetail[] })
               <TableHead className="text-right">Direferensikan</TableHead>
               <TableHead>Dibuat</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Tarif Reward</TableHead>
               <TableHead className="w-px" />
             </TableRow>
           </TableHeader>
@@ -65,7 +73,15 @@ export function ReferralCodeList({ codes }: { codes: ReferralCodeWithDetail[] })
                   <Badge variant={code.is_active ? "default" : "outline"}>{code.is_active ? "Aktif" : "Nonaktif"}</Badge>
                 </TableCell>
                 <TableCell>
-                  <ReferralCodeStatusToggle code={code} />
+                  <Badge variant={code.holder_status === "MITRA" ? "default" : "outline"}>
+                    {code.holder_status === "MITRA" ? "Mitra" : "User Biasa"}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex justify-end gap-2">
+                    <ReferralCodeStatusToggle code={code} />
+                    <ReferralCodeHolderStatusToggle code={code} />
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

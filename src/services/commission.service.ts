@@ -20,10 +20,11 @@ import {
   type ListCommissionLedgerFilter,
 } from "@/repositories/commission.repository";
 import { findProductById } from "@/repositories/product.repository";
-import { findReferrerChain } from "@/repositories/referral.repository";
+import { findRelationshipByReferredUser, findReferralCodeByUserId } from "@/repositories/referral.repository";
 import { findTransactionById } from "@/repositories/transaction.repository";
 import { getOwningUserId, getWalletByOwningUserId, postLedgerEntry } from "@/repositories/wallet.repository";
 import type { CommissionLedgerEntry, CommissionRule } from "@/types/commission";
+import type { ReferralCodeHolderStatus } from "@/types/referral";
 
 export async function getCommissionRules() {
   return listCommissionRules();
@@ -48,7 +49,13 @@ export async function saveCommissionRule(
     action: ruleId ? "COMMISSION_RULE_UPDATED" : "COMMISSION_RULE_CREATED",
     entity: "commission_rules",
     entity_id: rule.id,
-    new_value: { level: rule.level, percentage: rule.percentage, eligible_category_id: rule.eligible_category_id },
+    new_value: {
+      commission_type: rule.commission_type,
+      percentage: rule.percentage,
+      flat_amount: rule.flat_amount,
+      applies_to_holder_status: rule.applies_to_holder_status,
+      eligible_category_id: rule.eligible_category_id,
+    },
   });
 
   return rule;
@@ -62,7 +69,10 @@ export async function setCommissionRuleActive(ruleId: string, isActive: boolean,
 
   const rule = await updateCommissionRule(ruleId, {
     level: current.level,
+    commission_type: current.commission_type,
     percentage: current.percentage,
+    flat_amount: current.flat_amount,
+    applies_to_holder_status: current.applies_to_holder_status,
     min_transaction: current.min_transaction,
     min_payout: current.min_payout,
     holding_period_days: current.holding_period_days,
@@ -96,25 +106,33 @@ export async function getCommissionPayoutHistory() {
   return listCommissionPayouts();
 }
 
-// Picks the most specific applicable rule for a level: a rule scoped to
-// the transaction's own category wins over a rule with no category
-// restriction (eligible_category_id IS NULL, i.e. "applies to everything").
-function pickRuleForLevel(rules: CommissionRule[], level: number, categoryId: string | null): CommissionRule | undefined {
+// Picks the most specific applicable rule for this direct referral: a rule
+// scoped to the transaction's own category and/or the referrer's own
+// holder_status wins over a rule left NULL on either dimension (i.e.
+// "applies to everything"/"applies to both statuses"). Ties broken by
+// whichever candidate matches on more dimensions.
+function pickRuleForDirectReferral(
+  rules: CommissionRule[],
+  holderStatus: ReferralCodeHolderStatus,
+  categoryId: string | null,
+): CommissionRule | undefined {
   const candidates = rules.filter(
-    (rule) => rule.level === level && (rule.eligible_category_id === null || rule.eligible_category_id === categoryId),
+    (rule) =>
+      (rule.applies_to_holder_status === null || rule.applies_to_holder_status === holderStatus) &&
+      (rule.eligible_category_id === null || rule.eligible_category_id === categoryId),
   );
-  return candidates.find((rule) => rule.eligible_category_id !== null) ?? candidates[0];
+  const specificity = (rule: CommissionRule) =>
+    (rule.applies_to_holder_status !== null ? 1 : 0) + (rule.eligible_category_id !== null ? 1 : 0);
+  return candidates.sort((a, b) => specificity(b) - specificity(a))[0];
 }
 
-// The Commission Engine: walks the buyer's referrer chain (M18 section 22's
-// "Transaction -> Referral Engine -> Commission Calculation -> Commission
-// Entry" flow) and writes one commission_ledger row per level that has a
-// matching active rule. Commission does NOT touch any wallet here — it
-// only accrues (PENDING, becoming AVAILABLE after holding_period_days via
-// settlePendingCommissions) until payCommissionToBeneficiary cashes it out.
-// Has no caller yet — there is no Transaction Engine in this codebase to
-// call it after a purchase succeeds — but it's the real, complete
-// calculation the commission_rules/commission_ledger schema was built for.
+// The Commission Engine: rewards the buyer's *direct* referrer only, never
+// their referrer's referrer — DigiDes Pay deliberately has no multi-level
+// payout (M18-follow-up design notes: "sistem referensi langsung, tanpa
+// struktur level atau kedalaman"). Commission does NOT touch any wallet
+// here — it only accrues (PENDING, becoming AVAILABLE after
+// holding_period_days via settlePendingCommissions) until
+// payCommissionToBeneficiary cashes it out.
 export async function awardCommissionForTransaction(
   transactionId: string,
   actorUserId: string | null = null,
@@ -132,65 +150,62 @@ export async function awardCommissionForTransaction(
     return [];
   }
 
+  const relationship = await findRelationshipByReferredUser(purchasingUserId);
+  if (!relationship || relationship.status !== "ACTIVE") {
+    return [];
+  }
+
+  const referrerCode = await findReferralCodeByUserId(relationship.referrer_id);
+  const holderStatus: ReferralCodeHolderStatus = referrerCode?.holder_status ?? "USER";
+
   const rules = await listActiveCommissionRules();
-  if (rules.length === 0) {
-    return [];
-  }
-  const maxLevel = Math.max(...rules.map((rule) => rule.level));
-
-  const chain = await findReferrerChain(purchasingUserId, maxLevel);
-  if (chain.length === 0) {
-    return [];
-  }
-
   const product = transaction.product_id ? await findProductById(transaction.product_id) : null;
+  const rule = pickRuleForDirectReferral(rules, holderStatus, product?.category_id ?? null);
+  if (!rule) {
+    return [];
+  }
+
   const sellingPrice = Number(transaction.selling_price);
+  if (rule.min_transaction && sellingPrice < Number(rule.min_transaction)) {
+    return [];
+  }
+
+  let amount = rule.commission_type === "FLAT" ? Number(rule.flat_amount) : (sellingPrice * Number(rule.percentage)) / 100;
+  if (rule.max_commission) amount = Math.min(amount, Number(rule.max_commission));
+  amount = Math.round(amount);
+  if (amount <= 0) {
+    return [];
+  }
+
+  const availableAt =
+    rule.holding_period_days > 0 ? new Date(Date.now() + rule.holding_period_days * 86_400_000) : new Date();
 
   return withTransaction(async (client) => {
-    const created: CommissionLedgerEntry[] = [];
+    const entry = await createCommissionLedgerEntry(
+      {
+        transaction_id: transaction.id,
+        referral_relationship_id: relationship.id,
+        beneficiary_user_id: relationship.referrer_id,
+        commission_rule_id: rule.id,
+        level: 1,
+        amount,
+        available_at: availableAt,
+      },
+      client,
+    );
 
-    for (const hop of chain) {
-      const rule = pickRuleForLevel(rules, hop.depth, product?.category_id ?? null);
-      if (!rule) continue;
-      if (rule.min_transaction && sellingPrice < Number(rule.min_transaction)) continue;
+    await recordAuditLog(
+      {
+        actor_user_id: actorUserId,
+        action: "COMMISSION_AWARDED",
+        entity: "transactions",
+        entity_id: transaction.id,
+        new_value: { entry_id: entry.id, beneficiary_user_id: entry.beneficiary_user_id, amount: entry.amount },
+      },
+      client,
+    );
 
-      let amount = (sellingPrice * Number(rule.percentage)) / 100;
-      if (rule.max_commission) amount = Math.min(amount, Number(rule.max_commission));
-      amount = Math.round(amount);
-      if (amount <= 0) continue;
-
-      const availableAt =
-        rule.holding_period_days > 0 ? new Date(Date.now() + rule.holding_period_days * 86_400_000) : new Date();
-
-      const entry = await createCommissionLedgerEntry(
-        {
-          transaction_id: transaction.id,
-          referral_relationship_id: hop.relationship_id,
-          beneficiary_user_id: hop.user_id,
-          commission_rule_id: rule.id,
-          level: hop.depth,
-          amount,
-          available_at: availableAt,
-        },
-        client,
-      );
-      created.push(entry);
-    }
-
-    if (created.length > 0) {
-      await recordAuditLog(
-        {
-          actor_user_id: actorUserId,
-          action: "COMMISSION_AWARDED",
-          entity: "transactions",
-          entity_id: transaction.id,
-          new_value: { entries: created.map((entry) => ({ id: entry.id, level: entry.level, amount: entry.amount })) },
-        },
-        client,
-      );
-    }
-
-    return created;
+    return [entry];
   });
 }
 

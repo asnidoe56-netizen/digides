@@ -2,11 +2,13 @@ import { PageHeader } from "@/components/page-header";
 import { SettingsTabs, type SettingsTabKey } from "@/features/settings";
 import { DigiflazzSettingsForm, ServerIpCard } from "@/features/digiflazz";
 import { MidtransSettingsForm } from "@/features/midtrans";
+import { ManualTopupDestinationForm } from "@/features/manual-topup";
 import { SupportSettingsForm } from "@/features/support-settings";
 import { getDigiflazzSettingsForDisplay } from "@/services/digiflazz.service";
 import { getMidtransSettingsForDisplay } from "@/services/midtrans.service";
 import { getServerPublicIp } from "@/services/network-info.service";
 import { getSupportSettings } from "@/repositories/support-settings.repository";
+import { getMyTopupDestination } from "@/services/manual-topup-destination.service";
 
 // Reads live, never cached — credential state (is a key set? which mode is
 // active?) must always reflect what's actually in the database.
@@ -17,7 +19,7 @@ interface SuperAdminSettingsPageProps {
 }
 
 function isValidTab(value: string | undefined): value is SettingsTabKey {
-  return value === "digiflazz" || value === "midtrans" || value === "support";
+  return value === "digiflazz" || value === "midtrans" || value === "manual-topup" || value === "support";
 }
 
 export default async function SuperAdminSettingsPage({ searchParams }: SuperAdminSettingsPageProps) {
@@ -35,6 +37,7 @@ export default async function SuperAdminSettingsPage({ searchParams }: SuperAdmi
 
       {tab === "digiflazz" ? <DigiflazzTab /> : null}
       {tab === "midtrans" ? <MidtransTab /> : null}
+      {tab === "manual-topup" ? <ManualTopupTab /> : null}
       {tab === "support" ? <SupportTab /> : null}
     </div>
   );
@@ -46,6 +49,30 @@ export default async function SuperAdminSettingsPage({ searchParams }: SuperAdmi
 // form field an admin actually looks at and edits.
 function toLocalFormat(internationalNumber: string): string {
   return internationalNumber.startsWith("62") ? `0${internationalNumber.slice(2)}` : internationalNumber;
+}
+
+async function ManualTopupTab() {
+  const destination = await getMyTopupDestination();
+
+  return (
+    <div className="flex flex-col gap-6">
+      <p className="max-w-lg text-sm text-muted-foreground">
+        Belum ada payment gateway aktif — Mitra yang mengisi saldo lewat aplikasi diarahkan untuk transfer
+        manual ke akun DANA/rekening bank ini, lalu menekan &quot;Saya Sudah Membayar&quot; sambil menunggu
+        diverifikasi tim DigiDes di menu Wallet.
+      </p>
+
+      <ManualTopupDestinationForm
+        initialValues={{
+          danaNumber: destination.dana_number,
+          danaAccountName: destination.dana_account_name,
+          bankName: destination.bank_name,
+          bankAccountNumber: destination.bank_account_number,
+          bankAccountName: destination.bank_account_name,
+        }}
+      />
+    </div>
+  );
 }
 
 async function SupportTab() {

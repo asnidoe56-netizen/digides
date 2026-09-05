@@ -1,5 +1,6 @@
 export type PaymentMethod = "QRIS" | "VA" | "MANUAL" | "MIDTRANS";
 export type PaymentStatus = "PENDING" | "SUCCESS" | "FAILED" | "EXPIRED";
+export type ManualTopupChannel = "DANA" | "TRANSFER_BANK";
 
 // A single table for this phase covers both real gateway payments and
 // admin-initiated manual top-ups (method = 'MANUAL') — Architecture
@@ -12,6 +13,9 @@ export interface Payment {
   method: PaymentMethod;
   status: PaymentStatus;
   gateway_reference: string | null;
+  /** Which manual channel this was requested through — set only when
+   *  method = 'MANUAL', null for QRIS/VA/MIDTRANS. */
+  manual_channel: ManualTopupChannel | null;
   webhook_payload: Record<string, unknown> | null;
   created_by: string | null;
   created_at: Date;

@@ -9,8 +9,10 @@ import { getWalletAccountDetail, getWalletByBumdesId, getWalletById, postLedgerE
 import { recordAuditLog } from "@/repositories/audit.repository";
 import { createSnapTransaction, verifyMidtransSignature } from "@/lib/midtrans/client";
 import { getActiveMidtransCredentials } from "@/services/midtrans.service";
+import { getWalletForMitraSession } from "@/services/wallet.service";
 import { notifySuperAdmin } from "@/services/notification.service";
 import { formatMoney } from "@/lib/formatting/money";
+import type { ManualTopupChannel } from "@/types/payment";
 
 // Top Up follows issue M18 section 12's flow exactly: creating a request
 // never touches the balance by itself (no "Tambah Saldo" shortcut) — only
@@ -21,6 +23,10 @@ export interface CreateTopupRequestInput {
   walletId: string;
   amount: number;
   actorUserId: string;
+  /** Which manual channel the requester says they'll pay through — shown
+   *  back to them on the payment-detail screen and to Super Admin when
+   *  verifying. */
+  manualChannel?: ManualTopupChannel | null;
 }
 
 export async function createTopupRequest(input: CreateTopupRequestInput) {
@@ -30,7 +36,13 @@ export async function createTopupRequest(input: CreateTopupRequestInput) {
 
   return withTransaction(async (client) => {
     const payment = await createPayment(
-      { wallet_id: input.walletId, amount: input.amount, method: "MANUAL", created_by: input.actorUserId },
+      {
+        wallet_id: input.walletId,
+        amount: input.amount,
+        method: "MANUAL",
+        manual_channel: input.manualChannel ?? null,
+        created_by: input.actorUserId,
+      },
       client,
     );
 
@@ -59,6 +71,24 @@ export async function createTopupRequest(input: CreateTopupRequestInput) {
 
     return payment;
   });
+}
+
+// The Mitra app's own "Isi Saldo -> Saya Sudah Membayar" flow — unlike the
+// route above (a Super Admin recording a request on someone else's
+// behalf), the wallet here is always resolved from the caller's own
+// session (same resolver /api/wallet/me uses), never a client-supplied id.
+export async function createMyTopupRequest(
+  userId: string,
+  roles: string[],
+  amount: number,
+  manualChannel: ManualTopupChannel,
+) {
+  const wallet = await getWalletForMitraSession(userId, roles);
+  if (!wallet) {
+    throw new Error("Wallet tidak ditemukan untuk akun ini");
+  }
+
+  return createTopupRequest({ walletId: wallet.id, amount, actorUserId: userId, manualChannel });
 }
 
 export async function approveTopup(paymentId: string, actorUserId: string) {

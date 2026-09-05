@@ -13,6 +13,11 @@ const dateFormatter = new Intl.DateTimeFormat("id-ID", {
   minute: "2-digit",
 });
 
+const CHANNEL_LABEL: Record<string, string> = {
+  DANA: "DANA",
+  TRANSFER_BANK: "Transfer Bank",
+};
+
 export interface WalletTopupListProps {
   payments: PaymentWithOwner[];
 }
@@ -39,6 +44,11 @@ export function WalletTopupList({ payments }: WalletTopupListProps) {
               </div>
               <StatusBadge status={payment.status} />
             </div>
+            {payment.manual_channel ? (
+              <p className="text-xs text-muted-foreground">
+                Via {CHANNEL_LABEL[payment.manual_channel] ?? payment.manual_channel}
+              </p>
+            ) : null}
             <MoneyDisplay amount={payment.amount} size="lg" />
             {payment.status === "PENDING" ? <WalletTopupActions paymentId={payment.id} /> : null}
           </div>
@@ -51,6 +61,7 @@ export function WalletTopupList({ payments }: WalletTopupListProps) {
             <TableRow>
               <TableHead>Waktu</TableHead>
               <TableHead>Pemilik</TableHead>
+              <TableHead>Channel</TableHead>
               <TableHead className="text-right">Nominal</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Aksi</TableHead>
@@ -63,6 +74,9 @@ export function WalletTopupList({ payments }: WalletTopupListProps) {
                   {dateFormatter.format(new Date(payment.created_at))}
                 </TableCell>
                 <TableCell className="font-medium">{payment.owner_name}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {payment.manual_channel ? (CHANNEL_LABEL[payment.manual_channel] ?? payment.manual_channel) : "-"}
+                </TableCell>
                 <TableCell className="text-right">
                   <MoneyDisplay amount={payment.amount} size="sm" />
                 </TableCell>

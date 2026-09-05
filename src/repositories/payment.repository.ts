@@ -1,21 +1,29 @@
 import type { Queryable } from "@/lib/db/query";
 import { pool } from "@/lib/db/pool";
-import type { Payment, PaymentMethod, PaymentStatus } from "@/types/payment";
+import type { ManualTopupChannel, Payment, PaymentMethod, PaymentStatus } from "@/types/payment";
 
 export interface CreatePaymentInput {
   wallet_id: string;
   amount: string | number;
   method: PaymentMethod;
   gateway_reference?: string | null;
+  manual_channel?: ManualTopupChannel | null;
   created_by?: string | null;
 }
 
 export async function createPayment(input: CreatePaymentInput, db: Queryable = pool): Promise<Payment> {
   const result = await db.query<Payment>(
-    `INSERT INTO payments (wallet_id, amount, method, gateway_reference, created_by)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO payments (wallet_id, amount, method, gateway_reference, manual_channel, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [input.wallet_id, input.amount, input.method, input.gateway_reference ?? null, input.created_by ?? null],
+    [
+      input.wallet_id,
+      input.amount,
+      input.method,
+      input.gateway_reference ?? null,
+      input.manual_channel ?? null,
+      input.created_by ?? null,
+    ],
   );
   return result.rows[0];
 }

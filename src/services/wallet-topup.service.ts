@@ -10,6 +10,7 @@ import { recordAuditLog } from "@/repositories/audit.repository";
 import { createSnapTransaction, verifyMidtransSignature } from "@/lib/midtrans/client";
 import { getActiveMidtransCredentials } from "@/services/midtrans.service";
 import { getWalletForMitraSession } from "@/services/wallet.service";
+import { findActiveManualPaymentMethodByCode } from "@/repositories/manual-payment-method.repository";
 import { notifySuperAdmin } from "@/services/notification.service";
 import { formatMoney } from "@/lib/formatting/money";
 import type { ManualTopupChannel } from "@/types/payment";
@@ -83,6 +84,15 @@ export async function createMyTopupRequest(
   amount: number,
   manualChannel: ManualTopupChannel,
 ) {
+  // Never trust the client's claim that a channel is offered — re-check
+  // against what's actually active server-side, so a stale screen (or a
+  // direct API call) can't submit a request for a method Super Admin has
+  // since disabled.
+  const method = await findActiveManualPaymentMethodByCode(manualChannel);
+  if (!method) {
+    throw new Error("Metode pembayaran ini sedang tidak tersedia");
+  }
+
   const wallet = await getWalletForMitraSession(userId, roles);
   if (!wallet) {
     throw new Error("Wallet tidak ditemukan untuk akun ini");

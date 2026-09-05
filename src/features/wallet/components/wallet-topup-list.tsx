@@ -15,7 +15,10 @@ const dateFormatter = new Intl.DateTimeFormat("id-ID", {
 
 const CHANNEL_LABEL: Record<string, string> = {
   DANA: "DANA",
-  TRANSFER_BANK: "Transfer Bank",
+  GOPAY: "GoPay",
+  MANDIRI: "Mandiri",
+  BRI: "BRI",
+  BCA: "BCA",
 };
 
 export interface WalletTopupListProps {

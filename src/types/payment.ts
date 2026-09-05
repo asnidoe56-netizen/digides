@@ -1,6 +1,6 @@
 export type PaymentMethod = "QRIS" | "VA" | "MANUAL" | "MIDTRANS";
 export type PaymentStatus = "PENDING" | "SUCCESS" | "FAILED" | "EXPIRED";
-export type ManualTopupChannel = "DANA" | "TRANSFER_BANK";
+export type ManualTopupChannel = "DANA" | "GOPAY" | "MANDIRI" | "BRI" | "BCA";
 
 // A single table for this phase covers both real gateway payments and
 // admin-initiated manual top-ups (method = 'MANUAL') — Architecture

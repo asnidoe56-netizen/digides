@@ -2,13 +2,13 @@ import { PageHeader } from "@/components/page-header";
 import { SettingsTabs, type SettingsTabKey } from "@/features/settings";
 import { DigiflazzSettingsForm, ServerIpCard } from "@/features/digiflazz";
 import { MidtransSettingsForm } from "@/features/midtrans";
-import { ManualTopupDestinationForm } from "@/features/manual-topup";
+import { ManualPaymentMethodList } from "@/features/manual-payment-methods";
 import { SupportSettingsForm } from "@/features/support-settings";
 import { getDigiflazzSettingsForDisplay } from "@/services/digiflazz.service";
 import { getMidtransSettingsForDisplay } from "@/services/midtrans.service";
 import { getServerPublicIp } from "@/services/network-info.service";
 import { getSupportSettings } from "@/repositories/support-settings.repository";
-import { getMyTopupDestination } from "@/services/manual-topup-destination.service";
+import { getManualPaymentMethods } from "@/services/manual-payment-method.service";
 
 // Reads live, never cached — credential state (is a key set? which mode is
 // active?) must always reflect what's actually in the database.
@@ -52,25 +52,17 @@ function toLocalFormat(internationalNumber: string): string {
 }
 
 async function ManualTopupTab() {
-  const destination = await getMyTopupDestination();
+  const methods = await getManualPaymentMethods();
 
   return (
     <div className="flex flex-col gap-6">
       <p className="max-w-lg text-sm text-muted-foreground">
-        Belum ada payment gateway aktif — Mitra yang mengisi saldo lewat aplikasi diarahkan untuk transfer
-        manual ke akun DANA/rekening bank ini, lalu menekan &quot;Saya Sudah Membayar&quot; sambil menunggu
-        diverifikasi tim DigiDes di menu Wallet.
+        Belum ada payment gateway aktif — Mitra yang mengisi saldo lewat aplikasi ditawari hanya metode
+        yang berstatus Aktif di bawah ini, transfer manual ke nomor yang tertera, lalu menekan
+        &quot;Saya Sudah Membayar&quot; sambil menunggu diverifikasi tim DigiDes di menu Wallet.
       </p>
 
-      <ManualTopupDestinationForm
-        initialValues={{
-          danaNumber: destination.dana_number,
-          danaAccountName: destination.dana_account_name,
-          bankName: destination.bank_name,
-          bankAccountNumber: destination.bank_account_number,
-          bankAccountName: destination.bank_account_name,
-        }}
-      />
+      <ManualPaymentMethodList methods={methods} />
     </div>
   );
 }

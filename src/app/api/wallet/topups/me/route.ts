@@ -5,7 +5,7 @@ import { createMyTopupRequest } from "@/services/wallet-topup.service";
 
 const mySchema = z.object({
   amount: z.number({ message: "Nominal wajib diisi" }).positive("Nominal harus lebih besar dari nol"),
-  manualChannel: z.enum(["DANA", "TRANSFER_BANK"]),
+  manualChannel: z.enum(["DANA", "GOPAY", "MANDIRI", "BRI", "BCA"]),
 });
 
 // The Mitra app's own "Isi Saldo" — resolves the wallet from the caller's
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       parsed.data.amount,
       parsed.data.manualChannel,
     );
-    return NextResponse.json({ payment }, { status: 201 });
+    return NextResponse.json({ payment: { id: payment.id } }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Gagal membuat permintaan top up." },

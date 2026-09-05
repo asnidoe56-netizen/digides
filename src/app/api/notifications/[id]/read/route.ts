@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { readNotification } from "@/services/notification.service";
+import type { RoleCode } from "@/types/user";
 
 export async function PATCH(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -11,7 +12,7 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
   const { id } = await params;
 
   try {
-    const notification = await readNotification(id);
+    const notification = await readNotification(id, session.roles[0] as RoleCode);
     return NextResponse.json({ notification });
   } catch (error) {
     return NextResponse.json(

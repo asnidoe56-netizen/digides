@@ -43,8 +43,13 @@ export async function getNotifications(recipientRole: RoleCode) {
   return listNotifications(recipientRole);
 }
 
-export async function readNotification(id: string) {
-  const notification = await markNotificationRead(id);
+// recipientRole must be the caller's own role (never trust a value from the
+// request body) — markNotificationRead's WHERE clause is what actually
+// enforces this can't touch another role's notification; a not-found here
+// covers both a bad id and an id that belongs to a different role, same as
+// transactions/[id]'s ownership check.
+export async function readNotification(id: string, recipientRole: RoleCode) {
+  const notification = await markNotificationRead(id, recipientRole);
   if (!notification) {
     throw new Error("Notifikasi tidak ditemukan");
   }

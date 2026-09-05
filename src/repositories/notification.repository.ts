@@ -58,10 +58,17 @@ export async function listNotifications(
   return result.rows;
 }
 
-export async function markNotificationRead(id: string, db: Queryable = pool): Promise<Notification | null> {
+// Scoped to recipientRole so a caller can never read or mark-read another
+// role's notification by guessing its id — mirrors the ownership check
+// transactions/[id] does for wallet_id.
+export async function markNotificationRead(
+  id: string,
+  recipientRole: string,
+  db: Queryable = pool,
+): Promise<Notification | null> {
   const result = await db.query<Notification>(
-    `UPDATE notifications SET is_read = true WHERE id = $1 RETURNING *`,
-    [id],
+    `UPDATE notifications SET is_read = true WHERE id = $1 AND recipient_role = $2 RETURNING *`,
+    [id, recipientRole],
   );
   return result.rows[0] ?? null;
 }

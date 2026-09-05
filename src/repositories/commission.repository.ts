@@ -153,6 +153,49 @@ export async function listCommissionLedgerForBeneficiary(
   return result.rows;
 }
 
+export interface CommissionLedgerEntryForBeneficiary extends CommissionLedgerEntry {
+  downline_name: string;
+}
+
+// Menu Mitra's own "Komisi" view — every reward this user has earned,
+// labeled with which direct downline's transaction triggered it (joined
+// through the same referral_relationships row commission_ledger already
+// points to), newest first.
+export async function listCommissionLedgerForBeneficiaryDetail(
+  beneficiaryUserId: string,
+  db: Queryable = pool,
+): Promise<CommissionLedgerEntryForBeneficiary[]> {
+  const result = await db.query<CommissionLedgerEntryForBeneficiary>(
+    `SELECT cl.*, u.full_name AS downline_name
+     FROM commission_ledger cl
+     JOIN referral_relationships rr ON rr.id = cl.referral_relationship_id
+     JOIN users u ON u.id = rr.referred_id
+     WHERE cl.beneficiary_user_id = $1
+     ORDER BY cl.created_at DESC`,
+    [beneficiaryUserId],
+  );
+  return result.rows;
+}
+
+export interface CommissionStatusTotal {
+  status: CommissionLedgerStatus;
+  total: string;
+}
+
+export async function summarizeCommissionForBeneficiary(
+  beneficiaryUserId: string,
+  db: Queryable = pool,
+): Promise<CommissionStatusTotal[]> {
+  const result = await db.query<CommissionStatusTotal>(
+    `SELECT status, COALESCE(SUM(amount), 0) AS total
+     FROM commission_ledger
+     WHERE beneficiary_user_id = $1
+     GROUP BY status`,
+    [beneficiaryUserId],
+  );
+  return result.rows;
+}
+
 // Called by the commission-settlement job once `available_at` has passed.
 export async function markCommissionAvailable(
   ids: string[],

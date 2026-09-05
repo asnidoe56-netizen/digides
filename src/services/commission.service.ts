@@ -7,6 +7,7 @@ import {
   findCommissionRuleById,
   listActiveCommissionRules,
   listCommissionLedgerForBeneficiary,
+  listCommissionLedgerForBeneficiaryDetail,
   listCommissionLedgerGlobal,
   listCommissionPayouts,
   listCommissionRules,
@@ -15,6 +16,7 @@ import {
   markCommissionLedgerPaid,
   markCommissionPayoutStatus,
   summarizeAvailableCommissionByBeneficiary,
+  summarizeCommissionForBeneficiary,
   updateCommissionRule,
   type CreateCommissionRuleInput,
   type ListCommissionLedgerFilter,
@@ -100,6 +102,32 @@ export async function getCommissionLedger(filter: ListCommissionLedgerFilter = {
 
 export async function getAvailableCommissionSummary() {
   return summarizeAvailableCommissionByBeneficiary();
+}
+
+export interface MyCommissionOverview {
+  summary: { pending: string; available: string; paid: string };
+  entries: Awaited<ReturnType<typeof listCommissionLedgerForBeneficiaryDetail>>;
+}
+
+// Menu Mitra's own "Komisi" tab (Flutter's ReferralScreen and, eventually,
+// the web's mitra-facing Menu Mitra pages) — self-service, no SUPER_ADMIN
+// role required, scoped entirely to the caller's own beneficiary_user_id.
+export async function getMyCommissionOverview(userId: string): Promise<MyCommissionOverview> {
+  const [entries, totals] = await Promise.all([
+    listCommissionLedgerForBeneficiaryDetail(userId),
+    summarizeCommissionForBeneficiary(userId),
+  ]);
+
+  const totalFor = (status: string) => totals.find((row) => row.status === status)?.total ?? "0";
+
+  return {
+    summary: {
+      pending: totalFor("PENDING"),
+      available: totalFor("AVAILABLE"),
+      paid: totalFor("PAID"),
+    },
+    entries,
+  };
 }
 
 export async function getCommissionPayoutHistory() {

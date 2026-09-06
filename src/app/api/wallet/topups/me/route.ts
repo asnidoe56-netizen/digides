@@ -5,7 +5,10 @@ import { createMyTopupRequest } from "@/services/wallet-topup.service";
 
 const mySchema = z.object({
   amount: z.number({ message: "Nominal wajib diisi" }).positive("Nominal harus lebih besar dari nol"),
-  manualChannel: z.enum(["DANA", "GOPAY", "MANDIRI", "BRI", "BCA"]),
+  // Open-ended (see ManualTopupChannel) — createMyTopupRequest re-checks
+  // this is really an active method server-side, so this schema only
+  // needs to ensure something was actually sent.
+  manualChannel: z.string().trim().min(1, "Pilih metode pembayaran"),
 });
 
 // The Mitra app's own "Isi Saldo" — resolves the wallet from the caller's

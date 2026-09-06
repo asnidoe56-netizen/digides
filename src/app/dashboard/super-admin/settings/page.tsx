@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/page-header";
 import { SettingsTabs, type SettingsTabKey } from "@/features/settings";
 import { DigiflazzSettingsForm, ServerIpCard } from "@/features/digiflazz";
 import { MidtransSettingsForm } from "@/features/midtrans";
-import { ManualPaymentMethodList } from "@/features/manual-payment-methods";
+import { ManualPaymentMethodCreateDialog, ManualPaymentMethodList } from "@/features/manual-payment-methods";
 import { SupportSettingsForm } from "@/features/support-settings";
 import { getDigiflazzSettingsForDisplay } from "@/services/digiflazz.service";
 import { getMidtransSettingsForDisplay } from "@/services/midtrans.service";
@@ -56,11 +56,14 @@ async function ManualTopupTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="max-w-lg text-sm text-muted-foreground">
-        Belum ada payment gateway aktif — Mitra yang mengisi saldo lewat aplikasi ditawari hanya metode
-        yang berstatus Aktif di bawah ini, transfer manual ke nomor yang tertera, lalu menekan
-        &quot;Saya Sudah Membayar&quot; sambil menunggu diverifikasi tim DigiDes di menu Wallet.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <p className="max-w-lg text-sm text-muted-foreground">
+          Belum ada payment gateway aktif — Mitra yang mengisi saldo lewat aplikasi ditawari hanya metode
+          yang berstatus Aktif di bawah ini, transfer manual ke nomor yang tertera, lalu menekan
+          &quot;Saya Sudah Membayar&quot; sambil menunggu diverifikasi tim DigiDes di menu Wallet.
+        </p>
+        <ManualPaymentMethodCreateDialog />
+      </div>
 
       <ManualPaymentMethodList methods={methods} />
     </div>

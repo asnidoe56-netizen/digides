@@ -1,6 +1,11 @@
 export type PaymentMethod = "QRIS" | "VA" | "MANUAL" | "MIDTRANS";
 export type PaymentStatus = "PENDING" | "SUCCESS" | "FAILED" | "EXPIRED";
-export type ManualTopupChannel = "DANA" | "GOPAY" | "MANDIRI" | "BRI" | "BCA";
+// Open-ended on purpose — Super Admin can add a new method (a new bank, a
+// new e-wallet) any time via "Tambah Metode" in Pengaturan, matched
+// against manual_payment_methods.code (UNIQUE, not a fixed enum). Never
+// trust a value here without re-checking it's still an active method row
+// server-side (see wallet-topup.service.ts's createMyTopupRequest).
+export type ManualTopupChannel = string;
 
 // A single table for this phase covers both real gateway payments and
 // admin-initiated manual top-ups (method = 'MANUAL') — Architecture

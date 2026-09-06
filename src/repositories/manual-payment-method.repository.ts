@@ -40,6 +40,33 @@ export async function findActiveManualPaymentMethodByCode(
   return result.rows[0] ?? null;
 }
 
+export interface CreateManualPaymentMethodInput {
+  code: string;
+  display_name: string;
+  account_number: string;
+  account_name: string;
+}
+
+// "Tambah Metode" — code is UNIQUE (not a fixed enum, see
+// types/payment.ts's ManualTopupChannel), so a duplicate code surfaces as
+// a thrown pg error the route translates into a friendly message.
+export async function createManualPaymentMethod(
+  input: CreateManualPaymentMethodInput,
+  actorUserId: string,
+  db: Queryable = pool,
+): Promise<ManualPaymentMethod> {
+  const nextSortOrder = await db.query<{ next: number }>(
+    `SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM manual_payment_methods`,
+  );
+  const result = await db.query<ManualPaymentMethod>(
+    `INSERT INTO manual_payment_methods (code, display_name, account_number, account_name, is_active, sort_order, updated_by)
+     VALUES ($1, $2, $3, $4, false, $5, $6)
+     RETURNING *`,
+    [input.code, input.display_name, input.account_number, input.account_name, nextSortOrder.rows[0].next, actorUserId],
+  );
+  return result.rows[0];
+}
+
 export interface UpdateManualPaymentMethodInput {
   display_name: string;
   account_number: string;

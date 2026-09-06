@@ -275,12 +275,20 @@ export async function awardCommissionForTransaction(
   }
 
   const sellingPrice = Number(transaction.selling_price);
-  if (rule.min_transaction && sellingPrice < Number(rule.min_transaction)) {
+  // min_transaction/max_commission are NUMERIC columns, so pg returns them
+  // as numeric strings — "0" is truthy in JS, so a bare `if (rule.field)`
+  // treats a stored 0 (meaning "no minimum"/"no cap") as if it were an
+  // actual limit of zero, silently zeroing out every commission. Only a
+  // genuinely positive value counts as a real limit.
+  const minTransaction = Number(rule.min_transaction ?? 0);
+  const maxCommission = Number(rule.max_commission ?? 0);
+
+  if (minTransaction > 0 && sellingPrice < minTransaction) {
     return [];
   }
 
   let amount = rule.commission_type === "FLAT" ? Number(rule.flat_amount) : (sellingPrice * Number(rule.percentage)) / 100;
-  if (rule.max_commission) amount = Math.min(amount, Number(rule.max_commission));
+  if (maxCommission > 0) amount = Math.min(amount, maxCommission);
   amount = Math.round(amount);
   if (amount <= 0) {
     return [];

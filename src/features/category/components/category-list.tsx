@@ -24,7 +24,10 @@ export function CategoryList({ categories }: { categories: CategoryWithProductCo
           <div key={category.id} className="flex flex-col gap-3 rounded-lg border p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate font-medium">{category.name}</p>
+                <p className="truncate font-medium">{category.display_name ?? category.name}</p>
+                {category.display_name ? (
+                  <p className="truncate text-xs text-muted-foreground">Asli: {category.name}</p>
+                ) : null}
                 <p className="text-xs text-muted-foreground">{category.product_count} produk</p>
               </div>
               <StatusBadge status={category.status} />
@@ -58,7 +61,12 @@ export function CategoryList({ categories }: { categories: CategoryWithProductCo
           <TableBody>
             {categories.map((category) => (
               <TableRow key={category.id}>
-                <TableCell className="font-medium">{category.name}</TableCell>
+                <TableCell className="font-medium">
+                  {category.display_name ?? category.name}
+                  {category.display_name ? (
+                    <span className="block text-xs font-normal text-muted-foreground">Asli: {category.name}</span>
+                  ) : null}
+                </TableCell>
                 <TableCell className="text-right text-muted-foreground">{category.product_count}</TableCell>
                 <TableCell>
                   <StatusBadge status={category.status} />

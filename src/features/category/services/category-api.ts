@@ -1,5 +1,5 @@
 import { apiFetch } from "@/lib/api/client";
-import type { CategoryNameFormValues } from "../schemas/category.schema";
+import type { CategoryDisplayNameFormValues, CategoryNameFormValues } from "../schemas/category.schema";
 
 export function createCategory(values: CategoryNameFormValues) {
   return apiFetch("/api/categories", {
@@ -8,7 +8,7 @@ export function createCategory(values: CategoryNameFormValues) {
   });
 }
 
-export function renameCategory(id: string, values: CategoryNameFormValues) {
+export function setCategoryDisplayName(id: string, values: CategoryDisplayNameFormValues) {
   return apiFetch(`/api/categories/${id}`, {
     method: "PATCH",
     body: JSON.stringify(values),

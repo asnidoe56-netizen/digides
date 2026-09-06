@@ -5,6 +5,12 @@ export type MerchandisingTag = "SUPER_MURAH" | "PROMO" | "TERLARIS";
 export interface Category {
   id: string;
   name: string;
+  // Admin-facing label shown to end users instead of `name` (e.g. "Isi
+  // Pulsa" for the "Pulsa" category) — null means no custom label is set
+  // yet, so callers should fall back to `name`. Kept separate from `name`
+  // so renaming the display label never breaks Digiflazz catalog-sync's
+  // matching, which relies on `name` staying exactly what Digiflazz sends.
+  display_name: string | null;
   status: CatalogStatus;
 }
 

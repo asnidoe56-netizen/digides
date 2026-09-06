@@ -59,7 +59,7 @@ export function CategoryGrid({ categories, hrefByCategoryName = {} }: CategoryGr
             <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
               <Icon className="size-5" />
             </span>
-            <span className="line-clamp-1 text-xs font-medium">{category.name}</span>
+            <span className="line-clamp-1 text-xs font-medium">{category.display_name ?? category.name}</span>
           </>
         );
 

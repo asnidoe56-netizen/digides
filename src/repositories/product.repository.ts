@@ -38,8 +38,18 @@ export async function createCategory(name: string, db: Queryable = pool): Promis
   return result.rows[0];
 }
 
-export async function renameCategory(id: string, name: string, db: Queryable = pool): Promise<Category | null> {
-  const result = await db.query<Category>(`UPDATE categories SET name = $2 WHERE id = $1 RETURNING *`, [id, name]);
+// Admin-facing rename — updates only the display label, never the `name`
+// column catalog-sync matches Digiflazz categories by. Passing null clears
+// the custom label so the category falls back to showing its raw name.
+export async function updateCategoryDisplayName(
+  id: string,
+  displayName: string | null,
+  db: Queryable = pool,
+): Promise<Category | null> {
+  const result = await db.query<Category>(`UPDATE categories SET display_name = $2 WHERE id = $1 RETURNING *`, [
+    id,
+    displayName,
+  ]);
   return result.rows[0] ?? null;
 }
 

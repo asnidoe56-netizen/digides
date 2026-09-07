@@ -123,9 +123,14 @@ Daftar ini murni tentang **logika**, bukan tampilan (lihat Bagian 6 untuk yang b
 - Kalau baris transaksi sempat diganti SKU (idempotency_key berubah), lalu Digiflazz mengirim ULANG webhook untuk `ref_id` LAMA (mis. webhook resend Digiflazz sendiri) setelah pergantian terjadi, `findTransactionByIdempotencyKey` untuk `ref_id` lama itu tidak akan menemukan transaksinya lagi (sudah berganti ke `ref_id` baru) — webhook resend itu akan gagal dengan "Transaksi tidak ditemukan", bukan korupsi data, hanya diabaikan.
 
 **Verifikasi (isi setelah pengujian nyata selesai — lihat catatan STATUS di awal dokumen)**:
-- [ ] Diuji dengan transaksi nyata di produksi yang benar-benar mengalami SKU asli gagal dan berhasil pindah ke SKU cadangan.
-- [ ] Dikonfirmasi harga jual ke pembeli tidak berubah, dan komisi (kalau ada) sesuai batas profit riil.
-- [ ] Dikonfirmasi tampilan Flutter/web tidak menunjukkan kejanggalan apa pun (tidak ada transaksi ganda, tidak ada pesan gagal yang sempat terlihat).
+- [x] **Mekanisme pindah SKU cadangan teramati nyata di produksi (2026-09-07, transaksi `8030b311-...`, channel WEB)**: SKU asli Gagal → otomatis pindah ke cadangan #1 → Gagal lagi → otomatis pindah ke cadangan #2 → Gagal lagi → cadangan habis (2x sesuai batas) → transaksi Gagal secara normal. Rantai penuh (submit asli + 2 cadangan) sudah teruji berjalan benar, termasuk berhenti dengan benar setelah cadangan habis.
+- [x] **Ledger saldo dikonfirmasi tersentuh tepat sekali** — 1 baris RESERVE dan 1 baris RELEASE untuk `wallet_ledger`, meski ada 3 percobaan submit berbeda ke Digiflazz. Tidak ada risiko saldo ganda.
+- [x] **Harga jual dikonfirmasi tidak berubah** — tetap Rp2.855 di ketiga percobaan, walau modal (`base_price`) berbeda-beda di tiap SKU (2.355 → 2.555 → 2.705).
+- [x] **ID transaksi dikonfirmasi tidak pernah berubah** sepanjang 3 percobaan — pembeli hanya pernah melihat satu transaksi.
+- [ ] **Belum teramati**: skenario di mana SKU cadangan benar-benar SUKSES (bukan cuma berhasil dicoba lalu Gagal lagi) — sehingga transaksi yang tadinya akan Gagal berakhir SUKSES lewat SKU cadangan. Setiap kejadian nyata sejauh ini kebetulan berujung Gagal di ketiga SKU (kemungkinan gangguan stok yang meluas di Digiflazz untuk nominal kecil Telkomsel saat itu). Komisi ikut belum bisa diverifikasi (hanya dihitung untuk transaksi SUCCESS).
+- [ ] Dikonfirmasi tampilan Flutter/web tidak menunjukkan kejanggalan apa pun ke pembeli (perlu konfirmasi visual langsung dari pemilik produk).
+
+Dokumen ini TETAP berstatus "⏳ Menunggu Verifikasi" sampai kedua item terakhir di atas juga terpenuhi — mekanisme pindah-SKU sendiri sudah terbukti benar, tapi nilai bisnis utamanya (mengubah transaksi yang akan Gagal menjadi SUKSES) belum teramati langsung.
 
 ---
 

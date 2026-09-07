@@ -25,6 +25,9 @@ interface BackupSkuSwapPayload {
   event: "BACKUP_SKU_SWAPPED";
   from_sku: string;
   to_sku: string;
+  /** Digiflazz's own rc/message explaining why from_sku was abandoned —
+   *  absent on swap events recorded before this field was added. */
+  from_sku_failure?: { rc?: string; message?: string };
 }
 
 function isBackupSkuSwapPayload(value: unknown): value is BackupSkuSwapPayload {
@@ -124,8 +127,12 @@ export function TransactionDetail({
                 </div>
                 {swapPayload ? (
                   <p className="text-sm text-muted-foreground">
-                    SKU <code className="text-foreground">{swapPayload.from_sku}</code> gagal → otomatis dicoba ulang
-                    dengan SKU cadangan <code className="text-foreground">{swapPayload.to_sku}</code>.
+                    SKU <code className="text-foreground">{swapPayload.from_sku}</code> gagal
+                    {swapPayload.from_sku_failure?.message
+                      ? ` (${swapPayload.from_sku_failure.rc ? `rc ${swapPayload.from_sku_failure.rc}: ` : ""}${swapPayload.from_sku_failure.message})`
+                      : ""}{" "}
+                    → otomatis dicoba ulang dengan SKU cadangan{" "}
+                    <code className="text-foreground">{swapPayload.to_sku}</code>.
                   </p>
                 ) : event.provider_raw_response ? (
                   <pre className="overflow-x-auto rounded bg-muted p-2 text-xs text-muted-foreground">

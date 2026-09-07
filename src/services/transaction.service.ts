@@ -278,7 +278,7 @@ async function applyDigiflazzResult(
     return captureTransaction(transaction, result, actorUserId);
   }
   if (result.status === "Gagal") {
-    const swapped = await trySwapToBackupSku(transaction, actorUserId);
+    const swapped = await trySwapToBackupSku(transaction, result, actorUserId);
     if (swapped) {
       return swapped;
     }
@@ -312,6 +312,7 @@ async function applyDigiflazzResult(
 // releaseTransaction exactly as before this mechanism existed.
 async function trySwapToBackupSku(
   transaction: Transaction,
+  failedResult: DigiflazzTransactionResult,
   actorUserId: string | null,
 ): Promise<Transaction | null> {
   if (transaction.tried_product_ids.length > MAX_BACKUP_SKU_ATTEMPTS) {
@@ -381,6 +382,7 @@ async function trySwapToBackupSku(
           event: "BACKUP_SKU_SWAPPED",
           from_product_id: failedProduct.id,
           from_sku: failedProduct.sku,
+          from_sku_failure: failedResult,
           to_product_id: candidate.id,
           to_sku: candidate.sku,
         },

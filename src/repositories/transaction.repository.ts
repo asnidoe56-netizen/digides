@@ -13,6 +13,8 @@ export interface CreateTransactionInput {
   base_price: string | number;
   selling_price: string | number;
   provider?: string;
+  /** See Transaction.customer_name's doc comment. */
+  customer_name?: string | null;
 }
 
 export interface CreateTransactionResult {
@@ -32,8 +34,8 @@ export async function createTransaction(
     const result = await db.query<Transaction>(
       `INSERT INTO transactions (
          idempotency_key, wallet_id, product_id, customer_number, base_price, selling_price, provider, status,
-         original_product_id, tried_product_ids
-       ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'digiflazz'), 'RESERVED', $3, ARRAY[$3]::uuid[])
+         original_product_id, tried_product_ids, customer_name
+       ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'digiflazz'), 'RESERVED', $3, ARRAY[$3]::uuid[], $8)
        RETURNING *`,
       [
         input.idempotency_key,
@@ -43,6 +45,7 @@ export async function createTransaction(
         input.base_price,
         input.selling_price,
         input.provider ?? null,
+        input.customer_name ?? null,
       ],
     );
     return { transaction: result.rows[0], alreadyExisted: false };

@@ -6,6 +6,12 @@ export interface Transaction {
   wallet_id: string;
   product_id: string;
   customer_number: string;
+  /** The verified account-holder name from E-Money/Games' "Verifikasi
+   *  Pengguna"/"Cek Username" step, if the mitra ran one before this
+   *  purchase — null for every category without a verification step, and
+   *  for a purchase where the mitra skipped it. See
+   *  042_transactions_customer_name.sql. */
+  customer_name: string | null;
   base_price: string;
   selling_price: string;
   status: TransactionStatus;

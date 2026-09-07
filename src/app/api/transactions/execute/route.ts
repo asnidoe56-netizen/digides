@@ -35,6 +35,10 @@ const executeSchema = z
     pin: z.string().regex(/^[0-9]{6}$/, "PIN harus 6 digit").optional(),
     biometricAssertion: z.record(z.string(), z.unknown()).optional(),
     mobileBiometricAssertion: mobileBiometricAssertionSchema.optional(),
+    // E-Money/Games' "Verifikasi Pengguna"/"Cek Username" result, if the
+    // mitra ran one right before submitting — see ExecuteTransactionInput.
+    // customerName's doc comment. Purely denormalized display data.
+    customerName: z.string().trim().max(255).optional(),
   })
   .refine(
     (data) =>
@@ -81,6 +85,7 @@ export async function POST(request: Request) {
       idempotencyKey: parsed.data.idempotencyKey,
       channel: "WEB",
       actorUserId: session.userId,
+      customerName: parsed.data.customerName,
     });
     return NextResponse.json({ transaction }, { status: 201 });
   } catch (error) {

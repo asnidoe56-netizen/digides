@@ -13,6 +13,10 @@ export interface ExecutePurchaseInput {
   customerNumber: string;
   idempotencyKey: string;
   auth: PurchaseAuth;
+  /** The mitra's "Verifikasi Pengguna" result for this customerNumber, if
+   *  they ran one — see ExecuteTransactionInput.customerName's doc comment
+   *  server-side. */
+  customerName?: string;
 }
 
 // Calls the one executeTransaction() engine every category's purchase flow
@@ -26,12 +30,14 @@ export function executePurchase(input: ExecutePurchaseInput) {
           customerNumber: input.customerNumber,
           idempotencyKey: input.idempotencyKey,
           pin: input.auth.pin,
+          customerName: input.customerName,
         }
       : {
           productId: input.productId,
           customerNumber: input.customerNumber,
           idempotencyKey: input.idempotencyKey,
           biometricAssertion: input.auth.assertion,
+          customerName: input.customerName,
         };
   return apiFetch<{ transaction: Transaction }>("/api/transactions/execute", {
     method: "POST",

@@ -91,6 +91,13 @@ export interface ExecuteTransactionInput {
   channel: WalletChannel;
   /** The wallet owner confirming with their own PIN or biometric. */
   actorUserId: string;
+  /** E-Money/Games' "Verifikasi Pengguna"/"Cek Username" result, if the
+   *  mitra ran one for this customerNumber right before submitting —
+   *  purely denormalized display data for Histori (Transaction.
+   *  customer_name), never used for any authorization or pricing
+   *  decision. Undefined when the category has no verification step or
+   *  the mitra skipped it. */
+  customerName?: string;
 }
 
 // The Transaction Engine: verify PIN -> reserve funds (atomic with
@@ -157,6 +164,7 @@ export async function executeTransaction(input: ExecuteTransactionInput): Promis
         customer_number: input.customerNumber,
         base_price: product.base_price,
         selling_price: sellingPrice,
+        customer_name: input.customerName?.trim() || null,
       },
       client,
     );

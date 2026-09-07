@@ -83,6 +83,12 @@ export function HistoriDetailView({ historiHref, transaction }: HistoriDetailVie
             <span className="text-muted-foreground">ID Pelanggan / Nomor Tujuan</span>
             <span className="font-medium">{transaction.customer_number}</span>
           </div>
+          {transaction.customer_name ? (
+            <div className="flex justify-between py-3 text-sm">
+              <span className="text-muted-foreground">Nama Pemilik</span>
+              <span className="font-medium">{transaction.customer_name}</span>
+            </div>
+          ) : null}
           {parsedToken?.customerName ? (
             <div className="flex justify-between py-3 text-sm">
               <span className="text-muted-foreground">Nama Pelanggan</span>

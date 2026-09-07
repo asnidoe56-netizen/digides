@@ -334,6 +334,7 @@ export function CategoryPurchaseFlow({
         customerNumber: normalizedCustomerId,
         idempotencyKey,
         auth,
+        customerName: verifiedName ?? undefined,
       });
 
       if (transaction.status === "SUCCESS") {

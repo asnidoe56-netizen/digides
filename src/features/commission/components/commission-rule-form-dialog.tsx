@@ -87,7 +87,7 @@ export function CommissionRuleFormDialog({ categories, userRule, mitraRule, trig
     if (next) reset(toFormValues(userRule, mitraRule));
   }
 
-  const amountLabel = commissionType === "FLAT" ? "Nominal (Rupiah)" : "Persentase (%)";
+  const amountLabel = commissionType === "FLAT" ? "Nominal (Rupiah)" : "Persentase dari Keuntungan (%)";
   const amountFieldProps = commissionType === "FLAT" ? { min: 0 } : { min: 0, max: 100, step: "0.01" };
 
   return (
@@ -148,7 +148,7 @@ export function CommissionRuleFormDialog({ categories, userRule, mitraRule, trig
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="FLAT">Nominal Tetap</SelectItem>
-                    <SelectItem value="PERCENTAGE">Persentase</SelectItem>
+                    <SelectItem value="PERCENTAGE">Persentase dari Keuntungan</SelectItem>
                   </SelectContent>
                 </Select>
               )}
@@ -187,6 +187,12 @@ export function CommissionRuleFormDialog({ categories, userRule, mitraRule, trig
           <p className="-mt-2 text-xs text-muted-foreground">
             Kosongkan atau isi 0 pada salah satu kolom jika status itu tidak mendapat komisi untuk kategori ini.
           </p>
+          {commissionType === "PERCENTAGE" ? (
+            <p className="-mt-2 text-xs text-muted-foreground">
+              Persentase dihitung dari keuntungan digides di transaksi itu (harga jual dikurangi harga modal), bukan
+              dari harga jual ke mitra — komisi tidak akan pernah melebihi keuntungan yang benar-benar didapat.
+            </p>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">

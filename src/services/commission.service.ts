@@ -287,19 +287,26 @@ export async function awardCommissionForTransaction(
     return [];
   }
 
-  let amount = rule.commission_type === "FLAT" ? Number(rule.flat_amount) : (sellingPrice * Number(rule.percentage)) / 100;
-  if (maxCommission > 0) amount = Math.min(amount, maxCommission);
-  // Never pay out more commission than this specific transaction actually
-  // made the platform — normally a no-op (markup is always configured well
-  // above any commission rule), but the automatic backup-SKU failover
-  // (transaction.service.ts's trySwapToBackupSku) can land on a costlier
-  // backup product while selling_price stays frozen at the buyer's
-  // original price, shrinking the real profit margin below what a flat/
-  // percentage rule would otherwise award. base_price always reflects
-  // whichever SKU actually fulfilled the purchase, so this comparison is
+  // base_price always reflects whichever SKU actually fulfilled the
+  // purchase — the automatic backup-SKU failover (transaction.service.ts's
+  // trySwapToBackupSku) can land on a costlier backup product while
+  // selling_price stays frozen at the buyer's original price, so this is
   // correct whether or not a swap ever happened.
-  const actualProfit = sellingPrice - Number(transaction.base_price);
-  amount = Math.min(amount, Math.max(actualProfit, 0));
+  const actualProfit = Math.max(sellingPrice - Number(transaction.base_price), 0);
+
+  // FLAT: a fixed rupiah amount per successful transaction, unrelated to
+  // that transaction's own margin. PERCENTAGE: a cut of the platform's own
+  // profit on THIS transaction (selling_price - base_price) — never a cut
+  // of the buyer's selling_price, so a beneficiary's commission always
+  // scales with what digides actually earned, including on a transaction
+  // the backup-SKU failover settled at a thinner margin than usual.
+  let amount = rule.commission_type === "FLAT" ? Number(rule.flat_amount) : (actualProfit * Number(rule.percentage)) / 100;
+  if (maxCommission > 0) amount = Math.min(amount, maxCommission);
+  // Belt-and-suspenders: never pay out more than the transaction's actual
+  // profit regardless of type — a FLAT rule can still exceed a thin
+  // backup-SKU margin, and a PERCENTAGE rule can only exceed it if
+  // percentage was mistakenly configured above 100.
+  amount = Math.min(amount, actualProfit);
   amount = Math.round(amount);
   if (amount <= 0) {
     return [];

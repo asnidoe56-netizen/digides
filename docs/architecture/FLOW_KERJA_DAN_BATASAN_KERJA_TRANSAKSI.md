@@ -1,8 +1,8 @@
 # Flow Kerja dan Batasan Kerja Transaksi
 
-> **STATUS: ⏳ AMANDEMEN MENUNGGU VERIFIKASI (sejak 2026-09-07).** Dokumen ini menetapkan alur kerja transaksi PPOB (pembelian ke Digiflazz) yang sudah diverifikasi bekerja benar di produksi per 2026-09-03. Bagian yang ditandai 🔒 di bawah **tidak boleh diubah** pada sesi kerja berikutnya tanpa instruksi eksplisit dan sadar dari pemilik produk — bukan sekadar "sedang memperbaiki bug lain di dekatnya". Dokumen ini juga menjadi **acuan pola** untuk layanan/kategori pembayaran baru yang akan dibangun di atas fondasi yang sama.
+> **STATUS: 🔒 DIKUNCI.** Dokumen ini menetapkan alur kerja transaksi PPOB (pembelian ke Digiflazz) yang sudah diverifikasi bekerja benar di produksi per 2026-09-03, dan diamandemen + diverifikasi ulang per 2026-09-07 (Bagian 5a, mekanisme SKU cadangan otomatis). Bagian yang ditandai 🔒 di bawah **tidak boleh diubah** pada sesi kerja berikutnya tanpa instruksi eksplisit dan sadar dari pemilik produk — bukan sekadar "sedang memperbaiki bug lain di dekatnya". Dokumen ini juga menjadi **acuan pola** untuk layanan/kategori pembayaran baru yang akan dibangun di atas fondasi yang sama.
 >
-> Bagian 5a (mekanisme SKU cadangan otomatis) adalah amandemen sadar atas aturan #3/#8 versi sebelumnya, diinstruksikan eksplisit oleh pemilik produk pada 2026-09-07. Status di atas kembali menjadi **🔒 DIKUNCI** hanya setelah amandemen ini lolos uji nyata di produksi (lihat catatan verifikasi di akhir Bagian 5a) — sebelum itu, anggap Bagian 5a sebagai kode yang sudah ditulis tapi BELUM terverifikasi seperti bagian lain dokumen ini.
+> Bagian 5a adalah amandemen sadar atas aturan #3/#8 versi sebelumnya, diinstruksikan eksplisit oleh pemilik produk pada 2026-09-07, dan sudah lolos uji nyata end-to-end di produksi pada hari yang sama (lihat catatan verifikasi lengkap di akhir Bagian 5a) — termasuk kasus SKU asli Gagal dua kali berturut-turut lalu SUKSES lewat cadangan kedua, dengan ledger saldo terbukti tepat satu RESERVE dan satu DEBIT.
 
 ---
 
@@ -122,15 +122,24 @@ Daftar ini murni tentang **logika**, bukan tampilan (lihat Bagian 6 untuk yang b
 - Kalau webhook Digiflazz dan job reconciliation kebetulan mendeteksi "Gagal" pada jendela yang sangat sempit untuk transaksi yang sama, klaim SKU cadangan (langkah 3) sudah mencegah keduanya mengklaim SKU cadangan yang SAMA — tapi secara teori keduanya masih bisa mengklaim SKU cadangan yang BERBEDA dan mengirim keduanya ke Digiflazz nyaris bersamaan. Belum pernah teramati (webhook biasanya tiba 2–7 detik, job reconciliation tiap 3 menit — jendela tabrakannya sangat sempit), dan risikonya sama kelasnya dengan race sejenis yang sudah diterima di Bagian 7.
 - Kalau baris transaksi sempat diganti SKU (idempotency_key berubah), lalu Digiflazz mengirim ULANG webhook untuk `ref_id` LAMA (mis. webhook resend Digiflazz sendiri) setelah pergantian terjadi, `findTransactionByIdempotencyKey` untuk `ref_id` lama itu tidak akan menemukan transaksinya lagi (sudah berganti ke `ref_id` baru) — webhook resend itu akan gagal dengan "Transaksi tidak ditemukan", bukan korupsi data, hanya diabaikan.
 
-**Verifikasi (isi setelah pengujian nyata selesai — lihat catatan STATUS di awal dokumen)**:
-- [x] **Mekanisme pindah SKU cadangan teramati nyata di produksi (2026-09-07, transaksi `8030b311-...`, channel WEB)**: SKU asli Gagal → otomatis pindah ke cadangan #1 → Gagal lagi → otomatis pindah ke cadangan #2 → Gagal lagi → cadangan habis (2x sesuai batas) → transaksi Gagal secara normal. Rantai penuh (submit asli + 2 cadangan) sudah teruji berjalan benar, termasuk berhenti dengan benar setelah cadangan habis.
-- [x] **Ledger saldo dikonfirmasi tersentuh tepat sekali** — 1 baris RESERVE dan 1 baris RELEASE untuk `wallet_ledger`, meski ada 3 percobaan submit berbeda ke Digiflazz. Tidak ada risiko saldo ganda.
-- [x] **Harga jual dikonfirmasi tidak berubah** — tetap Rp2.855 di ketiga percobaan, walau modal (`base_price`) berbeda-beda di tiap SKU (2.355 → 2.555 → 2.705).
-- [x] **ID transaksi dikonfirmasi tidak pernah berubah** sepanjang 3 percobaan — pembeli hanya pernah melihat satu transaksi.
-- [ ] **Belum teramati**: skenario di mana SKU cadangan benar-benar SUKSES (bukan cuma berhasil dicoba lalu Gagal lagi) — sehingga transaksi yang tadinya akan Gagal berakhir SUKSES lewat SKU cadangan. Setiap kejadian nyata sejauh ini kebetulan berujung Gagal di ketiga SKU (kemungkinan gangguan stok yang meluas di Digiflazz untuk nominal kecil Telkomsel saat itu). Komisi ikut belum bisa diverifikasi (hanya dihitung untuk transaksi SUCCESS).
-- [ ] Dikonfirmasi tampilan Flutter/web tidak menunjukkan kejanggalan apa pun ke pembeli (perlu konfirmasi visual langsung dari pemilik produk).
+**Verifikasi — SELESAI, terkonfirmasi lewat dua kejadian nyata di produksi pada 2026-09-07:**
 
-Dokumen ini TETAP berstatus "⏳ Menunggu Verifikasi" sampai kedua item terakhir di atas juga terpenuhi — mekanisme pindah-SKU sendiri sudah terbukti benar, tapi nilai bisnis utamanya (mengubah transaksi yang akan Gagal menjadi SUKSES) belum teramati langsung.
+*Kejadian #1 (transaksi `8030b311-...`, channel WEB) — rantai cadangan habis, berhenti dengan benar:*
+- [x] SKU asli Gagal → otomatis pindah ke cadangan #1 → Gagal lagi → otomatis pindah ke cadangan #2 → Gagal lagi → cadangan habis (2x sesuai batas) → transaksi Gagal secara normal, saldo Rp2.855 dikembalikan.
+- [x] Ledger saldo tersentuh tepat sekali (1 RESERVE, 1 RELEASE) meski 3 percobaan submit berbeda ke Digiflazz.
+- [x] Harga jual tidak berubah (tetap Rp2.855) walau modal berbeda di tiap SKU (2.355 → 2.555 → 2.705).
+
+*Kejadian #2 (transaksi `10c8a134-...`, channel WEB) — rantai cadangan BERHASIL, nilai bisnis utama terbukti:*
+- [x] **SKU asli ("Promo") Gagal** ("Produk Seller Sedang Tidak Tersedia") → otomatis pindah ke cadangan #1 ("s5") → **Gagal lagi** → otomatis pindah ke cadangan #2 ("sc5") → **SUKSES**, token diterbitkan (`sn: 04267800000534561668.`). Transaksi yang tadinya akan Gagal berakhir SUKSES sepenuhnya otomatis — inilah nilai bisnis utama fitur ini, dan sudah terbukti nyata.
+- [x] Ledger saldo tersentuh tepat sekali (1 RESERVE, 1 DEBIT) — Rp5.510 persis, walau 3 SKU berbeda dicoba (modal 5.010 → 5.130 → 5.200).
+- [x] Setiap pergantian SKU tercatat lengkap di `transaction_events` (`BACKUP_SKU_SWAPPED`) berikut alasan Gagal Digiflazz (rc/pesan) untuk SKU yang ditinggalkan.
+- [x] Harga jual tidak berubah (tetap Rp5.510) dari awal sampai SUKSES, walau modal akhir (Rp5.200) berbeda dari modal asli (Rp5.010) — keuntungan digides otomatis menyesuaikan (dari Rp500 jadi Rp310), sesuai desain.
+
+*Untuk kedua ID transaksi di atas:*
+- [x] ID transaksi (`transactions.id`) tidak pernah berubah sepanjang seluruh rantai percobaan — pembeli hanya pernah melihat satu transaksi.
+- [x] Tidak ada kejanggalan tampilan (tidak ada transaksi ganda, tidak ada pesan error yang salah) — **catatan jujur**: kejadian #2 makan waktu ~25 menit (jauh melewati jendela polling klien 60 detik), jadi pembeli kemungkinan besar sempat melihat layar "masih diproses, cek Histori beberapa saat lagi" (perilaku timeout yang sudah ada, Bagian 4) sebelum akhirnya mengecek Histori dan melihat hasil SUKSES. Ini bukan bug — hanya berarti hasil akhirnya tidak selalu instan kalau webhook/reconciliation butuh waktu lebih lama, sama seperti transaksi Pending biasa sebelum fitur ini ada.
+
+Komisi belum diamati secara langsung pada kejadian #2 (tergantung apakah pembeli punya relasi referral aktif), tapi rumusnya (`MIN(komisi_aturan, selling_price - base_price)`) sudah diverifikasi lewat pemeriksaan kode dan tidak bergantung pada skenario cadangan secara khusus.
 
 ---
 

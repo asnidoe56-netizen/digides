@@ -5,6 +5,22 @@ import { z } from "zod";
 // PIN is always exactly 6 digits everywhere.
 const pinField = (message: string) => z.string().regex(/^[0-9]{6}$/, message);
 
+// A wilayah.kode value at a specific level — "11" (provinsi), "11.01"
+// (kabupaten/kota), "11.01.01" (kecamatan) or "11.01.01.2001" (kelurahan/
+// desa, whose last segment is 4 digits rather than 2). Optional: address
+// is never required to register (see 040_users_address_location.sql's
+// comment) — an unknown code, if one still slips past this format check,
+// is caught at insert time by the column's FK into wilayah and surfaces
+// as a 400, never a 500.
+const wilayahCodeField = (pattern: RegExp) =>
+  z.string().regex(pattern).optional().or(z.literal(""));
+
+// Registration's own GPS "share my location" action (Flutter's geolocator
+// prompt) — stored as-is, never reverse-geocoded, purely as a "roughly
+// where this mitra signed up from" reference point.
+const coordinateField = (min: number, max: number) =>
+  z.number().min(min).max(max).optional();
+
 // The fields the server actually persists. POST /api/auth/register
 // validates against this directly — confirmPassword/confirmPin never leave
 // the browser, they exist purely to catch typos before submit. `pin`
@@ -32,6 +48,12 @@ export const registerServerSchema = z.object({
   agreedToTerms: z.literal(true, {
     message: "Anda harus menyetujui Syarat & Ketentuan",
   }),
+  provinceCode: wilayahCodeField(/^\d{2}$/),
+  regencyCode: wilayahCodeField(/^\d{2}\.\d{2}$/),
+  districtCode: wilayahCodeField(/^\d{2}\.\d{2}\.\d{2}$/),
+  villageCode: wilayahCodeField(/^\d{2}\.\d{2}\.\d{2}\.\d{4}$/),
+  registrationLatitude: coordinateField(-90, 90),
+  registrationLongitude: coordinateField(-180, 180),
 });
 
 export const registerFormSchema = registerServerSchema

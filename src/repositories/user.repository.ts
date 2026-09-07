@@ -8,7 +8,16 @@ import type { PinStatus, UserTransactionPin, UserTransactionPinForVerification }
 // Client Component prop — see security audit SEC-01. Call this instead of
 // passing/returning a `User` row directly anywhere it crosses that boundary.
 export function toPublicUserProfile(user: User): PublicUserProfile {
-  return { id: user.id, email: user.email, full_name: user.full_name, phone: user.phone };
+  return {
+    id: user.id,
+    email: user.email,
+    full_name: user.full_name,
+    phone: user.phone,
+    province_code: user.province_code,
+    regency_code: user.regency_code,
+    district_code: user.district_code,
+    village_code: user.village_code,
+  };
 }
 
 export interface CreateUserInput {
@@ -22,12 +31,26 @@ export interface CreateUserInput {
    *  screen of its own. */
   terms_accepted_at?: Date | null;
   terms_version?: string | null;
+  /** Registration address (wilayah.kode) and GPS coordinate — all
+   *  optional, see 040_users_address_location.sql. An unknown code
+   *  violates the column's FK into wilayah and rejects the whole insert
+   *  (caller should map that to a 400, not let it surface as a 500). */
+  province_code?: string | null;
+  regency_code?: string | null;
+  district_code?: string | null;
+  village_code?: string | null;
+  registration_latitude?: number | null;
+  registration_longitude?: number | null;
 }
 
 export async function createUser(input: CreateUserInput, db: Queryable = pool): Promise<User> {
   const result = await db.query<User>(
-    `INSERT INTO users (email, password_hash, full_name, phone, terms_accepted_at, terms_version)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO users (
+       email, password_hash, full_name, phone, terms_accepted_at, terms_version,
+       province_code, regency_code, district_code, village_code,
+       registration_latitude, registration_longitude
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING *`,
     [
       input.email,
@@ -36,6 +59,12 @@ export async function createUser(input: CreateUserInput, db: Queryable = pool): 
       input.phone ?? null,
       input.terms_accepted_at ?? null,
       input.terms_version ?? null,
+      input.province_code ?? null,
+      input.regency_code ?? null,
+      input.district_code ?? null,
+      input.village_code ?? null,
+      input.registration_latitude ?? null,
+      input.registration_longitude ?? null,
     ],
   );
   return result.rows[0];
@@ -68,6 +97,47 @@ export async function updateUserProfile(
   const result = await db.query<User>(
     `UPDATE users SET full_name = $2, email = $3, phone = $4 WHERE id = $1 RETURNING *`,
     [id, input.full_name, input.email, input.phone],
+  );
+  return result.rows[0] ?? null;
+}
+
+export interface UpdateUserAddressInput {
+  province_code: string;
+  regency_code: string;
+  district_code: string;
+  village_code: string;
+  registration_latitude?: number | null;
+  registration_longitude?: number | null;
+}
+
+// The mitra app's "Lengkapi Profil" gate (PATCH /api/account/address) —
+// separate from updateUserProfile since it's reached from its own flow
+// (a blocking prompt before a transaction, not the regular Akun > Profil
+// edit form) and never touches full_name/email/phone. The coordinate is
+// only overwritten when a fresh one is actually given — completing your
+// address doesn't require re-sharing (or silently clearing) a location
+// captured earlier at registration.
+export async function updateUserAddress(
+  id: string,
+  input: UpdateUserAddressInput,
+  db: Queryable = pool,
+): Promise<User | null> {
+  const result = await db.query<User>(
+    `UPDATE users SET
+       province_code = $2, regency_code = $3, district_code = $4, village_code = $5,
+       registration_latitude = COALESCE($6, registration_latitude),
+       registration_longitude = COALESCE($7, registration_longitude)
+     WHERE id = $1
+     RETURNING *`,
+    [
+      id,
+      input.province_code,
+      input.regency_code,
+      input.district_code,
+      input.village_code,
+      input.registration_latitude ?? null,
+      input.registration_longitude ?? null,
+    ],
   );
   return result.rows[0] ?? null;
 }

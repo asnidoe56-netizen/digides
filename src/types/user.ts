@@ -19,6 +19,15 @@ export interface User {
    *  (registerMitra), which never goes through that consent screen. */
   terms_accepted_at: Date | null;
   terms_version: string | null;
+  /** Registration address (wilayah.kode at each level) and GPS coordinate
+   *  — all optional (see 040_users_address_location.sql), never required
+   *  to register, fillable later from the profile screen. */
+  province_code: string | null;
+  regency_code: string | null;
+  district_code: string | null;
+  village_code: string | null;
+  registration_latitude: number | null;
+  registration_longitude: number | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -40,6 +49,15 @@ export interface PublicUserProfile {
   email: string;
   full_name: string;
   phone: string | null;
+  /** Registration address (wilayah.kode) — the mitra app's "Lengkapi
+   *  Profil" gate reads these to decide whether a transaction may
+   *  proceed. All null means an incomplete profile (self-registered
+   *  before this existed, or registered via a path that never collects
+   *  it — see 040_users_address_location.sql). */
+  province_code: string | null;
+  regency_code: string | null;
+  district_code: string | null;
+  village_code: string | null;
 }
 
 export type RoleCode = "SUPER_ADMIN" | "BUMDES_ADMIN" | "KONTER" | "AFFILIATE";

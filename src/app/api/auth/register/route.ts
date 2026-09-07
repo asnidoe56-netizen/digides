@@ -25,7 +25,20 @@ export async function POST(request: Request) {
     );
   }
 
-  const { full_name, email, phone, password, pin, referralCode: rawReferralCode } = parsed.data;
+  const {
+    full_name,
+    email,
+    phone,
+    password,
+    pin,
+    referralCode: rawReferralCode,
+    provinceCode,
+    regencyCode,
+    districtCode,
+    villageCode,
+    registrationLatitude,
+    registrationLongitude,
+  } = parsed.data;
 
   const existing = await findUserByEmail(email);
   if (existing) {
@@ -53,39 +66,57 @@ export async function POST(request: Request) {
   // given — its referral_relationships row. A partial failure here
   // shouldn't leave a user with no role, no wallet, no PIN, or a silently
   // dropped referral.
-  const user = await withTransaction(async (client) => {
-    const createdUser = await createUser(
-      {
-        email,
-        password_hash,
-        full_name,
-        phone: phone || null,
-        terms_accepted_at: new Date(),
-        terms_version: CURRENT_TERMS_VERSION,
-      },
-      client,
-    );
-    await assignRole(createdUser.id, DEFAULT_ROLE, client);
-    await provisionWalletForAccount({ account_type: "USER", user_id: createdUser.id }, client);
-    await createTransactionPin(createdUser.id, pin_hash, client);
+  let user;
+  try {
+    user = await withTransaction(async (client) => {
+      const createdUser = await createUser(
+        {
+          email,
+          password_hash,
+          full_name,
+          phone: phone || null,
+          terms_accepted_at: new Date(),
+          terms_version: CURRENT_TERMS_VERSION,
+          province_code: provinceCode || null,
+          regency_code: regencyCode || null,
+          district_code: districtCode || null,
+          village_code: villageCode || null,
+          registration_latitude: registrationLatitude ?? null,
+          registration_longitude: registrationLongitude ?? null,
+        },
+        client,
+      );
+      await assignRole(createdUser.id, DEFAULT_ROLE, client);
+      await provisionWalletForAccount({ account_type: "USER", user_id: createdUser.id }, client);
+      await createTransactionPin(createdUser.id, pin_hash, client);
 
-    if (referrer) {
-      await createReferralRelationship(referrer.user_id, createdUser.id, client);
+      if (referrer) {
+        await createReferralRelationship(referrer.user_id, createdUser.id, client);
+      }
+
+      await recordAuditLog(
+        {
+          actor_user_id: createdUser.id,
+          action: "USER_REGISTERED",
+          entity: "users",
+          entity_id: createdUser.id,
+          new_value: { referral_code: referralCode },
+        },
+        client,
+      );
+
+      return createdUser;
+    });
+  } catch (error) {
+    // provinceCode/regencyCode/districtCode/villageCode each carry a FK
+    // into wilayah(kode) — a code that passed the schema's format check
+    // but doesn't actually exist (stale client-side data) violates that FK
+    // and must surface as a 400, not bubble up as an unhandled 500.
+    if (error && typeof error === "object" && "code" in error && error.code === "23503") {
+      return NextResponse.json({ error: "Data alamat tidak valid" }, { status: 400 });
     }
-
-    await recordAuditLog(
-      {
-        actor_user_id: createdUser.id,
-        action: "USER_REGISTERED",
-        entity: "users",
-        entity_id: createdUser.id,
-        new_value: { referral_code: referralCode },
-      },
-      client,
-    );
-
-    return createdUser;
-  });
+    throw error;
+  }
 
   return NextResponse.json(
     { id: user.id, email: user.email, full_name: user.full_name },

@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { withTransaction } from "@/lib/db/transaction";
 import { getActiveDigiflazzCredentials, getDigiflazzWebhookSecret } from "@/services/digiflazz.service";
 import { submitDigiflazzTransaction, type DigiflazzTransactionResult } from "@/lib/digiflazz/transaction";
@@ -7,7 +8,12 @@ import { verifyTransactionBiometric } from "@/services/biometric.service";
 import { verifyMobileBiometricTransaction, type MobileBiometricAssertion } from "@/services/mobile-biometric.service";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 import { awardCommissionForTransaction } from "@/services/commission.service";
-import { findBrandById, findCategoryById, findProductById } from "@/repositories/product.repository";
+import {
+  findBackupProductCandidates,
+  findBrandById,
+  findCategoryById,
+  findProductById,
+} from "@/repositories/product.repository";
 import { getLiveProductPricing } from "@/services/pricing.service";
 import { getTransactionBalanceSummary, postLedgerEntry } from "@/repositories/wallet.repository";
 import {
@@ -18,14 +24,24 @@ import {
   listTransactionsWithDetail,
   countTransactionsWithDetail,
   findTransactionWithDetailById,
+  lockTransactionForUpdate,
   recordTransactionEvent,
   sumReservedTransactions,
   sumTransactionProfit,
+  swapTransactionProductForBackup,
   transitionTransactionStatus,
   type ListTransactionsFilter,
 } from "@/repositories/transaction.repository";
 import type { Transaction } from "@/types/transaction";
 import type { WalletChannel } from "@/types/wallet";
+
+// Automatic backup-SKU failover cap — see applyDigiflazzResult's "Gagal"
+// branch. Original attempt + this many backups = at most 3 total
+// Digiflazz submissions per purchase, bounding both worst-case latency
+// (each is a real synchronous network round trip) and how far the
+// platform's margin can be eroded before it gives up and genuinely fails
+// the purchase like before this mechanism existed.
+const MAX_BACKUP_SKU_ATTEMPTS = 2;
 
 export async function getTransactionList(filter: ListTransactionsFilter = {}) {
   return listTransactionsWithDetail(filter);
@@ -262,6 +278,10 @@ async function applyDigiflazzResult(
     return captureTransaction(transaction, result, actorUserId);
   }
   if (result.status === "Gagal") {
+    const swapped = await trySwapToBackupSku(transaction, actorUserId);
+    if (swapped) {
+      return swapped;
+    }
     return releaseTransaction(transaction, actorUserId, result.message, result);
   }
 
@@ -272,6 +292,110 @@ async function applyDigiflazzResult(
     provider_raw_response: result,
   });
   return transaction;
+}
+
+// Automatic backup-SKU failover (docs/architecture/
+// FLOW_KERJA_DAN_BATASAN_KERJA_TRANSAKSI.md section 5a, amendment to
+// rules #3/#8 — see that section for the full reasoning). Called only
+// from applyDigiflazzResult's "Gagal" branch, so every path that can
+// learn a transaction failed (the original synchronous submit, the
+// Digiflazz webhook, and the pending-transaction-check job's re-check)
+// gets this behavior uniformly, without a second funnel.
+//
+// Never touches the wallet ledger: the RESERVE already made for
+// transaction.selling_price stays untouched and keeps covering whichever
+// SKU ends up fulfilling the purchase — selling_price itself is never
+// modified here, so the buyer's price never changes no matter how many
+// backups are tried. Returns the transaction's final resolved state
+// (SUCCESS/FAILED/still-RESERVED) if a backup was found and attempted;
+// null if there was nothing left to try, so the caller falls back to
+// releaseTransaction exactly as before this mechanism existed.
+async function trySwapToBackupSku(
+  transaction: Transaction,
+  actorUserId: string | null,
+): Promise<Transaction | null> {
+  if (transaction.tried_product_ids.length > MAX_BACKUP_SKU_ATTEMPTS) {
+    return null;
+  }
+
+  const failedProduct = await findProductById(transaction.product_id);
+  if (!failedProduct?.category_id || !failedProduct.brand_id) {
+    return null;
+  }
+
+  // Re-checked fresh on every attempt, not just once at the very first
+  // submit — a transaction that was Pending before failing may only learn
+  // that minutes later (webhook or the reconciliation job), and an admin
+  // could have disabled the category/brand in that window.
+  const [category, brand] = await Promise.all([
+    findCategoryById(failedProduct.category_id),
+    findBrandById(failedProduct.brand_id),
+  ]);
+  if (category?.status === "DISABLED" || brand?.status === "DISABLED") {
+    return null;
+  }
+
+  // Claim a specific backup candidate and commit BEFORE ever calling
+  // Digiflazz — the row lock must never be held across that network call.
+  // See swapTransactionProductForBackup's doc comment for why the lock
+  // (not just a status check) is what actually prevents two concurrent
+  // callers from claiming the same backup slot.
+  const claimed = await withTransaction(async (client) => {
+    const locked = await lockTransactionForUpdate(transaction.id, client);
+    if (!locked || locked.status !== "RESERVED") {
+      return null;
+    }
+
+    const [candidate] = await findBackupProductCandidates(
+      {
+        categoryId: failedProduct.category_id!,
+        brandId: failedProduct.brand_id!,
+        productName: failedProduct.product_name,
+        excludeProductIds: locked.tried_product_ids,
+        sellingPriceCeiling: locked.selling_price,
+      },
+      client,
+    );
+    if (!candidate) {
+      return null;
+    }
+
+    const newIdempotencyKey = randomUUID();
+    const updated = await swapTransactionProductForBackup(
+      transaction.id,
+      candidate.id,
+      candidate.base_price,
+      newIdempotencyKey,
+      client,
+    );
+    if (!updated) {
+      return null;
+    }
+
+    await recordTransactionEvent(
+      {
+        transaction_id: transaction.id,
+        from_status: "RESERVED",
+        to_status: "RESERVED",
+        provider_raw_response: {
+          event: "BACKUP_SKU_SWAPPED",
+          from_product_id: failedProduct.id,
+          from_sku: failedProduct.sku,
+          to_product_id: candidate.id,
+          to_sku: candidate.sku,
+        },
+      },
+      client,
+    );
+
+    return { transaction: updated, buyerSkuCode: candidate.sku };
+  });
+
+  if (!claimed) {
+    return null;
+  }
+
+  return settleWithProvider(claimed.transaction, claimed.buyerSkuCode, actorUserId);
 }
 
 // Processes an inbound Digiflazz webhook delivery — the near-real-time

@@ -359,6 +359,44 @@ export async function listCheapestActiveProducts(
   return result.rows;
 }
 
+// The automatic backup-SKU failover's own candidate search (see
+// transaction.service.ts's tryBackupSku) — every OTHER active, non-
+// admin-disabled SKU sharing the same (category_id, brand_id,
+// product_name) "nominal" group as the one that just failed, cheapest
+// modal (base_price) first so the platform's margin is protected as much
+// as possible. sellingPriceCeiling is a hard financial guardrail: a
+// candidate whose base_price is not strictly below what the buyer is
+// already being charged is excluded outright — the platform must never
+// end up selling a product for less than it paid Digiflazz for it, no
+// matter how the commission math works out. excludeProductIds is always
+// transaction.tried_product_ids (the original plus every backup already
+// attempted), so the same SKU is never tried twice for one purchase.
+export async function findBackupProductCandidates(
+  params: {
+    categoryId: string;
+    brandId: string;
+    productName: string;
+    excludeProductIds: string[];
+    sellingPriceCeiling: string | number;
+  },
+  db: Queryable = pool,
+): Promise<Product[]> {
+  const result = await db.query<Product>(
+    `SELECT * FROM products
+     WHERE category_id = $1
+       AND brand_id = $2
+       AND product_name = $3
+       AND status = 'ACTIVE'
+       AND admin_disabled = false
+       AND base_price < $4
+       AND NOT (id = ANY($5::uuid[]))
+     ORDER BY base_price ASC
+     LIMIT 1`,
+    [params.categoryId, params.brandId, params.productName, params.sellingPriceCeiling, params.excludeProductIds],
+  );
+  return result.rows;
+}
+
 // A single-SKU refresh from Digiflazz's own recommended "check right
 // before this specific purchase" pattern (see pricing.service.ts's
 // getLiveProductPricing) — narrower than upsertProduct's full-row upsert,

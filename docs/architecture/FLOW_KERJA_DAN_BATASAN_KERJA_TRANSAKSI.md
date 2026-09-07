@@ -1,6 +1,8 @@
 # Flow Kerja dan Batasan Kerja Transaksi
 
-> **STATUS: 🔒 DIKUNCI.** Dokumen ini menetapkan alur kerja transaksi PPOB (pembelian ke Digiflazz) yang sudah diverifikasi bekerja benar di produksi per 2026-09-03. Bagian yang ditandai 🔒 di bawah **tidak boleh diubah** pada sesi kerja berikutnya tanpa instruksi eksplisit dan sadar dari pemilik produk — bukan sekadar "sedang memperbaiki bug lain di dekatnya". Dokumen ini juga menjadi **acuan pola** untuk layanan/kategori pembayaran baru yang akan dibangun di atas fondasi yang sama.
+> **STATUS: ⏳ AMANDEMEN MENUNGGU VERIFIKASI (sejak 2026-09-07).** Dokumen ini menetapkan alur kerja transaksi PPOB (pembelian ke Digiflazz) yang sudah diverifikasi bekerja benar di produksi per 2026-09-03. Bagian yang ditandai 🔒 di bawah **tidak boleh diubah** pada sesi kerja berikutnya tanpa instruksi eksplisit dan sadar dari pemilik produk — bukan sekadar "sedang memperbaiki bug lain di dekatnya". Dokumen ini juga menjadi **acuan pola** untuk layanan/kategori pembayaran baru yang akan dibangun di atas fondasi yang sama.
+>
+> Bagian 5a (mekanisme SKU cadangan otomatis) adalah amandemen sadar atas aturan #3/#8 versi sebelumnya, diinstruksikan eksplisit oleh pemilik produk pada 2026-09-07. Status di atas kembali menjadi **🔒 DIKUNCI** hanya setelah amandemen ini lolos uji nyata di produksi (lihat catatan verifikasi di akhir Bagian 5a) — sebelum itu, anggap Bagian 5a sebagai kode yang sudah ditulis tapi BELUM terverifikasi seperti bagian lain dokumen ini.
 
 ---
 
@@ -92,12 +94,38 @@ Daftar ini murni tentang **logika**, bukan tampilan (lihat Bagian 6 untuk yang b
 
 1. **Verifikasi signature webhook** — `verifyDigiflazzWebhookSignature` (`src/lib/digiflazz/webhook.ts`): SHA1 HMAC atas raw body, header `X-Hub-Signature`, `timingSafeEqual`. Sudah dikonfirmasi sesuai dokumentasi resmi Digiflazz persis.
 2. **Autentikasi & pengiriman transaksi ke Digiflazz** — `submitDigiflazzTransaction` (`src/lib/digiflazz/transaction.ts`): formula signature `md5(username+apiKey+ref_id)`, parameter wajib, `testing` flag hanya untuk mode development.
-3. **Idempotency** — `ref_id` yang dikirim ke Digiflazz SELALU `transactions.idempotency_key`, tidak pernah dibuat ulang untuk transaksi yang sama. Re-submit dengan `ref_id` sama = cek status, bukan pembelian baru.
+3. **Idempotency** — `ref_id` yang dikirim ke Digiflazz SELALU `transactions.idempotency_key`, tidak pernah dibuat ulang untuk transaksi yang sama. Re-submit dengan `ref_id` sama = cek status, bukan pembelian baru. **Pengecualian tunggal, disengaja (lihat Bagian 5a)**: mekanisme SKU-cadangan-otomatis BOLEH membuat ulang `idempotency_key` pada baris `transactions` yang SAMA (id sama), tapi hanya lewat `swapTransactionProductForBackup` (`src/repositories/transaction.repository.ts`), dipanggil hanya dari `trySwapToBackupSku` (`src/services/transaction.service.ts`), dan tidak pernah untuk alasan lain apa pun.
 4. **Reservasi/pelepasan saldo** — `postLedgerEntry` (RESERVE/DEBIT/RELEASE), selalu di dalam `withTransaction()` dengan row locking. `applyDigiflazzResult` adalah satu-satunya titik yang boleh memanggil `captureTransaction`/`releaseTransaction`.
 5. **State machine status transaksi** — `transitionTransactionStatus` (compare-and-swap). Kedua jalur (respons sinkron & webhook) **wajib** funnel lewat fungsi `applyDigiflazzResult` yang sama persis — jangan pernah dibuat jalur kedua yang terpisah.
 6. **Cadence polling client**: 3 detik × 20x percobaan (≤60 detik total). Ini nilai yang sudah diuji nyaman secara UX dan aman terhadap batas rate-limit Digiflazz (rc 85, "1 menit sekali" per dokumentasi resmi).
 7. **Interval job reconciliation**: 3 menit (`CHECK_INTERVAL_MS`, `src/jobs/pending-transaction-check.ts`). Jangan dipercepat tanpa mempertimbangkan ulang rc 85/86 (limitasi transaksi & limitasi cek nomor PLN dari Digiflazz).
-8. **Tidak pernah membuat transaksi kedua** — tidak ada kondisi apa pun (retry, timeout, error jaringan) yang boleh memicu `submitDigiflazzTransaction` dipanggil dengan `ref_id` baru untuk niat pembelian yang sama.
+8. **Tidak pernah membuat transaksi kedua** — tidak ada kondisi apa pun (retry, timeout, error jaringan) yang boleh memicu `submitDigiflazzTransaction` dipanggil dengan `ref_id` baru untuk niat pembelian yang sama. **Pengecualian tunggal, disengaja (lihat Bagian 5a)**: saat Digiflazz menjawab **"Gagal"** (bukan timeout, bukan error jaringan — jawaban definitif), mekanisme SKU-cadangan-otomatis boleh memicu `submitDigiflazzTransaction` sekali lagi untuk SKU **lain** (nominal sama, produk berbeda) pada baris transaksi yang sama, maksimal `MAX_BACKUP_SKU_ATTEMPTS` (2) kali. Ini tetap bukan "transaksi kedua" untuk niat pembelian yang sama secara longgar — setiap percobaan adalah usaha genuinely baru untuk memenuhi permintaan pembeli yang sama dengan produk yang berbeda, bukan mengulang permintaan yang identik.
+
+---
+
+## 5a. 🔒 Mekanisme SKU Cadangan Otomatis (Amandemen 2026-09-07)
+
+**Latar belakang**: sebelum amandemen ini, SKU termurah yang gagal (mis. kehabisan stok di Digiflazz) langsung membuat transaksi gagal dan saldo pembeli dikembalikan — walau ada SKU lain aktif dengan nominal yang identik. Pemilik produk meminta sistem otomatis mencoba SKU cadangan itu, sepenuhnya tidak terlihat oleh pembeli, dengan harga jual ke pembeli tidak pernah berubah.
+
+**Cara kerja** (lihat komentar kode untuk detail lengkap — ini ringkasannya):
+
+1. **Titik pemicu tunggal**: `applyDigiflazzResult`'s cabang `"Gagal"` (`src/services/transaction.service.ts`) — TIDAK ada jalur kedua. Berlaku otomatis untuk ketiga sumber yang bisa melaporkan "Gagal" (submit sinkron pertama, webhook Digiflazz, job reconciliation) karena ketiganya sudah funnel lewat fungsi yang sama (aturan #5 tetap utuh).
+2. **Pencarian kandidat cadangan** — `findBackupProductCandidates` (`src/repositories/product.repository.ts`): SKU lain di grup `(category_id, brand_id, product_name)` yang sama (kunci pengelompokan "nominal sama" yang SAMA PERSIS dengan yang sudah dipakai `listCheapestActiveProducts` untuk menampilkan SKU termurah ke pembeli hari ini), status `ACTIVE`, `admin_disabled = false`, kategori & brand masih aktif (dicek ulang tiap percobaan), dan **modal (`base_price`) SKU cadangan harus lebih kecil dari `selling_price` yang sudah dikunci ke pembeli** — kalau tidak ada yang memenuhi, dianggap tidak ada cadangan valid.
+3. **Klaim atomik** — `trySwapToBackupSku` mengunci baris transaksi (`lockTransactionForUpdate`, `SELECT ... FOR UPDATE` di dalam `withTransaction`) sebelum memilih & mengklaim satu kandidat lewat `swapTransactionProductForBackup`, MENGGANTI `product_id`/`base_price`/`idempotency_key` pada baris **yang sama** (id tidak berubah) — **`selling_price` TIDAK PERNAH disentuh**. Lock hanya dipegang selama baca-putuskan-tulis di database, TIDAK PERNAH melintasi panggilan jaringan ke Digiflazz (konsisten dengan pola reservasi saldo yang sudah ada).
+4. **Percobaan ulang** — setelah klaim commit, `settleWithProvider` dipanggil lagi (di luar lock) dengan `ref_id` baru dan SKU cadangan. Hasilnya funnel lagi lewat `applyDigiflazzResult` yang sama — kalau "Gagal" lagi, ulangi dari langkah 2 (maksimal `MAX_BACKUP_SKU_ATTEMPTS = 2` kali cadangan; total maksimal 3 percobaan Digiflazz per pembelian). Kalau cadangan habis atau tidak ada yang valid, baru jatuh ke `releaseTransaction` seperti sebelum amandemen ini.
+5. **Tidak menyentuh ledger sama sekali** — reservasi saldo (`RESERVE`) yang sudah dibuat untuk `selling_price` di awal tetap berlaku sepanjang rangkaian percobaan; tidak ada lepas-lalu-tahan-ulang, sehingga tidak ada celah saldo "bebas sesaat" untuk transaksi lain.
+6. **Tidak terlihat pembeli sama sekali** — karena ID transaksi (`transactions.id`) tidak pernah berubah, aplikasi Flutter/web yang sedang polling `GET /api/transactions/:id` tetap melihat transaksi yang sama, tanpa perubahan kode apa pun di kedua platform. Fallback "masih diproses, cek Histori nanti" yang sudah ada (Bagian 4) otomatis menyerap tambahan waktu kalau rangkaian percobaan ini kebetulan makan waktu lebih lama dari biasanya.
+7. **Komisi tidak pernah minus** — `awardCommissionForTransaction` (`src/services/commission.service.ts`) membatasi komisi maksimal sebesar profit riil transaksi (`selling_price - base_price`, dari SKU yang BENAR-benar sukses) — supaya digides tidak pernah membayar komisi lebih besar dari keuntungan yang benar-benar didapat di transaksi itu.
+8. **Jejak audit** — `original_product_id` (SKU pertama, tidak pernah berubah) dan `tried_product_ids` (semua SKU yang pernah dicoba, urut) tersimpan di baris `transactions` itu sendiri (`041_transaction_backup_sku.sql`); setiap pergantian juga dicatat sebagai `transaction_events` baru (`event: "BACKUP_SKU_SWAPPED"`) dan ditampilkan ke Super Admin di halaman Detail Transaksi.
+
+**Risiko yang diketahui, disengaja belum ditutup sepenuhnya** (gaya yang sama seperti Bagian 7):
+- Kalau webhook Digiflazz dan job reconciliation kebetulan mendeteksi "Gagal" pada jendela yang sangat sempit untuk transaksi yang sama, klaim SKU cadangan (langkah 3) sudah mencegah keduanya mengklaim SKU cadangan yang SAMA — tapi secara teori keduanya masih bisa mengklaim SKU cadangan yang BERBEDA dan mengirim keduanya ke Digiflazz nyaris bersamaan. Belum pernah teramati (webhook biasanya tiba 2–7 detik, job reconciliation tiap 3 menit — jendela tabrakannya sangat sempit), dan risikonya sama kelasnya dengan race sejenis yang sudah diterima di Bagian 7.
+- Kalau baris transaksi sempat diganti SKU (idempotency_key berubah), lalu Digiflazz mengirim ULANG webhook untuk `ref_id` LAMA (mis. webhook resend Digiflazz sendiri) setelah pergantian terjadi, `findTransactionByIdempotencyKey` untuk `ref_id` lama itu tidak akan menemukan transaksinya lagi (sudah berganti ke `ref_id` baru) — webhook resend itu akan gagal dengan "Transaksi tidak ditemukan", bukan korupsi data, hanya diabaikan.
+
+**Verifikasi (isi setelah pengujian nyata selesai — lihat catatan STATUS di awal dokumen)**:
+- [ ] Diuji dengan transaksi nyata di produksi yang benar-benar mengalami SKU asli gagal dan berhasil pindah ke SKU cadangan.
+- [ ] Dikonfirmasi harga jual ke pembeli tidak berubah, dan komisi (kalau ada) sesuai batas profit riil.
+- [ ] Dikonfirmasi tampilan Flutter/web tidak menunjukkan kejanggalan apa pun (tidak ada transaksi ganda, tidak ada pesan gagal yang sempat terlihat).
 
 ---
 
@@ -132,13 +160,14 @@ Kalau ke depan dibangun kategori PPOB baru, atau integrasi provider selain Digif
 ## 9. Peta File Terkait
 
 **Backend (`digides`):**
-- `src/services/transaction.service.ts` — `executeTransaction`, `checkTransactionStatus`, `settleWithProvider`, `applyDigiflazzResult`, `processDigiflazzWebhookEvent`, `captureTransaction`, `releaseTransaction`
+- `src/services/transaction.service.ts` — `executeTransaction`, `checkTransactionStatus`, `settleWithProvider`, `applyDigiflazzResult`, `processDigiflazzWebhookEvent`, `captureTransaction`, `releaseTransaction`, `trySwapToBackupSku` (Bagian 5a)
 - `src/lib/digiflazz/transaction.ts`, `src/lib/digiflazz/webhook.ts`
 - `src/jobs/pending-transaction-check.ts`, `instrumentation.ts`
 - `src/app/api/webhooks/digiflazz/route.ts`, `src/app/api/transactions/[id]/route.ts`, `src/app/api/transactions/[id]/check-status/route.ts`
 - `src/lib/formatting/pln-token.ts` (`parsePlnToken`)
 - `src/features/mitra-purchase/components/purchase-result-screen.tsx`
 - `src/features/mitra-histori/components/histori-detail-view.tsx`
+- **Bagian 5a (SKU cadangan otomatis)**: `src/repositories/product.repository.ts` (`findBackupProductCandidates`), `src/repositories/transaction.repository.ts` (`lockTransactionForUpdate`, `swapTransactionProductForBackup`), `src/services/commission.service.ts` (`awardCommissionForTransaction`'s profit cap), `src/features/transaction/components/transaction-detail.tsx` (catatan pergantian SKU di Super Admin), migrasi `041_transaction_backup_sku.sql`
 
 **Flutter (`digides_mitra`):**
 - `lib/features/purchase/purchase_screen.dart` — `_submitPurchase`, `_startPolling`, `_pollOnce`

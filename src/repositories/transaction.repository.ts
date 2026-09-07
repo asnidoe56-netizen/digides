@@ -31,8 +31,9 @@ export async function createTransaction(
   try {
     const result = await db.query<Transaction>(
       `INSERT INTO transactions (
-         idempotency_key, wallet_id, product_id, customer_number, base_price, selling_price, provider, status
-       ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'digiflazz'), 'RESERVED')
+         idempotency_key, wallet_id, product_id, customer_number, base_price, selling_price, provider, status,
+         original_product_id, tried_product_ids
+       ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'digiflazz'), 'RESERVED', $3, ARRAY[$3]::uuid[])
        RETURNING *`,
       [
         input.idempotency_key,
@@ -102,6 +103,56 @@ export async function transitionTransactionStatus(
      WHERE id = $1 AND status = $2
      RETURNING *`,
     [id, fromStatus, toStatus, extra.provider_transaction_id ?? null],
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Atomically re-fetches a still-RESERVED transaction under a row lock —
+ * the backup-SKU failover's read-decide-write step (see
+ * transaction.service.ts's tryBackupSku) needs this instead of a plain
+ * findTransactionById so that two concurrent callers (e.g. the Digiflazz
+ * webhook and the pending-transaction-check job racing on the same
+ * transaction) never both decide on the same backup candidate: the second
+ * caller's SELECT ... FOR UPDATE blocks until the first caller's
+ * swapTransactionProductForBackup call has committed, then sees the
+ * already-updated tried_product_ids and correctly picks a different one.
+ * MUST be called inside withTransaction — the lock is only held for the
+ * lifetime of that DB transaction.
+ */
+export async function lockTransactionForUpdate(
+  id: string,
+  client: Queryable,
+): Promise<Transaction | null> {
+  const result = await client.query<Transaction>(`SELECT * FROM transactions WHERE id = $1 FOR UPDATE`, [id]);
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Swaps which product this transaction is attempting — same row, same id,
+ * new idempotency_key (so a genuinely new ref_id is sent to Digiflazz;
+ * Digiflazz treats a repeat ref_id as a status check, never a new
+ * purchase, so a fresh one is required to actually try the backup SKU).
+ * selling_price is deliberately never touched here — the buyer's price
+ * never changes no matter which SKU ultimately fulfills the purchase.
+ * Only succeeds while still RESERVED, matching every other write this
+ * engine makes to a transaction row. Call only after
+ * lockTransactionForUpdate, inside the same withTransaction.
+ */
+export async function swapTransactionProductForBackup(
+  id: string,
+  newProductId: string,
+  newBasePrice: string | number,
+  newIdempotencyKey: string,
+  client: Queryable,
+): Promise<Transaction | null> {
+  const result = await client.query<Transaction>(
+    `UPDATE transactions
+     SET product_id = $3, base_price = $4, idempotency_key = $5,
+         tried_product_ids = array_append(tried_product_ids, $3::uuid)
+     WHERE id = $1 AND status = $2
+     RETURNING *`,
+    [id, "RESERVED", newProductId, newBasePrice, newIdempotencyKey],
   );
   return result.rows[0] ?? null;
 }

@@ -289,6 +289,17 @@ export async function awardCommissionForTransaction(
 
   let amount = rule.commission_type === "FLAT" ? Number(rule.flat_amount) : (sellingPrice * Number(rule.percentage)) / 100;
   if (maxCommission > 0) amount = Math.min(amount, maxCommission);
+  // Never pay out more commission than this specific transaction actually
+  // made the platform — normally a no-op (markup is always configured well
+  // above any commission rule), but the automatic backup-SKU failover
+  // (transaction.service.ts's trySwapToBackupSku) can land on a costlier
+  // backup product while selling_price stays frozen at the buyer's
+  // original price, shrinking the real profit margin below what a flat/
+  // percentage rule would otherwise award. base_price always reflects
+  // whichever SKU actually fulfilled the purchase, so this comparison is
+  // correct whether or not a swap ever happened.
+  const actualProfit = sellingPrice - Number(transaction.base_price);
+  amount = Math.min(amount, Math.max(actualProfit, 0));
   amount = Math.round(amount);
   if (amount <= 0) {
     return [];

@@ -12,6 +12,15 @@ export interface Transaction {
   provider: string;
   provider_reference: string | null;
   provider_transaction_id: string | null;
+  /** The product this transaction was FIRST created against — set once,
+   *  never changed. Compare against `product_id` to tell whether the
+   *  automatic backup-SKU failover ever swapped this transaction (see
+   *  041_transaction_backup_sku.sql). */
+  original_product_id: string | null;
+  /** Every product_id attempted so far, oldest first (the original, then
+   *  each backup in the order it was tried) — also the exclusion list the
+   *  next backup lookup uses. */
+  tried_product_ids: string[];
   created_at: Date;
   updated_at: Date;
 }

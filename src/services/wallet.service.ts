@@ -11,6 +11,7 @@ import {
   createWalletTransfer,
 } from "@/repositories/wallet.repository";
 import { findBumdesByAdminUserId } from "@/repositories/bumdes.repository";
+import { findStoreByOwnerUserId } from "@/repositories/store.repository";
 import { findKonterByOperatorUserId } from "@/repositories/konter.repository";
 import { recordAuditLog } from "@/repositories/audit.repository";
 import { findRelationshipByReferredUser } from "@/repositories/referral.repository";
@@ -51,6 +52,40 @@ export async function getWalletForMitraSession(userId: string, roles: string[]):
     return konter ? getWalletByKonterId(konter.id) : null;
   }
   return findWalletByOwner("USER", userId);
+}
+
+/**
+ * Every wallet this identity may legitimately READ — their own operating
+ * wallet, plus their own store's wallet if they have one.
+ *
+ * Deliberately separate from getWalletForMitraSession, whose contract
+ * ("exactly one wallet, the caller's own operating wallet") must not be
+ * weakened: that one answers "which wallet pays", this one answers "which
+ * transactions am I allowed to see". Conflating the two is exactly the bug
+ * this function was written to fix — once a purchase could be funded from
+ * a store wallet (payWith: "STORE"), every read path still compared
+ * against the operating wallet alone, so a store-funded purchase came back
+ * 404 to its own buyer: the app's status poll never saw it settle and sat
+ * on "Memproses" forever, and it never appeared in Histori either.
+ *
+ * Read-only by design. Nothing here may be used to decide which wallet a
+ * purchase or transfer spends from.
+ */
+export async function listReadableWalletIds(userId: string, roles: string[]): Promise<string[]> {
+  const [operatingWallet, store] = await Promise.all([
+    getWalletForMitraSession(userId, roles),
+    findStoreByOwnerUserId(userId),
+  ]);
+
+  const ids: string[] = [];
+  if (operatingWallet) ids.push(operatingWallet.id);
+  if (store) {
+    const storeWallet = await findWalletByOwner("STORE", store.id);
+    // A store's status doesn't gate reading its own history — a suspended
+    // store's owner must still be able to see what already happened.
+    if (storeWallet) ids.push(storeWallet.id);
+  }
+  return ids;
 }
 
 export interface WalletOverviewSummary {

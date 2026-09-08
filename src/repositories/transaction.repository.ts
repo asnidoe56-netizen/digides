@@ -258,6 +258,13 @@ export interface ListTransactionsFilter {
   /** A wallet's own transaction history — Menu Histori (BUMDes/Konter's
    *  own purchases), scoped server-side to their own wallet id. */
   walletId?: string;
+  /** Menu Histori once a mitra can also own a store: their operating
+   *  wallet AND their store's, since a purchase funded with
+   *  payWith: "STORE" belongs to the latter. Always resolved server-side
+   *  (wallet.service.ts's listReadableWalletIds), never taken from a
+   *  request. Ignored when `walletId` is set, which stays the single-wallet
+   *  filter every other caller uses. */
+  walletIds?: string[];
   dateFrom?: Date;
   dateTo?: Date;
   limit?: number;
@@ -285,6 +292,9 @@ function buildTransactionFilterConditions(filter: ListTransactionsFilter): { whe
   if (filter.walletId) {
     params.push(filter.walletId);
     conditions.push(`t.wallet_id = $${params.length}`);
+  } else if (filter.walletIds && filter.walletIds.length > 0) {
+    params.push(filter.walletIds);
+    conditions.push(`t.wallet_id = ANY($${params.length}::uuid[])`);
   }
   if (filter.dateFrom) {
     params.push(filter.dateFrom);

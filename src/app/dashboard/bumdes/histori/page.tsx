@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { HistoriView } from "@/features/mitra-histori";
 import { getSession } from "@/lib/auth/session";
 import { getTransactionCount, getTransactionList } from "@/services/transaction.service";
-import { getWalletForMitraSession } from "@/services/wallet.service";
+import { listReadableWalletIds } from "@/services/wallet.service";
 
 // Transaction history changes with every purchase — never statically
 // prerendered.
@@ -21,12 +21,16 @@ export default async function BumdesHistoriPage({
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
 
-  const wallet = await getWalletForMitraSession(session.userId, session.roles);
-  const filter = { walletId: wallet?.id, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE };
+  // Both wallets this mitra may read — a purchase funded from their own
+  // store's balance belongs to the store wallet and would otherwise be
+  // missing from their own Histori.
+  const walletIds = await listReadableWalletIds(session.userId, session.roles);
+  const filter = { walletIds, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE };
+  const hasWallet = walletIds.length > 0;
 
   const [transactions, total] = await Promise.all([
-    wallet ? getTransactionList(filter) : Promise.resolve([]),
-    wallet ? getTransactionCount(filter) : Promise.resolve(0),
+    hasWallet ? getTransactionList(filter) : Promise.resolve([]),
+    hasWallet ? getTransactionCount(filter) : Promise.resolve(0),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 

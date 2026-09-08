@@ -1,11 +1,11 @@
 # PRD Digides Toko
 
-> **Versi 2.2 · 8 September 2026 · Tahap 1 selesai, Tahap 2 siap dimulai**
-> Menggantikan PRD v1.0/v2.1. Versi berformat (belum disinkronkan ke v2.2): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
+> **Versi 2.3 · 8 September 2026 · Tahap 1 & 2 selesai, Tahap 3 siap dimulai**
+> Menggantikan PRD v1.0/v2.1/v2.2. Versi berformat (belum disinkronkan ke v2.3): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
 
 Saluran distribusi saldo untuk bisnis PPOB Digides — warung mendapat modal jualan pulsa dari hasil belanja pelanggannya, tanpa perlu ke bank.
 
-**Status pengerjaan**: Tahap 1 (§9) sudah dikerjakan dan diverifikasi — lihat §7a untuk rinciannya, termasuk satu migrasi (`043_wallet_transfers.sql`) yang sudah dipakai sehingga migrasi Toko sendiri sekarang dimulai dari `044` (§4 sudah diperbarui).
+**Status pengerjaan**: Tahap 1 dan Tahap 2 (§9) sudah dikerjakan dan diverifikasi — lihat §7a (Tahap 1) dan §9a (Tahap 2) untuk rinciannya. Migrasi `044_stores.sql` dan `045_store_wallet.sql` sudah diterapkan; migrasi Toko berikutnya (mesin pembayaran, Tahap 3) dimulai dari `046`.
 
 ---
 
@@ -122,8 +122,8 @@ Melanjutkan penomoran migrasi yang ada (terakhir `042_transactions_customer_name
 | Migrasi | Isi | Catatan penting |
 |---|---|---|
 | `043_wallet_transfers` | ✅ **Sudah diterapkan** — `wallet_transfers`, kolom `wallet_ledger.transfer_id` | Bagian dari Tahap 1 (§7a), bukan Toko itu sendiri — memperbaiki bug transfer yang belum idempotent, konsumsi nomor migrasi ini lebih dulu. |
-| `044_stores` | `stores`, `store_settings` | Pemilik = `users.id`. Status: `DRAFT → SUBMITTED → ACTIVE → SUSPENDED/CLOSED`. Alamat memakai tabel `wilayah` yang sudah ada (migrasi 039). |
-| `045_store_wallet` | Tambah `'STORE'` ke `account_type`, kolom `store_id`, perluas constraint arc, indeks unik per toko | Satu toko = satu dompet. Pemilik tetap punya dompet `USER`-nya sendiri, terpisah penuh. **Dompet `STORE` tidak boleh menjadi sumber `TRANSFER_OUT`** — hanya boleh membelanjakan saldonya di katalog Digides. Ditegakkan di layanan transfer, bukan sekadar disembunyikan di UI. |
+| `044_stores` | ✅ **Sudah diterapkan** — `stores` | Pemilik = `users.id`, `UNIQUE` (satu toko per pemilik, lihat §9a). Status: `DRAFT → SUBMITTED → ACTIVE → SUSPENDED/CLOSED`. Alamat memakai tabel `wilayah` yang sudah ada (migrasi 039). `store_settings` sengaja **tidak** dibuat — lihat §9a untuk alasannya. |
+| `045_store_wallet` | ✅ **Sudah diterapkan** — Tambah `'STORE'` ke `account_type`, kolom `store_id`, perluas constraint arc, indeks unik per toko | Satu toko = satu dompet. Pemilik tetap punya dompet `USER`-nya sendiri, terpisah penuh. **Dompet `STORE` tidak boleh menjadi sumber `TRANSFER_OUT`** — hanya boleh membelanjakan saldonya di katalog Digides. Ditegakkan di layanan transfer, bukan sekadar disembunyikan di UI (lihat §9a). |
 | `046_store_products` | `store_products`, `store_inventory_events` | Terpisah total dari `products` (katalog Digiflazz). Pergerakan stok dicatat sebagai event, bukan hanya angka yang ditimpa. |
 | `047_store_orders` | `store_orders`, `store_order_items`, `store_payment_requests` | `store_payment_requests` menyimpan `idempotency_key`, nominal terkunci, `expires_at`, dan status (§5). |
 | `048_ledger_types` | Tambah `SALE_IN` / `SALE_OUT` ke `wallet_ledger.type` | Jangan pakai ulang `TRANSFER_IN/OUT`: laporan harus bisa membedakan "kiriman saldo" dari "penjualan toko". |
@@ -235,6 +235,24 @@ Selesai bila: seluruh kriteria §8 lolos, diuji lewat API tanpa UI kasir sama se
 
 **Tahap 4 — Antarmuka: dasbor toko, katalog produk, kasir, struk.**
 Selesai bila: satu transaksi warung nyata selesai dari pilih produk sampai struk, di bawah 30 detik.
+
+---
+
+## 9a. Tahap 2 — hasil pengerjaan (8 September 2026)
+
+Migrasi `044_stores.sql` (tabel `stores`) dan `045_store_wallet.sql` (tipe `'STORE'` pada `wallet_accounts`) sudah diterapkan di database dev, mengikuti persis pola *exclusive arc* yang sudah ada untuk `BUMDES`/`KONTER`/`USER` (migrasi 006): kolom `store_id` baru, `CHECK` tipe akun diperluas, `CHECK` *exclusive arc* diperluas dengan cabang `STORE`, dan indeks unik parsial `wallet_accounts_store_unique_idx` — satu toko tidak akan pernah punya dua dompet.
+
+**Yang dibangun:**
+
+1. **Entitas toko** (`src/repositories/store.repository.ts`, `src/services/store.service.ts`) — `registerStore` membuat baris `stores` (langsung berstatus `SUBMITTED`, karena belum ada UI simpan-draf di Tahap 4) dan dompet `STORE`-nya sekaligus dalam satu transaksi database (`provisionWalletForAccount`, primitif yang sama dipakai `registerMitra` untuk BUMDes) — kegagalan sebagian tidak akan pernah meninggalkan toko tanpa dompet. `verifyStore` memindahkan status `SUBMITTED → ACTIVE` memakai UPDATE ber-*compare-and-swap* (`WHERE status = 'SUBMITTED'`), disiplin yang sama seperti transisi status di mesin transaksi PPOB — percobaan verifikasi ganda pada toko yang sudah `ACTIVE` gagal dengan bersih, bukan diam-diam menjadi no-op.
+2. **Resolusi dompet toko** — `getWalletForStore(storeId)` (`wallet.service.ts`) adalah satu-satunya cara resmi meresolusi dompet sebuah toko, persis seperti yang dijanjikan komentar kontrak §7 yang ditulis di Tahap 1. `getWalletForMitraSession` (dompet pribadi/operasional) sama sekali tidak disentuh — pemilik toko tetap punya dua dompet yang sepenuhnya terpisah.
+3. **Endpoint API** — `POST /api/stores` (registrasi mandiri, pemilik selalu diri sendiri dari sesi, tidak pernah dari body request), `GET /api/stores/me` (baca status toko + saldo dompetnya sendiri), `POST /api/stores/[id]/verify` (Super Admin saja, lewat `requireRole`).
+4. **`store_settings` sengaja tidak dibuat** — tidak ada satu pun kriteria penerimaan Tahap 2/3 yang butuh setting apa pun hari ini; tabel dengan kolom kosong hanya akan jadi skema spekulatif. Ditambahkan nanti di migrasi manapun yang pertama kali benar-benar butuh satu setting nyata.
+5. **Satu toko per pemilik** (`stores.owner_user_id UNIQUE`) — simplifikasi MVP yang disengaja, bukan aturan bisnis permanen: target merchant (§1) adalah satu pemilik warung menjalankan satu toko, dan mengunci 1:1 menghindari ambiguitas "toko yang mana" di setiap titik panggilan mendatang sebelum ada kebutuhan nyata untuk lebih dari satu.
+
+**Diverifikasi nyata** lewat panggilan HTTP langsung ke server dev (bukan hanya membaca kode): pengguna baru mendaftar → `POST /api/stores` menghasilkan toko berstatus `SUBMITTED` dengan dompet bersaldo Rp0 → percobaan mendaftar toko kedua ditolak (`"Anda sudah memiliki toko terdaftar"`) → `POST /api/stores/:id/verify` oleh sesi `SUPER_ADMIN` memindahkan status ke `ACTIVE` → percobaan verifikasi kedua ditolak (`"Toko berstatus ACTIVE, tidak bisa diverifikasi"`) → query langsung ke `wallet_accounts` mengonfirmasi dua baris terpisah untuk pemilik yang sama: satu `account_type = 'USER'` (dompet pribadi) dan satu `account_type = 'STORE'` (dompet toko), keduanya bersaldo independen. Seluruh data uji (wallet, wallet_account, store, role, PIN, sesi) sudah dibersihkan setelahnya; satu baris `users` tersisa di database dev karena tertahan oleh jejak `audit_logs`-nya sendiri (tabel itu *append-only*, sesuai desain proyek ini) — tidak berbahaya, tidak dipakai fitur apa pun, dan tidak pernah menyentuh produksi.
+
+**Kriteria Tahap 2 (§9) terpenuhi**: toko bisa dibuat, diverifikasi, dan punya dompet bersaldo Rp0 yang sepenuhnya terpisah dari dompet pribadi pemiliknya.
 
 ---
 

@@ -13,24 +13,39 @@ import type {
 
 // --- wallet_accounts ---------------------------------------------------
 
+function ownerColumn(ownerType: WalletAccountType): "bumdes_id" | "konter_id" | "user_id" | "store_id" {
+  switch (ownerType) {
+    case "BUMDES":
+      return "bumdes_id";
+    case "KONTER":
+      return "konter_id";
+    case "USER":
+      return "user_id";
+    case "STORE":
+      return "store_id";
+  }
+}
+
 export type CreateWalletAccountInput =
   | { account_type: "BUMDES"; bumdes_id: string }
   | { account_type: "KONTER"; konter_id: string }
-  | { account_type: "USER"; user_id: string };
+  | { account_type: "USER"; user_id: string }
+  | { account_type: "STORE"; store_id: string };
 
 export async function createWalletAccount(
   input: CreateWalletAccountInput,
   db: Queryable = pool,
 ): Promise<WalletAccount> {
   const result = await db.query<WalletAccount>(
-    `INSERT INTO wallet_accounts (account_type, bumdes_id, konter_id, user_id)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO wallet_accounts (account_type, bumdes_id, konter_id, user_id, store_id)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
     [
       input.account_type,
       input.account_type === "BUMDES" ? input.bumdes_id : null,
       input.account_type === "KONTER" ? input.konter_id : null,
       input.account_type === "USER" ? input.user_id : null,
+      input.account_type === "STORE" ? input.store_id : null,
     ],
   );
   return result.rows[0];
@@ -41,7 +56,7 @@ export async function findWalletAccountByOwner(
   ownerId: string,
   db: Queryable = pool,
 ): Promise<WalletAccount | null> {
-  const column = ownerType === "BUMDES" ? "bumdes_id" : ownerType === "KONTER" ? "konter_id" : "user_id";
+  const column = ownerColumn(ownerType);
   const result = await db.query<WalletAccount>(
     `SELECT * FROM wallet_accounts WHERE account_type = $1 AND ${column} = $2`,
     [ownerType, ownerId],
@@ -208,17 +223,17 @@ export async function findWalletTransferByIdempotencyKey(
 }
 
 // PRD Digides Toko §7 contract: the explicit-`ownerType` primitive every
-// other resolver in this file is built on. When Tahap 2 adds `'STORE'` to
-// WalletAccountType and a `store_id` column, extend the column mapping
-// below to include it — this function is the one, deliberate place that
-// change belongs; never add store-wallet resolution to
-// getWalletForMitraSession or getOwningUserId above.
+// other resolver in this file is built on. Tahap 2 added `'STORE'` to
+// WalletAccountType and a `store_id` column (migration 045) — this is the
+// one, deliberate place a caller resolves a store's wallet
+// (wallet.service.ts's getWalletForStore); never add store-wallet
+// resolution to getWalletForMitraSession or getOwningUserId above.
 export async function findWalletByOwner(
   ownerType: WalletAccountType,
   ownerId: string,
   db: Queryable = pool,
 ): Promise<Wallet | null> {
-  const column = ownerType === "BUMDES" ? "bumdes_id" : ownerType === "KONTER" ? "konter_id" : "user_id";
+  const column = ownerColumn(ownerType);
   const result = await db.query<Wallet>(
     `SELECT w.* FROM wallets w
      JOIN wallet_accounts wa ON wa.id = w.wallet_account_id
@@ -444,18 +459,19 @@ export async function verifyLedgerConsistency(
 // --- Wallet Management UI (M18) --------------------------------------
 //
 // Everything below reads wallet_accounts joined with its owner's display
-// name — BUMDes/Konter/User are three different tables, so `owner_name`
-// resolves to whichever one actually matches this account's account_type
-// (see Architecture Decision #2: exactly one of bumdes_id/konter_id/
-// user_id is set). None of this touches balances or the ledger; it's
-// read-only reporting on top of the primitives above.
+// name — BUMDes/Konter/User/Store are four different tables, so
+// `owner_name` resolves to whichever one actually matches this account's
+// account_type (see Architecture Decision #2: exactly one of bumdes_id/
+// konter_id/user_id/store_id is set). None of this touches balances or
+// the ledger; it's read-only reporting on top of the primitives above.
 
 const OWNER_JOIN = `
   LEFT JOIN bumdes b ON b.id = wa.bumdes_id
   LEFT JOIN konters k ON k.id = wa.konter_id
   LEFT JOIN users u ON u.id = wa.user_id
+  LEFT JOIN stores s ON s.id = wa.store_id
 `;
-const OWNER_NAME_EXPR = `COALESCE(b.name, k.name, u.full_name)`;
+const OWNER_NAME_EXPR = `COALESCE(b.name, k.name, u.full_name, s.name)`;
 
 export interface WalletAccountListItem {
   wallet_account_id: string;
@@ -489,7 +505,7 @@ function buildWalletAccountFilterConditions(filter: ListWalletAccountsFilter): {
   if (filter.search) {
     params.push(`%${filter.search}%`);
     conditions.push(
-      `(b.name ILIKE $${params.length} OR k.name ILIKE $${params.length} OR u.full_name ILIKE $${params.length})`,
+      `(b.name ILIKE $${params.length} OR k.name ILIKE $${params.length} OR u.full_name ILIKE $${params.length} OR s.name ILIKE $${params.length})`,
     );
   }
   if (filter.accountType) {
@@ -661,7 +677,7 @@ function buildLedgerFilterConditions(filter: ListLedgerFilter): { where: string;
   if (filter.search) {
     params.push(`%${filter.search}%`);
     conditions.push(
-      `(b.name ILIKE $${params.length} OR k.name ILIKE $${params.length} OR u.full_name ILIKE $${params.length} OR wl.reference ILIKE $${params.length})`,
+      `(b.name ILIKE $${params.length} OR k.name ILIKE $${params.length} OR u.full_name ILIKE $${params.length} OR s.name ILIKE $${params.length} OR wl.reference ILIKE $${params.length})`,
     );
   }
   if (filter.dateFrom) {

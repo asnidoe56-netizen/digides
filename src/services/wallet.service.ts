@@ -92,6 +92,7 @@ export async function getWalletOverview(): Promise<WalletOverviewSummary> {
     BUMDES: "0",
     KONTER: "0",
     USER: "0",
+    STORE: "0",
   };
   let totalAvailableBalance = 0;
   for (const row of byOwnerType) {

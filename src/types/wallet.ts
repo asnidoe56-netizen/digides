@@ -1,15 +1,17 @@
-export type WalletAccountType = "BUMDES" | "KONTER" | "USER";
+export type WalletAccountType = "BUMDES" | "KONTER" | "USER" | "STORE";
 export type WalletAccountStatus = "ACTIVE" | "SUSPENDED" | "CLOSED";
 
-// One of bumdes_id / konter_id / user_id is set, matching account_type —
-// enforced by an exclusive-arc CHECK constraint at the database level
-// (Architecture Decision #2).
+// One of bumdes_id / konter_id / user_id / store_id is set, matching
+// account_type — enforced by an exclusive-arc CHECK constraint at the
+// database level (Architecture Decision #2; STORE added in migration 045
+// per PRD Digides Toko §9 Tahap 2).
 export interface WalletAccount {
   id: string;
   account_type: WalletAccountType;
   bumdes_id: string | null;
   konter_id: string | null;
   user_id: string | null;
+  store_id: string | null;
   status: WalletAccountStatus;
   created_at: Date;
   updated_at: Date;

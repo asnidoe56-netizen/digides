@@ -3,6 +3,8 @@
 > **STATUS: 🔒 DIKUNCI.** Dokumen ini menetapkan alur kerja transaksi PPOB (pembelian ke Digiflazz) yang sudah diverifikasi bekerja benar di produksi per 2026-09-03, dan diamandemen + diverifikasi ulang per 2026-09-07 (Bagian 5a, mekanisme SKU cadangan otomatis). Bagian yang ditandai 🔒 di bawah **tidak boleh diubah** pada sesi kerja berikutnya tanpa instruksi eksplisit dan sadar dari pemilik produk — bukan sekadar "sedang memperbaiki bug lain di dekatnya". Dokumen ini juga menjadi **acuan pola** untuk layanan/kategori pembayaran baru yang akan dibangun di atas fondasi yang sama.
 >
 > Bagian 5a adalah amandemen sadar atas aturan #3/#8 versi sebelumnya, diinstruksikan eksplisit oleh pemilik produk pada 2026-09-07, dan sudah lolos uji nyata end-to-end di produksi pada hari yang sama (lihat catatan verifikasi lengkap di akhir Bagian 5a) — termasuk kasus SKU asli Gagal dua kali berturut-turut lalu SUKSES lewat cadangan kedua, dengan ledger saldo terbukti tepat satu RESERVE dan satu DEBIT.
+>
+> Bagian 5b adalah perbaikan bug pada `createTransaction`, diinstruksikan eksplisit oleh pemilik produk pada 2026-09-08 setelah ditemukan saat mengerjakan PRD Digides Toko Tahap 1 (`docs/product/PRD_DIGIDES_TOKO.md` §7a). Ini bukan perubahan aturan — aturan #3 (idempotency) tetap sama persis — melainkan perbaikan cara aturan itu **diimplementasikan** supaya benar-benar bekerja seperti yang sudah didokumentasikan. Dibuktikan lewat reproduksi langsung di database (bug lama dan perbaikannya sama-sama direproduksi berdampingan, bukan sekadar menunggu kejadian nyata) — lihat Bagian 5b untuk buktinya.
 
 ---
 
@@ -94,7 +96,7 @@ Daftar ini murni tentang **logika**, bukan tampilan (lihat Bagian 6 untuk yang b
 
 1. **Verifikasi signature webhook** — `verifyDigiflazzWebhookSignature` (`src/lib/digiflazz/webhook.ts`): SHA1 HMAC atas raw body, header `X-Hub-Signature`, `timingSafeEqual`. Sudah dikonfirmasi sesuai dokumentasi resmi Digiflazz persis.
 2. **Autentikasi & pengiriman transaksi ke Digiflazz** — `submitDigiflazzTransaction` (`src/lib/digiflazz/transaction.ts`): formula signature `md5(username+apiKey+ref_id)`, parameter wajib, `testing` flag hanya untuk mode development.
-3. **Idempotency** — `ref_id` yang dikirim ke Digiflazz SELALU `transactions.idempotency_key`, tidak pernah dibuat ulang untuk transaksi yang sama. Re-submit dengan `ref_id` sama = cek status, bukan pembelian baru. **Pengecualian tunggal, disengaja (lihat Bagian 5a)**: mekanisme SKU-cadangan-otomatis BOLEH membuat ulang `idempotency_key` pada baris `transactions` yang SAMA (id sama), tapi hanya lewat `swapTransactionProductForBackup` (`src/repositories/transaction.repository.ts`), dipanggil hanya dari `trySwapToBackupSku` (`src/services/transaction.service.ts`), dan tidak pernah untuk alasan lain apa pun.
+3. **Idempotency** — `ref_id` yang dikirim ke Digiflazz SELALU `transactions.idempotency_key`, tidak pernah dibuat ulang untuk transaksi yang sama. Re-submit dengan `ref_id` sama = cek status, bukan pembelian baru. **Pengecualian tunggal, disengaja (lihat Bagian 5a)**: mekanisme SKU-cadangan-otomatis BOLEH membuat ulang `idempotency_key` pada baris `transactions` yang SAMA (id sama), tapi hanya lewat `swapTransactionProductForBackup` (`src/repositories/transaction.repository.ts`), dipanggil hanya dari `trySwapToBackupSku` (`src/services/transaction.service.ts`), dan tidak pernah untuk alasan lain apa pun. **Perbaikan implementasi (lihat Bagian 5b)**: mekanisme "re-submit dengan ref_id sama = cek status" ini sendiri sempat rusak di `createTransaction` — perbaikannya tidak mengubah aturan ini sama sekali, hanya membuat implementasinya benar-benar berjalan sesuai yang tertulis di sini.
 4. **Reservasi/pelepasan saldo** — `postLedgerEntry` (RESERVE/DEBIT/RELEASE), selalu di dalam `withTransaction()` dengan row locking. `applyDigiflazzResult` adalah satu-satunya titik yang boleh memanggil `captureTransaction`/`releaseTransaction`.
 5. **State machine status transaksi** — `transitionTransactionStatus` (compare-and-swap). Kedua jalur (respons sinkron & webhook) **wajib** funnel lewat fungsi `applyDigiflazzResult` yang sama persis — jangan pernah dibuat jalur kedua yang terpisah.
 6. **Cadence polling client**: 3 detik × 20x percobaan (≤60 detik total). Ini nilai yang sudah diuji nyaman secara UX dan aman terhadap batas rate-limit Digiflazz (rc 85, "1 menit sekali" per dokumentasi resmi).
@@ -143,6 +145,25 @@ Komisi belum diamati secara langsung pada kejadian #2 (tergantung apakah pembeli
 
 ---
 
+## 5b. 🔒 Perbaikan Mekanisme Idempotency `createTransaction` (Amandemen 2026-09-08)
+
+**Ini perbaikan bug, bukan perubahan aturan.** Aturan #3 (idempotency) tetap persis sama seperti sebelumnya — dokumen ini sudah lama menjanjikan "re-submit dengan `ref_id` sama = cek status, bukan pembelian baru". Yang ternyata rusak adalah **implementasi** janji itu di satu titik spesifik, ditemukan tidak sengaja saat mengerjakan PRD Digides Toko Tahap 1 (`docs/product/PRD_DIGIDES_TOKO.md` §7a) ketika bug yang bentuknya identik lebih dulu ditemukan di fitur Transfer yang baru dibuat.
+
+**Bug yang ditemukan**: `createTransaction` (`src/repositories/transaction.repository.ts`) sebelumnya memakai pola *try/catch*: coba `INSERT`, kalau kena `UNIQUE constraint` (kode error Postgres 23505) berarti `idempotency_key` sudah pernah dipakai, lalu di dalam blok `catch` menjalankan `SELECT` untuk mengambil baris yang sudah ada dan mengembalikannya sebagai hasil (bukan error). Masalahnya: `executeTransaction` selalu memanggil `createTransaction` di dalam `client` yang sama dari `withTransaction()` (koneksi database yang sedang menjalankan satu transaksi terbuka) — dan di PostgreSQL, begitu SATU perintah di dalam transaksi terbuka gagal, SELURUH transaksi itu langsung berstatus "aborted": setiap perintah berikutnya di koneksi yang sama, termasuk `SELECT` fallback yang seharusnya menyelamatkan situasi, akan ikut ditolak dengan pesan `current transaction is aborted, commands ignored until end of transaction block`.
+
+**Dampak nyata**: kalau seorang mitra sudah memasukkan PIN yang benar, tapi jaringan sempat putus SETELAH server memproses permintaan tapi SEBELUM respons sampai ke aplikasi, lalu aplikasi otomatis mengirim ulang permintaan yang sama (dengan `idempotencyKey` yang sama, persis skenario yang memang dirancang aturan #3 untuk ditangani) — permintaan kedua itu akan gagal dengan error Postgres yang membingungkan, BUKAN mengembalikan hasil transaksi asli yang sebenarnya sudah berhasil/sedang diproses. **Bukan salah kirim uang** (`INSERT` kedua tetap tidak pernah benar-benar tersimpan), tapi jalur pemulihan yang seharusnya jadi jaring pengaman utama justru ikut gagal.
+
+**Perbaikan**: mengganti pola *try/catch* dengan `INSERT ... ON CONFLICT (idempotency_key) DO NOTHING RETURNING *`. Klausa ini tidak pernah memicu error sama sekali kalau `idempotency_key`-nya sudah ada — `INSERT` itu diam-diam tidak menyisipkan apa pun dan `RETURNING` mengembalikan nol baris, sehingga transaksi database tetap sehat dan `SELECT` fallback (mengambil baris yang sudah ada) selalu berhasil dijalankan. Pola yang sama persis sudah diterapkan dan diverifikasi lebih dulu pada `createWalletTransfer` (`src/repositories/wallet.repository.ts`, migrasi `043_wallet_transfers.sql`) sebelum diterapkan di sini.
+
+**Verifikasi — SELESAI, dibuktikan lewat reproduksi langsung di database (bukan menunggu kejadian nyata, karena ini murni mekanisme Postgres yang deterministik, bisa direproduksi kapan saja):**
+- [x] **Pola LAMA direproduksi ulang persis** — `INSERT` biasa (tanpa `ON CONFLICT`) dengan `idempotency_key` yang sudah ada, di dalam satu blok transaksi, diikuti `SELECT` yang sama seperti fallback lama: `INSERT` gagal dengan `duplicate key value violates unique constraint`, lalu `SELECT` berikutnya BENAR-BENAR ikut gagal dengan `current transaction is aborted, commands ignored until end of transaction block` — persis bug yang dicurigai, terbukti nyata bukan sekadar teori.
+- [x] **Pola BARU (`ON CONFLICT DO NOTHING`) diuji berdampingan** dengan data nyata (wallet & produk asli dari database) — `INSERT` kedua dengan `idempotency_key` yang sama mengembalikan nol baris TANPA error apa pun, dan `SELECT` fallback setelahnya berhasil sempurna mengambil baris transaksi asli.
+- [x] Kode lulus `tsc --noEmit` tanpa error.
+- [x] Baris data uji dibersihkan setelah verifikasi (tabel `transactions` sendiri tidak immutable, berbeda dari `transaction_events`/`wallet_ledger`).
+- [ ] **Belum diamati**: kejadian nyata di produksi (mitra benar-benar mengirim ulang pembelian yang sama karena jaringan putus). Ini kejadian yang jarang secara alami, jadi kemungkinan besar tidak akan teramati dalam waktu dekat — bukti mekanisme di atas (reproduksi langsung, bukan menunggu) dianggap cukup untuk mengunci ulang bagian ini, karena sifatnya deterministik (perilaku PostgreSQL yang sama setiap kali, bukan skenario bisnis yang bergantung stok/keberuntungan seperti Bagian 5a).
+
+---
+
 ## 6. Yang Aman Disentuh (murni presentasi, bukan logika)
 
 - Ikon, warna, teks/copy pada layar hasil (SUCCESS/FAILED/PENDING) — selama tidak mengubah kapan status itu ditampilkan.
@@ -182,6 +203,7 @@ Kalau ke depan dibangun kategori PPOB baru, atau integrasi provider selain Digif
 - `src/features/mitra-purchase/components/purchase-result-screen.tsx`
 - `src/features/mitra-histori/components/histori-detail-view.tsx`
 - **Bagian 5a (SKU cadangan otomatis)**: `src/repositories/product.repository.ts` (`findBackupProductCandidates`), `src/repositories/transaction.repository.ts` (`lockTransactionForUpdate`, `swapTransactionProductForBackup`), `src/services/commission.service.ts` (`awardCommissionForTransaction`'s profit cap), `src/features/transaction/components/transaction-detail.tsx` (catatan pergantian SKU di Super Admin), migrasi `041_transaction_backup_sku.sql`
+- **Bagian 5b (perbaikan idempotency)**: `src/repositories/transaction.repository.ts` (`createTransaction`)
 
 **Flutter (`digides_mitra`):**
 - `lib/features/purchase/purchase_screen.dart` — `_submitPurchase`, `_startPolling`, `_pollOnce`

@@ -3,8 +3,6 @@ import { pool } from "@/lib/db/pool";
 import type { Transaction, TransactionEvent, TransactionStatus } from "@/types/transaction";
 import type { WalletAccountType } from "@/types/wallet";
 
-const UNIQUE_VIOLATION = "23505";
-
 export interface CreateTransactionInput {
   idempotency_key: string;
   wallet_id: string;
@@ -24,44 +22,57 @@ export interface CreateTransactionResult {
 }
 
 // Double-click / retry safe: a second INSERT with the same idempotency_key
-// hits the UNIQUE constraint (23505) instead of creating a second financial
-// transaction — the existing row is returned instead of throwing.
+// returns the existing row instead of creating a second financial
+// transaction.
+//
+// FLOW_KERJA_DAN_BATASAN_KERJA_TRANSAKSI.md §5b amendment (2026-09-08):
+// this used to try{}/catch the UNIQUE violation and, on catch, run
+// findTransactionByIdempotencyKey on the SAME `db` to fetch the existing
+// row. executeTransaction always calls this with an active `client` from
+// withTransaction() — and in Postgres, a failed statement inside an open
+// transaction leaves it in an "aborted" state where every subsequent
+// command on that same connection is rejected with "current transaction
+// is aborted, commands ignored until end of transaction block", including
+// that very fallback SELECT. A genuine client retry (network drop after a
+// correct PIN, so the client resubmits the identical idempotencyKey)
+// would therefore surface a confusing Postgres error instead of the
+// original transaction's real result — never a double charge (the second
+// INSERT still never commits), but a broken retry path. `ON CONFLICT DO
+// NOTHING` never raises an error in the first place, so the transaction
+// stays healthy and the fallback SELECT always succeeds. Found and fixed
+// the identical pattern in wallet.repository.ts's createWalletTransfer
+// first (043_wallet_transfers.sql) — verified there via three identical
+// live requests before applying the same fix here.
 export async function createTransaction(
   input: CreateTransactionInput,
   db: Queryable = pool,
 ): Promise<CreateTransactionResult> {
-  try {
-    const result = await db.query<Transaction>(
-      `INSERT INTO transactions (
-         idempotency_key, wallet_id, product_id, customer_number, base_price, selling_price, provider, status,
-         original_product_id, tried_product_ids, customer_name
-       ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'digiflazz'), 'RESERVED', $3, ARRAY[$3]::uuid[], $8)
-       RETURNING *`,
-      [
-        input.idempotency_key,
-        input.wallet_id,
-        input.product_id,
-        input.customer_number,
-        input.base_price,
-        input.selling_price,
-        input.provider ?? null,
-        input.customer_name ?? null,
-      ],
-    );
+  const result = await db.query<Transaction>(
+    `INSERT INTO transactions (
+       idempotency_key, wallet_id, product_id, customer_number, base_price, selling_price, provider, status,
+       original_product_id, tried_product_ids, customer_name
+     ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'digiflazz'), 'RESERVED', $3, ARRAY[$3]::uuid[], $8)
+     ON CONFLICT (idempotency_key) DO NOTHING
+     RETURNING *`,
+    [
+      input.idempotency_key,
+      input.wallet_id,
+      input.product_id,
+      input.customer_number,
+      input.base_price,
+      input.selling_price,
+      input.provider ?? null,
+      input.customer_name ?? null,
+    ],
+  );
+  if (result.rows[0]) {
     return { transaction: result.rows[0], alreadyExisted: false };
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      const existing = await findTransactionByIdempotencyKey(input.idempotency_key, db);
-      if (existing) {
-        return { transaction: existing, alreadyExisted: true };
-      }
-    }
-    throw error;
   }
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === UNIQUE_VIOLATION;
+  const existing = await findTransactionByIdempotencyKey(input.idempotency_key, db);
+  if (!existing) {
+    throw new Error("Gagal membuat transaksi: konflik idempotency_key tanpa baris yang bisa ditemukan");
+  }
+  return { transaction: existing, alreadyExisted: true };
 }
 
 export async function findTransactionByIdempotencyKey(

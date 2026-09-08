@@ -15,13 +15,15 @@ const TYPE_LABEL: Record<string, string> = {
   ADJUSTMENT: "Adjustment",
   TRANSFER_OUT: "Transfer Keluar",
   TRANSFER_IN: "Transfer Masuk",
+  SALE_OUT: "Belanja di Toko",
+  SALE_IN: "Penjualan Toko",
 };
 
 // Money moving INTO available_balance — see postLedgerEntry's formula
 // table in wallet.repository.ts. Everything else moves it out (or, for
 // RESERVE, moves it into held instead — still shown as a debit here since
 // available balance goes down).
-const CREDIT_TYPES = new Set(["TOPUP", "RELEASE", "REFUND", "COMMISSION", "TRANSFER_IN"]);
+const CREDIT_TYPES = new Set(["TOPUP", "RELEASE", "REFUND", "COMMISSION", "TRANSFER_IN", "SALE_IN"]);
 
 function isCredit(entry: WalletLedgerEntryWithOwner): boolean {
   if (entry.type === "ADJUSTMENT") return Number(entry.amount) > 0;

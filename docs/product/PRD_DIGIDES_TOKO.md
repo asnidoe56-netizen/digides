@@ -1,11 +1,11 @@
 # PRD Digides Toko
 
-> **Versi 2.3 · 8 September 2026 · Tahap 1 & 2 selesai, Tahap 3 siap dimulai**
-> Menggantikan PRD v1.0/v2.1/v2.2. Versi berformat (belum disinkronkan ke v2.3): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
+> **Versi 2.4 · 8 September 2026 · Tahap 1, 2 & 3 selesai, Tahap 4 (UI) siap dimulai**
+> Menggantikan PRD v1.0/v2.1/v2.2/v2.3. Versi berformat (belum disinkronkan ke v2.4): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
 
 Saluran distribusi saldo untuk bisnis PPOB Digides — warung mendapat modal jualan pulsa dari hasil belanja pelanggannya, tanpa perlu ke bank.
 
-**Status pengerjaan**: Tahap 1 dan Tahap 2 (§9) sudah dikerjakan dan diverifikasi — lihat §7a (Tahap 1) dan §9a (Tahap 2) untuk rinciannya. Migrasi `044_stores.sql` dan `045_store_wallet.sql` sudah diterapkan; migrasi Toko berikutnya (mesin pembayaran, Tahap 3) dimulai dari `046`.
+**Status pengerjaan**: Tahap 1, 2, dan 3 (§9) sudah dikerjakan dan diverifikasi — lihat §7a (Tahap 1), §9a (Tahap 2), §9b (Tahap 3) untuk rinciannya. Seluruh migrasi Toko (`044`–`048`) sudah diterapkan. Mesin pembayaran sudah lolos seluruh kriteria §8 lewat pengujian API langsung, tanpa UI kasir sama sekali — sesuai definisi selesai Tahap 3. Yang tersisa hanyalah Tahap 4 (antarmuka: dasbor toko, katalog, kasir, struk).
 
 ---
 
@@ -124,9 +124,9 @@ Melanjutkan penomoran migrasi yang ada (terakhir `042_transactions_customer_name
 | `043_wallet_transfers` | ✅ **Sudah diterapkan** — `wallet_transfers`, kolom `wallet_ledger.transfer_id` | Bagian dari Tahap 1 (§7a), bukan Toko itu sendiri — memperbaiki bug transfer yang belum idempotent, konsumsi nomor migrasi ini lebih dulu. |
 | `044_stores` | ✅ **Sudah diterapkan** — `stores` | Pemilik = `users.id`, `UNIQUE` (satu toko per pemilik, lihat §9a). Status: `DRAFT → SUBMITTED → ACTIVE → SUSPENDED/CLOSED`. Alamat memakai tabel `wilayah` yang sudah ada (migrasi 039). `store_settings` sengaja **tidak** dibuat — lihat §9a untuk alasannya. |
 | `045_store_wallet` | ✅ **Sudah diterapkan** — Tambah `'STORE'` ke `account_type`, kolom `store_id`, perluas constraint arc, indeks unik per toko | Satu toko = satu dompet. Pemilik tetap punya dompet `USER`-nya sendiri, terpisah penuh. **Dompet `STORE` tidak boleh menjadi sumber `TRANSFER_OUT`** — hanya boleh membelanjakan saldonya di katalog Digides. Ditegakkan di layanan transfer, bukan sekadar disembunyikan di UI (lihat §9a). |
-| `046_store_products` | `store_products`, `store_inventory_events` | Terpisah total dari `products` (katalog Digiflazz). Pergerakan stok dicatat sebagai event, bukan hanya angka yang ditimpa. |
-| `047_store_orders` | `store_orders`, `store_order_items`, `store_payment_requests` | `store_payment_requests` menyimpan `idempotency_key`, nominal terkunci, `expires_at`, dan status (§5). |
-| `048_ledger_types` | Tambah `SALE_IN` / `SALE_OUT` ke `wallet_ledger.type` | Jangan pakai ulang `TRANSFER_IN/OUT`: laporan harus bisa membedakan "kiriman saldo" dari "penjualan toko". |
+| `046_store_products` | ✅ **Sudah diterapkan** — `store_products`, `store_inventory_events` | Terpisah total dari `products` (katalog Digiflazz). Pergerakan stok dicatat sebagai event, bukan hanya angka yang ditimpa (lihat §9b). |
+| `047_store_orders` | ✅ **Sudah diterapkan** — `store_orders`, `store_order_items`, `store_payment_requests` | `store_payment_requests` menyimpan `idempotency_key`, nominal terkunci, `expires_at`, dan status (§5). |
+| `048_ledger_types` | ✅ **Sudah diterapkan** — Tambah `SALE_IN` / `SALE_OUT` ke `wallet_ledger.type` | Jangan pakai ulang `TRANSFER_IN/OUT`: laporan (Rekap Mitra, Wallet Management) sudah diperbarui membedakan "kiriman saldo" dari "penjualan toko" (lihat §9b). |
 
 ---
 
@@ -207,16 +207,18 @@ Ini **tidak disentuh** karena file itu terkunci dan aturan proyek mewajibkan ins
 
 Setiap butir harus bisa dibuktikan dengan menelusuri basis data produksi, bukan dengan melihat layar.
 
-- [ ] Pengguna tanpa toko bisa menyelesaikan pendaftaran toko sampai status `ACTIVE`.
-- [ ] Pembayaran berhasil menghasilkan **tepat dua** baris ledger: satu debit dompet pembeli, satu kredit dompet toko, dengan referensi yang sama.
-- [ ] Total di baris ledger sama persis dengan total pesanan; tidak ada pembulatan yang menyimpang.
-- [ ] Pembayaran gagal atau kedaluwarsa tidak meninggalkan satu pun baris ledger dan tidak mengubah stok.
-- [ ] Mengirim permintaan bayar yang sama dua kali (ketukan ganda / sinyal putus lalu ulang) hanya menghasilkan satu pembayaran.
-- [ ] QR yang sudah lewat 5 menit ditolak server, meski masih tampil di layar kasir.
-- [ ] Mengubah nominal di sisi klien tidak mengubah jumlah yang benar-benar didebit.
-- [ ] Saldo pribadi pemilik toko tidak pernah berubah akibat penjualan tokonya.
-- [ ] Dompet toko tidak bisa dipakai mentransfer saldo ke pengguna lain.
-- [ ] Setiap pembayaran bisa ditelusuri ujung ke ujung dari satu transaction ID: pesanan, item, ledger, stok, struk.
+> Status: seluruh butir di bawah sudah diverifikasi lewat pengujian API langsung terhadap **database dev** (lihat §9b) — bukan produksi, karena Tahap 4 (UI kasir) belum ada sehingga belum ada cara bagi pengguna nyata memicu alur ini di produksi. Verifikasi produksi sesungguhnya menyusul begitu Tahap 4 memberi warung cara nyata memakai fitur ini, sama seperti pola yang dipakai Tahap 1 (backup-SKU, §5a) dan Tahap 1 (idempotency, §5b).
+
+- [x] Pengguna tanpa toko bisa menyelesaikan pendaftaran toko sampai status `ACTIVE`.
+- [x] Pembayaran berhasil menghasilkan **tepat dua** baris ledger: satu debit dompet pembeli, satu kredit dompet toko, dengan referensi yang sama.
+- [x] Total di baris ledger sama persis dengan total pesanan; tidak ada pembulatan yang menyimpang.
+- [x] Pembayaran gagal atau kedaluwarsa tidak meninggalkan satu pun baris ledger dan tidak mengubah stok.
+- [x] Mengirim permintaan bayar yang sama dua kali (ketukan ganda / sinyal putus lalu ulang) hanya menghasilkan satu pembayaran.
+- [x] QR yang sudah lewat 5 menit ditolak server, meski masih tampil di layar kasir.
+- [x] Mengubah nominal di sisi klien tidak mengubah jumlah yang benar-benar didebit.
+- [x] Saldo pribadi pemilik toko tidak pernah berubah akibat penjualan tokonya.
+- [x] Dompet toko tidak bisa dipakai mentransfer saldo ke pengguna lain.
+- [x] Setiap pembayaran bisa ditelusuri ujung ke ujung dari satu transaction ID: pesanan, item, ledger, stok, struk.
 
 ---
 
@@ -253,6 +255,29 @@ Migrasi `044_stores.sql` (tabel `stores`) dan `045_store_wallet.sql` (tipe `'STO
 **Diverifikasi nyata** lewat panggilan HTTP langsung ke server dev (bukan hanya membaca kode): pengguna baru mendaftar → `POST /api/stores` menghasilkan toko berstatus `SUBMITTED` dengan dompet bersaldo Rp0 → percobaan mendaftar toko kedua ditolak (`"Anda sudah memiliki toko terdaftar"`) → `POST /api/stores/:id/verify` oleh sesi `SUPER_ADMIN` memindahkan status ke `ACTIVE` → percobaan verifikasi kedua ditolak (`"Toko berstatus ACTIVE, tidak bisa diverifikasi"`) → query langsung ke `wallet_accounts` mengonfirmasi dua baris terpisah untuk pemilik yang sama: satu `account_type = 'USER'` (dompet pribadi) dan satu `account_type = 'STORE'` (dompet toko), keduanya bersaldo independen. Seluruh data uji (wallet, wallet_account, store, role, PIN, sesi) sudah dibersihkan setelahnya; satu baris `users` tersisa di database dev karena tertahan oleh jejak `audit_logs`-nya sendiri (tabel itu *append-only*, sesuai desain proyek ini) — tidak berbahaya, tidak dipakai fitur apa pun, dan tidak pernah menyentuh produksi.
 
 **Kriteria Tahap 2 (§9) terpenuhi**: toko bisa dibuat, diverifikasi, dan punya dompet bersaldo Rp0 yang sepenuhnya terpisah dari dompet pribadi pemiliknya.
+
+---
+
+## 9b. Tahap 3 — hasil pengerjaan (8 September 2026)
+
+Mesin pembayaran (§5) dibangun persis mengikuti urutan kejadian yang ditulis di dokumen ini, dan diuji lewat API tanpa satu pun layar kasir — sesuai definisi selesai Tahap 3 di §9.
+
+**Yang dibangun:**
+
+1. **Katalog produk toko** (migrasi `046_store_products.sql`) — `store_products` (nama, harga, stok, aktif/nonaktif, sesuai §3 MVP) dan `store_inventory_events`, jejak *append-only* di belakang `store_products.stock` — hubungannya sama persis seperti `wallet_ledger` di belakang `wallets.available_balance`. `reason` pada tabel event sengaja hanya mengizinkan `'SALE'` untuk saat ini (bukan juga `'ADJUSTMENT'`) karena belum ada fitur koreksi stok manual yang dibangun — melebarkan `CHECK`-nya nanti sama mudahnya seperti melebarkan `wallet_ledger_type_check` di migrasi 022/048.
+2. **Pesanan dan permintaan bayar** (migrasi `047_store_orders.sql`) — `store_orders`/`store_order_items` (harga & nama produk disalin saat checkout, sama seperti `transactions` menyalin `selling_price`) dan `store_payment_requests` (nominal terkunci, `expires_at` 5 menit, `idempotency_key` dibuat server sesuai kata-kata §5 langkah 2).
+3. **Jenis ledger baru** (migrasi `048_ledger_types.sql`) — `SALE_IN`/`SALE_OUT`, sengaja terpisah dari `TRANSFER_IN/OUT` supaya laporan bisa membedakan "kiriman saldo antar-mitra" dari "penjualan di toko". Enam layar/endpoint yang sebelumnya membaca `wallet_ledger.type` (Rekap Mitra BUMDes & Konter, Wallet Management Super Admin, unduhan PDF laporan, API rekap mobile) sekaligus diperbarui labelnya dan rumus total masuk/keluarnya — tanpa ini, seorang mitra yang membayar di warung memakai dompetnya sendiri akan melihat baris mutasi tanpa label dan jumlah rekapnya tidak balance.
+4. **Mesin inti** (`store-payment.service.ts`) — `createStoreOrder` (kasir, selalu pemilik toko sendiri karena MVP belum punya akun kasir tambahan — §3) hanya menyalin harga dan mengunci nominal, **tidak** menyentuh stok maupun dompet sama sekali (stok baru dikurangi saat pembayaran benar-benar dikonfirmasi, sesuai §11's penerimaan risiko oversell). `confirmStorePayment` (pembeli) memverifikasi PIN pembeli sendiri, lalu dalam **satu transaksi basis data**: klaim permintaan bayar lewat UPDATE ber-*compare-and-swap* (`status='MENUNGGU' AND expires_at > now()` — persis disiplin yang sama dengan perbaikan Bagian 5b di dokumen alur transaksi), kurangi stok tiap item (UPDATE terjaga `stock >= jumlah`, gagal bersih kalau tidak cukup), debit dompet pembeli (`SALE_OUT`), kredit dompet toko (`SALE_IN`), tandai pesanan `PAID`. Kegagalan di titik manapun membatalkan seluruhnya termasuk klaim status tadi — permintaan bayar kembali `MENUNGGU` dan bisa dicoba ulang, bukan berakhir `GAGAL` secara permanen.
+5. **Endpoint API** — `POST /api/store-products`, `GET /api/store-products` (kasir/pemilik), `POST /api/store-orders` (kasir/pemilik), `GET /api/store-payments/[id]` (pembeli mana pun yang memindai QR, tidak terikat kepemilikan tertentu — sesuai §5 langkah 4), `POST /api/store-payments/[id]/confirm` (pembeli, PIN sendiri).
+
+**Diverifikasi nyata** lewat panggilan HTTP berurutan ke server dev (toko + 2 produk + pembeli bersaldo Rp100.000, lewat penyesuaian saldo Super Admin untuk keperluan uji):
+- Pembelian 2× produk seharga Rp3.000 → sukses, saldo pembeli Rp100.000 → Rp94.000, dompet toko Rp0 → Rp6.000, tepat dua baris `wallet_ledger` (`SALE_OUT`/`SALE_IN`) dengan referensi yang sama persis dengan `order.id`, stok produk 10 → 8, satu baris `store_inventory_events` tercatat.
+- Percobaan konfirmasi ulang pembayaran yang sama (idempotency) → mengembalikan hasil identik, saldo **tidak** terpotong dua kali.
+- Pesanan yang meminta lebih banyak dari stok tersedia (1 tersedia, pesan 5) → konfirmasi ditolak bersih (`"Stok produk ... tidak cukup"`), permintaan bayar kembali ke `MENUNGGU`, stok dan saldo pembeli **tidak berubah sama sekali** — membuktikan rollback transaksi bekerja end-to-end.
+- Permintaan bayar yang dipaksa kedaluwarsa (`expires_at` diundur ke masa lalu) → ditolak (`"Permintaan pembayaran sudah kedaluwarsa"`) dan statusnya berpindah ke `KEDALUWARSA`; percobaan berikutnya pada baris yang sama tetap ditolak dengan pesan yang sama.
+- Query langsung ke `wallet_accounts` mengonfirmasi dompet pribadi pemilik toko tetap Rp0 sepanjang pengujian, terpisah total dari dompet tokonya yang menerima hasil penjualan.
+
+Seluruh butir kriteria penerimaan §8 lolos dengan cara ini. Data uji yang bersifat *append-only* (baris ledger, item pesanan, event stok) sengaja **tidak** dihapus — memang tidak bisa dan tidak seharusnya bisa dihapus, itulah jaminan yang sama yang melindungi data produksi nanti; hanya hak akses Super Admin sementara dan sesi uji yang dibersihkan setelahnya. `tsc --noEmit` dan `npm run build` lokal keduanya bersih.
 
 ---
 

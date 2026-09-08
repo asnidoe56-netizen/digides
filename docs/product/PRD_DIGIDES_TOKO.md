@@ -1,11 +1,13 @@
 # PRD Digides Toko
 
-> **Versi 2.6 · 8 September 2026 · Tahap 1–4 selesai di web; port Flutter menyusul**
-> Menggantikan PRD v1.0/v2.1/v2.2/v2.3/v2.4/v2.5. Versi berformat (belum disinkronkan ke v2.6): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
+> **Versi 2.7 · 9 September 2026 · Tahap 1–4 selesai (web + Flutter), terverifikasi di produksi**
+> Menggantikan PRD v1.0/v2.1/v2.2/v2.3/v2.4/v2.5/v2.6. Versi berformat (belum disinkronkan ke v2.7): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
 
 Saluran distribusi saldo untuk bisnis PPOB Digides — warung mendapat modal jualan pulsa dari hasil belanja pelanggannya, tanpa perlu ke bank.
 
-**Status pengerjaan**: Tahap 1, 2, 3, 3.5, dan 4 (§9) sudah dikerjakan dan diverifikasi — lihat §7a (Tahap 1), §9a (Tahap 2), §9b (Tahap 3), §9c (Tahap 3.5), §9d (Tahap 4) untuk rinciannya. Seluruh migrasi Toko (`044`–`049`) sudah diterapkan. Antarmukanya sudah jadi **di web** (sumber kebenaran proyek ini); port ke aplikasi mitra Flutter adalah pekerjaan berikutnya, memakai API yang sama persis tanpa perubahan backend.
+**Status pengerjaan**: Tahap 1, 2, 3, 3.5, dan 4 (§9) sudah dikerjakan dan diverifikasi — lihat §7a (Tahap 1), §9a (Tahap 2), §9b (Tahap 3), §9c (Tahap 3.5), §9d (Tahap 4) untuk rinciannya. Seluruh migrasi Toko (`044`–`049`) sudah diterapkan. Antarmukanya sudah jadi **di web** (sumber kebenaran proyek ini) **dan sudah diport ke aplikasi mitra Flutter**, memakai API yang sama persis tanpa perubahan backend. Verifikasi toko oleh Super Admin juga sudah punya menunya sendiri (`/dashboard/super-admin/toko`) — sebelumnya endpoint verifikasinya ada tapi tak punya tombol, sehingga tidak ada toko yang bisa aktif tanpa panggilan API manual.
+
+**Sudah terbukti di produksi dengan uang sungguhan** — satu warung nyata ("Alfat Mart") menerima pembayaran Rp28.000 dari pembeli nyata, lengkap dengan dua kaki ledger, pengurangan stok, dan satu pesanan lain yang kedaluwarsa dengan bersih. Rinciannya di §8a.
 
 **Tahap 3.5 muncul dari audit atas hasil Tahap 3** (bukan dari rencana awal): pemeriksaan ulang terhadap dokumen ini menemukan empat lubang yang membuat fitur belum bisa dipakai warung nyata — termasuk satu yang membatalkan premis ekonomi §1, yaitu saldo toko yang ternyata sama sekali tidak bisa dibelanjakan. Rinciannya di §9c.
 
@@ -210,7 +212,7 @@ Ini **tidak disentuh** karena file itu terkunci dan aturan proyek mewajibkan ins
 
 Setiap butir harus bisa dibuktikan dengan menelusuri basis data produksi, bukan dengan melihat layar.
 
-> Status: seluruh butir di bawah sudah diverifikasi lewat pengujian API langsung terhadap **database dev** (lihat §9b) — bukan produksi, karena Tahap 4 (UI kasir) belum ada sehingga belum ada cara bagi pengguna nyata memicu alur ini di produksi. Verifikasi produksi sesungguhnya menyusul begitu Tahap 4 memberi warung cara nyata memakai fitur ini, sama seperti pola yang dipakai Tahap 1 (backup-SKU, §5a) dan Tahap 1 (idempotency, §5b).
+> Status: ✅ **sudah diverifikasi di produksi dengan uang sungguhan** pada 8 September 2026, setelah Tahap 4 memberi warung cara nyata memakai fitur ini. Rinciannya di §8a. Sebelum itu, seluruh butir sudah lolos lewat pengujian API terhadap database dev (§9b).
 
 - [x] Pengguna tanpa toko bisa menyelesaikan pendaftaran toko sampai status `ACTIVE`.
 - [x] Pembayaran berhasil menghasilkan **tepat dua** baris ledger: satu debit dompet pembeli, satu kredit dompet toko, dengan referensi yang sama.
@@ -222,6 +224,28 @@ Setiap butir harus bisa dibuktikan dengan menelusuri basis data produksi, bukan 
 - [x] Saldo pribadi pemilik toko tidak pernah berubah akibat penjualan tokonya.
 - [x] Dompet toko tidak bisa dipakai mentransfer saldo ke pengguna lain.
 - [x] Setiap pembayaran bisa ditelusuri ujung ke ujung dari satu transaction ID: pesanan, item, ledger, stok, struk. *(Sejak Tahap 3.5 seluruh jejak itu tersedia dalam satu panggilan: `GET /api/store-orders/[id]`. Catatan jujur: **dokumen struk** sebagai berkas PDF belum ada — yang sudah ada adalah seluruh data yang dipakai untuk mencetaknya, dan pencetakannya sendiri memang urusan klien, sama seperti struk Histori yang sudah dibuat di aplikasi mitra. Waktu v2.4 butir ini sempat dicentang sebelum endpoint jejaknya ada; sekarang centangnya benar-benar berdasar.)*
+
+---
+
+## 8a. Verifikasi produksi — transaksi warung nyata (8 September 2026)
+
+Ditelusuri langsung dari database produksi, bukan dari layar. Satu toko nyata sudah berdiri dan satu penjualan nyata sudah tuntas:
+
+| Yang diperiksa | Hasil di produksi |
+|---|---|
+| Toko | "Alfat Mart" milik Sidik Mohamad — didaftarkan 17:16:01, diverifikasi 17:16:12 |
+| Pesanan pertama | `EXPIRED` — QR dibuat 17:17:41, tidak pernah dibayar |
+| Pesanan kedua | `PAID` Rp28.000, dibayar oleh **Felmi** (bukan pemilik toko — transaksi dua pihak sungguhan) |
+| Ledger | Tepat **dua** baris: `SALE_OUT` Rp28.000 dan `SALE_IN` Rp28.000, keduanya bereferensi `order.id` yang sama |
+| Stok | `SALE −1`, sisa 9 — satu event, cocok dengan satu penjualan |
+| Saldo dompet toko | Rp28.000, persis nilai penjualannya |
+| Pesanan kedaluwarsa | **Nol** baris ledger, stok tidak berkurang |
+
+**Kriteria §8 yang terbukti di produksi, bukan lagi hanya di dev**: dua baris ledger dengan referensi sama; total ledger = total pesanan; pembayaran kedaluwarsa tidak meninggalkan ledger maupun perubahan stok; nominal tidak bisa disetir klien; saldo toko terpisah dari pemiliknya; dan seluruh jejaknya bisa ditelusuri dari satu ID pesanan.
+
+**Penyapu kedaluwarsa (Tahap 3.5, Temuan 3) terbukti bekerja hidup** — log produksi mencatat `[store-payment-expiry] expired requests=1 orders=1`, yaitu permintaan bayar **dan** pesanannya berpindah bersama. Inilah tepatnya bug yang ditutup di §9c: sebelum perbaikan itu, pesanan tersebut akan tertahan `PENDING` selamanya.
+
+Tidak ada error di log produksi sepanjang alur ini.
 
 ---
 

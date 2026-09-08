@@ -10,6 +10,11 @@ const STATUS_STYLE: Record<string, string> = {
   PENDING: "bg-status-pending text-status-pending-foreground",
   RESERVED: "bg-status-pending text-status-pending-foreground",
   REQUESTED: "bg-status-pending text-status-pending-foreground",
+  // Digides Toko's store lifecycle (stores.status) — SUBMITTED is a store
+  // waiting for Super Admin verification, DRAFT one that was never
+  // submitted. ACTIVE/SUSPENDED/CLOSED are already covered below.
+  SUBMITTED: "bg-status-pending text-status-pending-foreground",
+  DRAFT: "bg-muted text-muted-foreground",
   OPEN: "bg-status-pending text-status-pending-foreground",
   PROCESSING: "bg-status-processing text-status-processing-foreground",
   SUCCESS: "bg-status-success text-status-success-foreground",
@@ -55,6 +60,11 @@ const STATUS_LABEL: Record<string, string> = {
   PENDING: "Pending",
   RESERVED: "Diproses",
   REQUESTED: "Diajukan",
+  // Digides Toko's store lifecycle — without these the badge falls back to
+  // the raw value and shows "SUBMITTED" in a screen where every other
+  // status reads as Indonesian.
+  SUBMITTED: "Menunggu Verifikasi",
+  DRAFT: "Draf",
   OPEN: "Terbuka",
   PROCESSING: "Diproses",
   SUCCESS: "Berhasil",

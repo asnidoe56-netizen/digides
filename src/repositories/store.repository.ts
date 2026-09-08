@@ -1,6 +1,6 @@
 import type { Queryable } from "@/lib/db/query";
 import { pool } from "@/lib/db/pool";
-import type { Store } from "@/types/store";
+import type { Store, StoreStatus } from "@/types/store";
 
 export interface CreateStoreInput {
   owner_user_id: string;
@@ -44,6 +44,96 @@ export async function findStoreById(id: string, db: Queryable = pool): Promise<S
 export async function findStoreByOwnerUserId(ownerUserId: string, db: Queryable = pool): Promise<Store | null> {
   const result = await db.query<Store>(`SELECT * FROM stores WHERE owner_user_id = $1`, [ownerUserId]);
   return result.rows[0] ?? null;
+}
+
+// --- Super Admin: daftar toko -------------------------------------------
+
+export interface StoreListItem extends Store {
+  owner_name: string;
+  owner_email: string;
+  /** The store wallet's available balance, so an admin can see at a glance
+   *  whether a store already holds money before acting on it. */
+  wallet_balance: string;
+}
+
+export interface ListStoresFilter {
+  status?: StoreStatus;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+function buildStoreFilter(filter: ListStoresFilter): { where: string; params: unknown[] } {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filter.status) {
+    params.push(filter.status);
+    conditions.push(`s.status = $${params.length}`);
+  }
+  if (filter.search) {
+    params.push(`%${filter.search}%`);
+    conditions.push(`(s.name ILIKE $${params.length} OR u.full_name ILIKE $${params.length})`);
+  }
+
+  return { where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "", params };
+}
+
+// Read-only listing for the Super Admin's Toko menu — the one place a
+// store awaiting verification becomes visible. Joins the owner (for a
+// human name to recognise) and the store's wallet (LEFT JOIN: a wallet is
+// always provisioned with the store, but a LEFT JOIN means a hypothetical
+// missing one shows as a store with no balance rather than vanishing from
+// the list entirely).
+export async function listStoresForAdmin(
+  filter: ListStoresFilter = {},
+  db: Queryable = pool,
+): Promise<StoreListItem[]> {
+  const { where, params } = buildStoreFilter(filter);
+  params.push(filter.limit ?? 20, filter.offset ?? 0);
+
+  const result = await db.query<StoreListItem>(
+    `SELECT s.*,
+            u.full_name AS owner_name,
+            u.email AS owner_email,
+            COALESCE(w.available_balance, 0) AS wallet_balance
+     FROM stores s
+     JOIN users u ON u.id = s.owner_user_id
+     LEFT JOIN wallet_accounts wa ON wa.store_id = s.id
+     LEFT JOIN wallets w ON w.wallet_account_id = wa.id
+     ${where}
+     ORDER BY
+       -- Stores waiting on the admin come first; that is the whole reason
+       -- this screen exists.
+       CASE WHEN s.status = 'SUBMITTED' THEN 0 ELSE 1 END,
+       s.created_at DESC
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+  );
+  return result.rows;
+}
+
+export async function countStoresForAdmin(
+  filter: ListStoresFilter = {},
+  db: Queryable = pool,
+): Promise<number> {
+  const { where, params } = buildStoreFilter(filter);
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*) FROM stores s JOIN users u ON u.id = s.owner_user_id ${where}`,
+    params,
+  );
+  return Number(result.rows[0].count);
+}
+
+export async function countStoresByStatus(
+  status: StoreStatus,
+  db: Queryable = pool,
+): Promise<number> {
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*) FROM stores WHERE status = $1`,
+    [status],
+  );
+  return Number(result.rows[0].count);
 }
 
 // Compare-and-swap on status, same discipline as the PPOB transaction

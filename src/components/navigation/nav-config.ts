@@ -15,6 +15,7 @@ import {
   Settings,
   Share2,
   Shield,
+  Store,
   Tags,
   TrendingUp,
   Users,
@@ -36,6 +37,7 @@ export const NAV_ITEMS: Record<RoleCode, NavItem[]> = {
   SUPER_ADMIN: [
     { label: "Dashboard", href: "/dashboard/super-admin/dashboard", icon: LayoutDashboard },
     { label: "Mitra", href: "/dashboard/super-admin/mitra", icon: Handshake },
+    { label: "Toko", href: "/dashboard/super-admin/toko", icon: Store },
     { label: "Pengguna", href: "/dashboard/super-admin/users", icon: Users },
     { label: "Produk", href: "/dashboard/super-admin/products", icon: Package },
     { label: "Kategori", href: "/dashboard/super-admin/categories", icon: Tags },
@@ -60,15 +62,28 @@ export const NAV_ITEMS: Record<RoleCode, NavItem[]> = {
   AFFILIATE: [],
 };
 
+// Picks an item out of a role's list by its route rather than by position.
+// These used to be array indices, which silently pointed at the wrong menu
+// the moment an item was inserted above them (adding "Toko" after "Mitra"
+// shifted every one of them). Looking up by href can't drift, and throws
+// loudly at module load if a route is ever renamed without updating here.
+function navItemByHref(role: RoleCode, href: string): NavItem {
+  const item = NAV_ITEMS[role].find((candidate) => candidate.href === href);
+  if (!item) {
+    throw new Error(`MOBILE_PRIMARY_NAV_ITEMS: no ${role} nav item for ${href}`);
+  }
+  return item;
+}
+
 // The 4 items that fit a thumb-reachable mobile bottom bar (issue M03
 // section 5). Everything else in NAV_ITEMS is still reachable through the
 // "Lainnya" sheet in MobileBottomNav — nothing is mobile-only-hidden.
 export const MOBILE_PRIMARY_NAV_ITEMS: Record<RoleCode, NavItem[]> = {
   SUPER_ADMIN: [
-    NAV_ITEMS.SUPER_ADMIN[0], // Dashboard
-    NAV_ITEMS.SUPER_ADMIN[3], // Produk
-    NAV_ITEMS.SUPER_ADMIN[8], // Transaksi
-    NAV_ITEMS.SUPER_ADMIN[7], // Wallet
+    navItemByHref("SUPER_ADMIN", "/dashboard/super-admin/dashboard"),
+    navItemByHref("SUPER_ADMIN", "/dashboard/super-admin/products"),
+    navItemByHref("SUPER_ADMIN", "/dashboard/super-admin/transactions"),
+    navItemByHref("SUPER_ADMIN", "/dashboard/super-admin/wallets"),
   ],
   BUMDES_ADMIN: [],
   KONTER: [],

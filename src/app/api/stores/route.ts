@@ -1,7 +1,37 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSession } from "@/lib/auth/session";
+import { getSession, requireRole } from "@/lib/auth/session";
+import { countStoresForAdmin, listStoresForAdmin } from "@/repositories/store.repository";
 import { registerStore } from "@/services/store.service";
+import type { StoreStatus } from "@/types/store";
+
+const STORE_STATUSES: StoreStatus[] = ["DRAFT", "SUBMITTED", "ACTIVE", "SUSPENDED", "CLOSED"];
+
+// Super Admin only: the store list behind the Toko menu, which is where a
+// store waiting for verification is actually seen. A store owner reads
+// their own store through GET /api/stores/me instead — this endpoint is
+// never scoped to the caller, so it must stay behind the role gate.
+export async function GET(request: Request) {
+  const session = await requireRole("SUPER_ADMIN");
+  if (!session) {
+    return NextResponse.json({ error: "Tidak diizinkan" }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const statusParam = searchParams.get("status");
+  const status = STORE_STATUSES.find((candidate) => candidate === statusParam);
+  const search = searchParams.get("search")?.trim() || undefined;
+  const limit = Math.min(Math.max(Number(searchParams.get("limit")) || 20, 1), 100);
+  const page = Math.max(Number(searchParams.get("page")) || 1, 1);
+
+  const filter = { status, search, limit, offset: (page - 1) * limit };
+  const [stores, total] = await Promise.all([
+    listStoresForAdmin(filter),
+    countStoresForAdmin(filter),
+  ]);
+
+  return NextResponse.json({ stores, total, page, limit });
+}
 
 // Same optional-but-format-checked shape as registerServerSchema's address
 // fields (register/route.ts) — a store can be registered without an

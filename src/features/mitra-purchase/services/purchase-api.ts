@@ -17,28 +17,52 @@ export interface ExecutePurchaseInput {
    *  they ran one — see ExecuteTransactionInput.customerName's doc comment
    *  server-side. */
   customerName?: string;
+  /** Which of the caller's OWN wallets pays. Omitted means personal, which
+   *  is the long-standing behaviour; "STORE" spends their own store's
+   *  balance, the one thing a store wallet may do with its money (PRD
+   *  Digides Toko §1, and §5c of the locked transaction-flow doc). The
+   *  wallet itself is still resolved entirely server-side — this only
+   *  names which one. */
+  payWith?: "PERSONAL" | "STORE";
+}
+
+export interface MyStoreForPurchase {
+  name: string;
+  balance: string;
+}
+
+// Does this mitra have a store whose balance they may spend here? Returns
+// null for the overwhelming majority who don't, and for a store that isn't
+// ACTIVE yet — in both cases the purchase flow shows no source picker at
+// all rather than an option that would be refused server-side.
+export async function getSpendableStore(): Promise<MyStoreForPurchase | null> {
+  const result = await apiFetch<{
+    store: { name: string; status: string } | null;
+    wallet: { available_balance: string } | null;
+  }>("/api/stores/me");
+
+  if (!result.store || result.store.status !== "ACTIVE") return null;
+  return { name: result.store.name, balance: result.wallet?.available_balance ?? "0" };
 }
 
 // Calls the one executeTransaction() engine every category's purchase flow
 // shares — verify PIN or biometric, reserve funds, call Digiflazz,
 // capture/release based on the real result (transaction.service.ts).
 export function executePurchase(input: ExecutePurchaseInput) {
+  const shared = {
+    productId: input.productId,
+    customerNumber: input.customerNumber,
+    idempotencyKey: input.idempotencyKey,
+    customerName: input.customerName,
+    // Sent only when it's actually "STORE": leaving the field out for a
+    // personal purchase keeps the request byte-for-byte what it has always
+    // been, so nothing about the default path changes.
+    ...(input.payWith === "STORE" ? { payWith: "STORE" as const } : {}),
+  };
   const body =
     input.auth.method === "PIN"
-      ? {
-          productId: input.productId,
-          customerNumber: input.customerNumber,
-          idempotencyKey: input.idempotencyKey,
-          pin: input.auth.pin,
-          customerName: input.customerName,
-        }
-      : {
-          productId: input.productId,
-          customerNumber: input.customerNumber,
-          idempotencyKey: input.idempotencyKey,
-          biometricAssertion: input.auth.assertion,
-          customerName: input.customerName,
-        };
+      ? { ...shared, pin: input.auth.pin }
+      : { ...shared, biometricAssertion: input.auth.assertion };
   return apiFetch<{ transaction: Transaction }>("/api/transactions/execute", {
     method: "POST",
     body: JSON.stringify(body),

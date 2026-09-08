@@ -33,6 +33,15 @@ export interface PurchaseConfirmationScreenProps {
    *  a placeholder. Shown here labeled as pending, never implying the
    *  transaction has already happened. */
   referenceId: string;
+  /** Rendered above the payment details for a mitra who owns an ACTIVE
+   *  store, so they can pay from the store's balance instead of their own
+   *  (PRD Digides Toko §1). Null for everyone else, which is nearly every
+   *  purchase — the screen then looks exactly as it always has. */
+  paymentSourcePicker?: React.ReactNode;
+  /** The store's name when paying from a store wallet, so "Metode
+   *  Pembayaran" names the actual source rather than always claiming the
+   *  personal balance. */
+  paymentSourceLabel?: string;
   onBack: () => void;
   onConfirm: () => void;
 }
@@ -68,6 +77,8 @@ export function PurchaseConfirmationScreen({
   price,
   availableBalance,
   referenceId,
+  paymentSourcePicker,
+  paymentSourceLabel,
   onBack,
   onConfirm,
 }: PurchaseConfirmationScreenProps) {
@@ -145,6 +156,13 @@ export function PurchaseConfirmationScreen({
           Pastikan {customerIdLabel.toLowerCase()} sudah benar sebelum melakukan pembayaran.
         </p>
 
+        {paymentSourcePicker ? (
+          <div className="flex flex-col gap-2 rounded-xl border p-3">
+            <p className="text-sm font-semibold">Bayar Dari</p>
+            {paymentSourcePicker}
+          </div>
+        ) : null}
+
         <SectionCard title="Rincian Pembayaran">
           <DetailRow label="Nominal" value={nominalLabel} />
           <DetailRow label="Harga" value={formatMoney(price)} />
@@ -154,7 +172,10 @@ export function PurchaseConfirmationScreen({
         <SectionCard title="Rincian Transaksi">
           <DetailRow label="No. Referensi" value={referenceId} />
           <DetailRow label="Waktu" value={transactionTime} />
-          <DetailRow label="Metode Pembayaran" value="Saldo Digides" />
+          <DetailRow
+            label="Metode Pembayaran"
+            value={paymentSourceLabel ? `Saldo Toko - ${paymentSourceLabel}` : "Saldo Digides"}
+          />
           <DetailRow label="Saldo Tersedia" value={formatMoney(availableBalance)} />
           {estimatedBalanceAfter !== null ? (
             <DetailRow label="Estimasi Saldo Setelah" value={formatMoney(estimatedBalanceAfter)} />

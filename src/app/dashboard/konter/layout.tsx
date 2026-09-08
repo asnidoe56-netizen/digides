@@ -28,6 +28,7 @@ export default async function KonterLayout({ children }: { children: ReactNode }
         mitraHref="/dashboard/konter/mitra"
         laporanHref="/dashboard/konter/laporan"
         akunHref="/dashboard/konter/akun"
+        tokoHref="/dashboard/konter/toko"
       />
     </div>
   );

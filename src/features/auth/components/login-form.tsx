@@ -12,19 +12,12 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/password-input";
 import { ApiError } from "@/lib/api/client";
 import { loginSchema, type LoginFormValues } from "../schemas/login.schema";
+import { homeRouteForRoles } from "@/lib/auth/home-route";
 import { loginUser } from "../services/auth-api";
 
-// Where each role lands after login. AFFILIATE's only page today is Menu
-// Mitra (their referral code, downline, and reward status) — there's no
-// Beranda/Laporan/Akun for them yet, so login sends them straight there
-// instead of a home screen that doesn't exist.
-function destinationForRoles(roles: string[] | undefined): string {
-  if (roles?.includes("SUPER_ADMIN")) return "/dashboard/super-admin/dashboard";
-  if (roles?.includes("BUMDES_ADMIN")) return "/dashboard/bumdes/dashboard";
-  if (roles?.includes("KONTER")) return "/dashboard/konter/dashboard";
-  if (roles?.includes("AFFILIATE")) return "/dashboard/affiliate/mitra";
-  return "/";
-}
+// Where each role lands after login — shared with the store payment page,
+// which needs the same answer for its own "Kembali ke Beranda".
+const destinationForRoles = homeRouteForRoles;
 
 export function LoginForm() {
   const router = useRouter();

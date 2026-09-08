@@ -28,6 +28,7 @@ export default async function BumdesLayout({ children }: { children: ReactNode }
         mitraHref="/dashboard/bumdes/mitra"
         laporanHref="/dashboard/bumdes/laporan"
         akunHref="/dashboard/bumdes/akun"
+        tokoHref="/dashboard/bumdes/toko"
       />
     </div>
   );

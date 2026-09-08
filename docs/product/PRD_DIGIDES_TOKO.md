@@ -1,11 +1,11 @@
 # PRD Digides Toko
 
-> **Versi 2.5 · 8 September 2026 · Tahap 1, 2, 3 & 3.5 selesai, Tahap 4 (UI) siap dimulai**
-> Menggantikan PRD v1.0/v2.1/v2.2/v2.3/v2.4. Versi berformat (belum disinkronkan ke v2.5): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
+> **Versi 2.6 · 8 September 2026 · Tahap 1–4 selesai di web; port Flutter menyusul**
+> Menggantikan PRD v1.0/v2.1/v2.2/v2.3/v2.4/v2.5. Versi berformat (belum disinkronkan ke v2.6): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
 
 Saluran distribusi saldo untuk bisnis PPOB Digides — warung mendapat modal jualan pulsa dari hasil belanja pelanggannya, tanpa perlu ke bank.
 
-**Status pengerjaan**: Tahap 1, 2, 3, dan 3.5 (§9) sudah dikerjakan dan diverifikasi — lihat §7a (Tahap 1), §9a (Tahap 2), §9b (Tahap 3), §9c (Tahap 3.5) untuk rinciannya. Seluruh migrasi Toko (`044`–`049`) sudah diterapkan. Yang tersisa hanyalah Tahap 4 (antarmuka: dasbor toko, katalog, kasir, struk).
+**Status pengerjaan**: Tahap 1, 2, 3, 3.5, dan 4 (§9) sudah dikerjakan dan diverifikasi — lihat §7a (Tahap 1), §9a (Tahap 2), §9b (Tahap 3), §9c (Tahap 3.5), §9d (Tahap 4) untuk rinciannya. Seluruh migrasi Toko (`044`–`049`) sudah diterapkan. Antarmukanya sudah jadi **di web** (sumber kebenaran proyek ini); port ke aplikasi mitra Flutter adalah pekerjaan berikutnya, memakai API yang sama persis tanpa perubahan backend.
 
 **Tahap 3.5 muncul dari audit atas hasil Tahap 3** (bukan dari rencana awal): pemeriksaan ulang terhadap dokumen ini menemukan empat lubang yang membuat fitur belum bisa dipakai warung nyata — termasuk satu yang membatalkan premis ekonomi §1, yaitu saldo toko yang ternyata sama sekali tidak bisa dibelanjakan. Rinciannya di §9c.
 
@@ -241,7 +241,7 @@ Selesai bila: seluruh kriteria §8 lolos, diuji lewat API tanpa UI kasir sama se
 **Tahap 3.5 — Penutupan lubang hasil audit Tahap 3** (disisipkan 8 September 2026, tidak ada di rencana awal).
 Selesai bila: saldo toko benar-benar bisa dibelanjakan, stok bisa diisi ulang, tidak ada pesanan yang menggantung selamanya, dan produk bisa dikelola. Lihat §9c.
 
-**Tahap 4 — Antarmuka: dasbor toko, katalog produk, kasir, struk.**
+**Tahap 4 — Antarmuka: dasbor toko, katalog produk, kasir, struk.** ✅ Selesai di web (§9d); port Flutter menyusul.
 Selesai bila: satu transaksi warung nyata selesai dari pilih produk sampai struk, di bawah 30 detik.
 
 ---
@@ -323,6 +323,40 @@ Seluruhnya diuji lewat HTTP nyata ke server dev:
 - **Sumber dana toko**: diuji dengan rancangan yang tidak mungkin memicu pembelian sungguhan — bukti lengkapnya di Bagian 5c dokumen alur terkunci.
 
 `tsc --noEmit` dan `npm run build` keduanya bersih.
+
+---
+
+## 9d. Tahap 4 — antarmuka (8 September 2026)
+
+Dibangun **di web lebih dulu**, sesuai aturan tetap proyek ini bahwa web adalah sumber kebenaran dan aplikasi Flutter adalah port 1:1 darinya. Seluruh bahasa visualnya diambil dari layar mitra yang sudah ada — gradien merah `from-red-500 to-red-700`, kartu saldo kaca `bg-white/10 backdrop-blur-sm`, sudut `rounded-3xl/2xl`, header merah dengan panah kembali, ikon lucide, dan token status yang sama persis dengan `<StatusBadge>` transaksi PPOB — bukan kosakata visual baru.
+
+**Rumahnya sudah lama disiapkan**: tombol QR bundar di tengah bottom-nav mitra selama ini dinonaktifkan dengan catatan "fitur QR adalah yang berikutnya dibangun untuk bagian ini". Digides Toko-lah yang akhirnya mengisinya, jadi Toko tidak menambah tab baru — ia menempati slot yang memang dirancang untuknya.
+
+**Layar yang dibangun** (`src/features/mitra-toko/`, dipakai bersama oleh bagian BUMDes dan Konter lewat *wrapper* route tipis — konvensi yang sama dengan pasangan halaman Laporan):
+
+1. **Toko** — tiga layar berbeda, bukan satu layar dengan tombol diabukan, karena ketiganya tiga pekerjaan berbeda: *meyakinkan* (belum punya toko: proposisi §1 dengan tiga poin nilai dan satu CTA), *menunggu* (status verifikasi), dan *mengoperasikan* (saldo toko, Buka Kasir, Produk, Riwayat, penjualan terakhir).
+2. **Kasir** — satu layar saja: cari produk, ketuk tambah, stepper jumlah, total mengambang yang mengikuti kasir ke bawah daftar, satu tombol jadi QR. Batas stok ditegakkan di layar supaya kasir tahu lebih dulu, dan tetap ditegakkan ulang server saat pembayaran.
+3. **QR** — QR besar berlatar kartu putih, hitung mundur 5 menit, dan status yang **selalu dibaca dari server** (bukan disimpulkan dari hitungan mundur mencapai nol), sehingga layar tidak pernah mengklaim "kedaluwarsa" untuk pembayaran yang sebenarnya baru saja diterima server. Begitu pembeli membayar, layar kasir berpindah sendiri ke layar sukses.
+4. **Produk** — daftar dengan sakelar aktif/nonaktif langsung di baris (karena warung mengubahnya terus-menerus), dialog ubah harga/nama, dan dialog stok berbasis **delta bertanda** dengan tombol cepat (+1/+5/+10/+25/−1) — bukan isian angka absolut, supaya setiap perubahan tetap terbaca sebagai peristiwa ("+24 restock") di jejak stoknya.
+5. **Riwayat & Struk** — daftar dengan filter status, dan struk yang menampilkan toko, item, total, plus jejak auditnya secara terbuka: ID pesanan, status pembayaran, kedua kaki ledger, dan pergerakan stok. Dicetak lewat dialog cetak browser dengan utilitas `print:` menyembunyikan chrome aplikasi — pendekatan yang sudah dipakai halaman Laporan — bukan tata letak PDF kedua yang harus dirawat terpisah.
+6. **Bayar (sisi pembeli)** — rincian tagihan, hitung mundur, lalu konfirmasi memakai `PurchasePinScreen` yang sudah ada, komponen yang sama persis dengan PIN pembelian PPOB dan Transfer.
+
+### Satu keputusan rute yang berubah karena pengujian nyata
+
+Awalnya halaman bayar diletakkan di dalam kedua bagian mitra (`/dashboard/{peran}/toko/bayar/[id]`). Pengujian browser sungguhan langsung membongkarnya: pembeli uji gagal dengan *"Wallet Anda tidak ditemukan"*, karena **pembeli di warung adalah warga biasa** — seorang `AFFILIATE` yang tidak punya shell BUMDes/Konter sama sekali, sehingga rute berperan itu justru mengunci keluar orang yang jadi alasan halaman ini ada. Halaman bayar dipindahkan ke rute netral **`/bayar/[id]`**, tetap dijaga sesi login, dengan pemetaan "beranda per peran" diekstrak jadi helper bersama (`src/lib/auth/home-route.ts`) supaya tombol kembali tetap benar untuk siapa pun yang masuk. Isi QR (`digides://pay/<id>`) tidak berubah; id yang sama dipakai rute web ini.
+
+### Verifikasi
+
+Diuji ujung ke ujung di browser sungguhan (Playwright, viewport ponsel), bukan hanya dengan membaca kode:
+- Kasir: keranjang 2× Indomie → total Rp6.000 → QR benar-benar ter-render (data URI PNG, bukan placeholder).
+- Pembeli (akun `AFFILIATE` murni, lewat `/bayar/<id>`): rincian tampil, PIN dimasukkan, hasil **"Pembayaran Berhasil"**.
+- Layar kasir **berpindah sendiri** ke "Pembayaran Diterima" tanpa disentuh — polling status ke server terbukti bekerja.
+- Struk menampilkan jejak lengkap: Lunas, item, total, ID pesanan, status pembayaran, kedua kaki ledger (Rp6.000 keluar / Rp6.000 masuk), dan stok −2 (sisa 6).
+- Kontrol akses ikut terbukti tanpa sengaja: percobaan pertama skrip uji membaca detail pesanan sebagai pembeli yang **belum** membayar dan ditolak — persis aturan "hanya pemilik toko dan pembeli yang membayar".
+
+Dua cacat ditemukan lewat pengujian ini dan sudah diperbaiki: **ketidakcocokan hidrasi React** pada hitung mundur (dihitung saat render di server lalu berbeda sedetik di klien — kini dihitung khusus di klien), dan ruang kosong besar di Kasir karena padding untuk bar keranjang selalu aktif (kini hanya saat keranjang terisi).
+
+**Belum termasuk**: port ke aplikasi mitra Flutter (memakai API yang sama, tanpa perubahan backend), dan pemindai kamera sisi pembeli — di web pembeli membuka tautan `/bayar/<id>`, sedangkan pemindaian QR memang milik aplikasi Flutter yang pemindainya sudah ada (§2).
 
 ---
 

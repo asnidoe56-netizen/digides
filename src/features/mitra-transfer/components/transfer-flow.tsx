@@ -43,12 +43,18 @@ export function TransferFlow({ homeHref, downlines, availableBalance }: Transfer
   const amount = Number(amountInput.replace(/\D/g, ""));
   const isAmountValid = amount > 0 && amount <= Number(availableBalance);
 
+  // Same shape as category-purchase-flow.tsx's own idempotencyKey — stable
+  // across a wrong-PIN retry for the SAME recipient+amount (so retrying
+  // never posts a second transfer), regenerated the moment either changes
+  // (a genuinely different transfer intent).
+  const idempotencyKey = useMemo(() => crypto.randomUUID(), [selectedId, amount]);
+
   async function handleSubmitPin(pin: string) {
     if (!selected) return;
     setIsSubmitting(true);
     setPinError(null);
     try {
-      await transferToDownline({ recipientUserId: selected.user_id, amount, pin });
+      await transferToDownline({ recipientUserId: selected.user_id, amount, pin, idempotencyKey });
       setResultStatus("SUCCESS");
       setResultMessage(`Transfer ${formatMoney(amount)} ke ${selected.full_name} berhasil.`);
       setPhase("result");

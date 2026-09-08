@@ -1,9 +1,11 @@
 # PRD Digides Toko
 
-> **Versi 2.1 · 8 September 2026 · Siap dieksekusi**
-> Menggantikan PRD v1.0. Versi berformat: https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
+> **Versi 2.2 · 8 September 2026 · Tahap 1 selesai, Tahap 2 siap dimulai**
+> Menggantikan PRD v1.0/v2.1. Versi berformat (belum disinkronkan ke v2.2): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
 
 Saluran distribusi saldo untuk bisnis PPOB Digides — warung mendapat modal jualan pulsa dari hasil belanja pelanggannya, tanpa perlu ke bank.
+
+**Status pengerjaan**: Tahap 1 (§9) sudah dikerjakan dan diverifikasi — lihat §7a untuk rinciannya, termasuk satu migrasi (`043_wallet_transfers.sql`) yang sudah dipakai sehingga migrasi Toko sendiri sekarang dimulai dari `044` (§4 sudah diperbarui).
 
 ---
 
@@ -119,11 +121,12 @@ Melanjutkan penomoran migrasi yang ada (terakhir `042_transactions_customer_name
 
 | Migrasi | Isi | Catatan penting |
 |---|---|---|
-| `043_stores` | `stores`, `store_settings` | Pemilik = `users.id`. Status: `DRAFT → SUBMITTED → ACTIVE → SUSPENDED/CLOSED`. Alamat memakai tabel `wilayah` yang sudah ada (migrasi 039). |
-| `044_store_wallet` | Tambah `'STORE'` ke `account_type`, kolom `store_id`, perluas constraint arc, indeks unik per toko | Satu toko = satu dompet. Pemilik tetap punya dompet `USER`-nya sendiri, terpisah penuh. **Dompet `STORE` tidak boleh menjadi sumber `TRANSFER_OUT`** — hanya boleh membelanjakan saldonya di katalog Digides. Ditegakkan di layanan transfer, bukan sekadar disembunyikan di UI. |
-| `045_store_products` | `store_products`, `store_inventory_events` | Terpisah total dari `products` (katalog Digiflazz). Pergerakan stok dicatat sebagai event, bukan hanya angka yang ditimpa. |
-| `046_store_orders` | `store_orders`, `store_order_items`, `store_payment_requests` | `store_payment_requests` menyimpan `idempotency_key`, nominal terkunci, `expires_at`, dan status (§5). |
-| `047_ledger_types` | Tambah `SALE_IN` / `SALE_OUT` ke `wallet_ledger.type` | Jangan pakai ulang `TRANSFER_IN/OUT`: laporan harus bisa membedakan "kiriman saldo" dari "penjualan toko". |
+| `043_wallet_transfers` | ✅ **Sudah diterapkan** — `wallet_transfers`, kolom `wallet_ledger.transfer_id` | Bagian dari Tahap 1 (§7a), bukan Toko itu sendiri — memperbaiki bug transfer yang belum idempotent, konsumsi nomor migrasi ini lebih dulu. |
+| `044_stores` | `stores`, `store_settings` | Pemilik = `users.id`. Status: `DRAFT → SUBMITTED → ACTIVE → SUSPENDED/CLOSED`. Alamat memakai tabel `wilayah` yang sudah ada (migrasi 039). |
+| `045_store_wallet` | Tambah `'STORE'` ke `account_type`, kolom `store_id`, perluas constraint arc, indeks unik per toko | Satu toko = satu dompet. Pemilik tetap punya dompet `USER`-nya sendiri, terpisah penuh. **Dompet `STORE` tidak boleh menjadi sumber `TRANSFER_OUT`** — hanya boleh membelanjakan saldonya di katalog Digides. Ditegakkan di layanan transfer, bukan sekadar disembunyikan di UI. |
+| `046_store_products` | `store_products`, `store_inventory_events` | Terpisah total dari `products` (katalog Digiflazz). Pergerakan stok dicatat sebagai event, bukan hanya angka yang ditimpa. |
+| `047_store_orders` | `store_orders`, `store_order_items`, `store_payment_requests` | `store_payment_requests` menyimpan `idempotency_key`, nominal terkunci, `expires_at`, dan status (§5). |
+| `048_ledger_types` | Tambah `SALE_IN` / `SALE_OUT` ke `wallet_ledger.type` | Jangan pakai ulang `TRANSFER_IN/OUT`: laporan harus bisa membedakan "kiriman saldo" dari "penjualan toko". |
 
 ---
 
@@ -176,13 +179,29 @@ Seluruh kode finansial hari ini memanggil `getWalletForMitraSession(userId, role
 
 ### Transfer yang ada belum idempotent
 
-Referensi transfer hari ini dibentuk dari `transfer-{pengirim}-{penerima}-{waktu}` — tidak ada kunci idempotensi dari klien, sehingga ketukan ganda berpotensi menghasilkan dua transfer. Pembayaran merchant tidak boleh menyalin pola ini, dan transfer yang ada sebaiknya diperbaiki terpisah sebelum volume membesar.
+~~Referensi transfer hari ini dibentuk dari `transfer-{pengirim}-{penerima}-{waktu}`...~~ **Sudah diperbaiki — lihat §7a.**
 
 ### Katalog produk jangan dipakai ulang
 
 Tabel `products` disinkronkan dari Digiflazz dan bisa ditimpa kapan saja oleh sinkronisasi katalog. Produk warung harus hidup di tabelnya sendiri.
 
 ---
+
+## 7a. Tahap 1 — hasil pengerjaan (8 September 2026)
+
+Diaudit 44 titik panggilan resolusi dompet di seluruh `src/` (web) plus penggunaan `currentWallet` di Flutter. Temuan: desain skema yang direncanakan di §4 (kolom `store_id` terpisah dari `user_id`) **sudah aman secara struktur** — 43 dari 44 titik panggilan tetap benar tanpa perubahan sama sekali begitu dompet `STORE` ada nanti, karena semuanya memang bermaksud "dompet operasi milik sesi ini sendiri", bukan "dompet apa pun yang mungkin dimiliki identitas ini". Jadi pekerjaan Tahap 1 bukan menulis ulang 44 titik itu (yang hanya akan jadi churn tanpa manfaat), melainkan:
+
+1. **Mengunci kontrak lewat dokumentasi kode** — `getWalletForMitraSession`, `getOwningUserId`, dan `findWalletByOwner` (semua di `wallet.service.ts`/`wallet.repository.ts`) sekarang punya komentar eksplisit: fungsi-fungsi ini tidak boleh diperluas untuk ikut meresolusi dompet `STORE`; resolusi dompet toko wajib lewat fungsi terpisah (mis. `getWalletForStore(storeId)`) yang akan dibuat di Tahap 2/3.
+2. **Memperbaiki satu fungsi yang benar-benar rapuh** — `getWalletByOwningUserId` memakai `WHERE user_id=$1 OR admin_user_id=$1 OR operator_user_id=$1 LIMIT 1` tanpa jaminan urutan, dipakai untuk pembayaran komisi. Diganti: `payCommissionToBeneficiary` sekarang memanggil `getWalletForMitraSession` yang sama seperti titik lain (deterministik berdasar prioritas peran), fungsi lama dihapus karena jadi tidak terpakai.
+3. **Memperbaiki bug transfer yang belum idempotent** (temuan awal §7) — migrasi `043_wallet_transfers.sql` menambah tabel `wallet_transfers` dengan `idempotency_key UNIQUE`, persis pola yang sudah dipakai `transactions`. `transferToDownline` sekarang menerima `idempotencyKey` dari klien (web & Flutter, keduanya sudah diperbarui) dan mengklaim baris transfer lebih dulu sebelum memposting ledger — percobaan ulang dengan kunci yang sama mengembalikan hasil yang sama persis, tidak pernah membuat transfer kedua. **Diverifikasi nyata**: 3x pengiriman permintaan identik ke `/api/wallet/transfer` di database dev menghasilkan tepat satu baris `wallet_transfers` dan tepat sepasang baris ledger.
+
+### ⚠️ Temuan penting yang BELUM diperbaiki — perlu instruksi eksplisit
+
+Saat memperbaiki idempotensi transfer, ditemukan bug yang sama bentuknya kemungkinan besar juga ada di **mesin transaksi PPOB yang terkunci** (`transaction.service.ts`'s `createTransaction`, `docs/architecture/FLOW_KERJA_DAN_BATASAN_KERJA_TRANSAKSI.md`): pola "coba INSERT, tangkap error unique-violation, lalu SELECT baris yang sudah ada" akan gagal dengan error Postgres *"current transaction is aborted"* jika dipanggil di dalam transaksi database yang sedang berjalan (yang memang selalu jadi kondisinya di `executeTransaction`) — sama seperti bug yang barusan ditemukan di `createWalletTransfer` sebelum diperbaiki jadi `ON CONFLICT DO NOTHING`.
+
+Praktis, ini berarti: **kalau seorang mitra pernah mengirim ulang permintaan pembelian yang sama** (PIN benar tapi jaringan sempat putus lalu klien kirim ulang dengan `idempotencyKey` yang sama), permintaan kedua kemungkinan akan gagal dengan pesan error yang membingungkan alih-alih mengembalikan hasil transaksi yang sudah ada — bukan salah kirim uang, tapi pengalaman yang buruk dan berpotensi bikin mitra mengira transaksinya gagal padahal sudah berhasil.
+
+Ini **tidak disentuh** karena file itu terkunci dan aturan proyek mewajibkan instruksi eksplisit dan sadar dari pemilik produk sebelum menyentuhnya — sesuai yang diterapkan konsisten sepanjang proyek ini. Perbaikannya sendiri sederhana (pola `ON CONFLICT DO NOTHING` yang sama), tapi perlu persetujuan eksplisit dulu.
 
 ## 8. Kriteria penerimaan
 

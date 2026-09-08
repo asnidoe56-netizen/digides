@@ -48,6 +48,7 @@ export interface WalletLedgerEntry {
   id: string;
   wallet_id: string;
   transaction_id: string | null;
+  transfer_id: string | null;
   type: WalletLedgerType;
   amount: string;
   balance_before: string;
@@ -55,5 +56,19 @@ export interface WalletLedgerEntry {
   reference: string | null;
   channel: WalletChannel;
   created_by: string | null;
+  created_at: Date;
+}
+
+// One row per transfer intent (Menu Transfer) — idempotency_key is what
+// makes a client retry (double-tap, a timed-out request the client
+// resubmits) a safe no-op instead of moving money twice. See
+// 043_wallet_transfers.sql.
+export interface WalletTransfer {
+  id: string;
+  idempotency_key: string;
+  sender_wallet_id: string;
+  recipient_wallet_id: string;
+  amount: string;
+  created_by: string;
   created_at: Date;
 }

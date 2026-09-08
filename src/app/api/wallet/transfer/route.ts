@@ -7,6 +7,7 @@ const transferSchema = z.object({
   recipientUserId: z.string().uuid(),
   amount: z.number().int().positive(),
   pin: z.string().regex(/^[0-9]{6}$/, "PIN harus 6 digit"),
+  idempotencyKey: z.string().uuid(),
 });
 
 // Sender is always resolved server-side from the session — the request
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
       recipientUserId: parsed.data.recipientUserId,
       amount: parsed.data.amount,
       pin: parsed.data.pin,
+      idempotencyKey: parsed.data.idempotencyKey,
     });
     return NextResponse.json({ result }, { status: 201 });
   } catch (error) {

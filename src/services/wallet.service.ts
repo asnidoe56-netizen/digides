@@ -8,6 +8,7 @@ import {
   getWalletByBumdesId,
   getWalletByKonterId,
   findWalletByOwner,
+  createWalletTransfer,
 } from "@/repositories/wallet.repository";
 import { findBumdesByAdminUserId } from "@/repositories/bumdes.repository";
 import { findKonterByOperatorUserId } from "@/repositories/konter.repository";
@@ -17,14 +18,29 @@ import { findUserById, listRolesForUser } from "@/repositories/user.repository";
 import { verifyTransactionPin } from "@/services/auth.service";
 import type { Wallet, WalletAccountType } from "@/types/wallet";
 
-// Resolves any user's own wallet from their id + roles — a BUMDES_ADMIN's
-// and a KONTER's wallet live on their bumdes/konter entity, not directly
-// on wallet_accounts.user_id, so those two need an extra lookup first;
-// every other role (AFFILIATE, and any other plain USER-type account)
-// resolves directly. Used both for "my own wallet" (Beranda, every
-// purchase-flow price screen — always called with the current session's
-// own id/roles there) and for "a downline's wallet" (Menu Mitra's
-// masked-balance list — called once per downline with their own id/roles).
+// Resolves any user's own OPERATING wallet from their id + roles — a
+// BUMDES_ADMIN's and a KONTER's wallet live on their bumdes/konter entity,
+// not directly on wallet_accounts.user_id, so those two need an extra
+// lookup first; every other role (AFFILIATE, and any other plain
+// USER-type account) resolves directly. Used both for "my own wallet"
+// (Beranda, every purchase-flow price screen — always called with the
+// current session's own id/roles there) and for "a downline's wallet"
+// (Menu Mitra's masked-balance list — called once per downline with their
+// own id/roles).
+//
+// PRD Digides Toko §7 (docs/product/PRD_DIGIDES_TOKO.md) contract: this
+// function resolves exactly ONE wallet per identity — the caller's
+// personal/operating wallet (BUMDES/KONTER/USER) — and MUST NEVER be
+// extended to also resolve a STORE wallet, even once stores exist. A
+// user who owns a store still has a separate, distinct wallet for that
+// store (wallet_accounts.store_id, its own exclusive-arc branch); code
+// that needs a store's wallet must call a dedicated resolver (e.g. a
+// future getWalletForStore(storeId)) and must never fall back to this
+// one or assume the two are interchangeable. Every call site of this
+// function today (44, audited 2026-09-08) already means "my own
+// personal/operating wallet" and needs no change for stores to exist —
+// the risk is only ever a *future* call site reaching for this function
+// when it actually means a store's wallet.
 export async function getWalletForMitraSession(userId: string, roles: string[]): Promise<Wallet | null> {
   if (roles.includes("BUMDES_ADMIN")) {
     const bumdes = await findBumdesByAdminUserId(userId);
@@ -148,6 +164,11 @@ export interface TransferToDownlineInput {
   /** Rupiah, must be a positive whole number. */
   amount: number;
   pin: string;
+  /** Client-generated, same role as executeTransaction's idempotencyKey —
+   *  a retried request (double-tap, a timed-out request the client
+   *  resubmits) with the same key is a safe no-op, never a second
+   *  transfer. See 043_wallet_transfers.sql. */
+  idempotencyKey: string;
 }
 
 // Menu Transfer: a BUMDes/Konter sending balance directly to one of their
@@ -191,17 +212,42 @@ export async function transferToDownline(input: TransferToDownlineInput) {
     throw new Error("Wallet penerima tidak ditemukan");
   }
 
-  // Shared reference linking both ledger legs — lets either side's mutasi
-  // list be traced back to the same transfer.
-  const reference = `transfer-${senderWallet.id}-${recipientWallet.id}-${Date.now()}`;
-
   return withTransaction(async (client) => {
+    // Claims this transfer intent before either ledger leg is posted —
+    // same idempotent-insert shape as transaction.repository.ts's
+    // createTransaction. A retried request with the same idempotencyKey
+    // never posts a second pair of ledger legs.
+    const { transfer, alreadyExisted } = await createWalletTransfer(
+      {
+        idempotency_key: input.idempotencyKey,
+        sender_wallet_id: senderWallet.id,
+        recipient_wallet_id: recipientWallet.id,
+        amount: input.amount,
+        created_by: input.senderUserId,
+      },
+      client,
+    );
+
+    if (alreadyExisted) {
+      // Callers never read this response's senderWallet for its balance
+      // (both platforms separately re-fetch the wallet after a transfer
+      // completes) — returning the pre-transaction snapshot here rather
+      // than re-querying is a deliberate simplification, not a bug.
+      return {
+        senderWallet,
+        recipientName: recipientUser.full_name,
+        amount: input.amount,
+        reference: transfer.id,
+      };
+    }
+
     const outLeg = await postLedgerEntry(client, {
       walletId: senderWallet.id,
       type: "TRANSFER_OUT",
       amount: input.amount,
       channel: "WEB",
-      reference,
+      transferId: transfer.id,
+      reference: transfer.id,
       createdBy: input.senderUserId,
     });
 
@@ -210,7 +256,8 @@ export async function transferToDownline(input: TransferToDownlineInput) {
       type: "TRANSFER_IN",
       amount: input.amount,
       channel: "WEB",
-      reference,
+      transferId: transfer.id,
+      reference: transfer.id,
       createdBy: input.senderUserId,
     });
 
@@ -224,7 +271,7 @@ export async function transferToDownline(input: TransferToDownlineInput) {
           recipient_user_id: input.recipientUserId,
           recipient_wallet_id: recipientWallet.id,
           amount: input.amount,
-          reference,
+          transfer_id: transfer.id,
         },
       },
       client,
@@ -234,7 +281,7 @@ export async function transferToDownline(input: TransferToDownlineInput) {
       senderWallet: outLeg.wallet,
       recipientName: recipientUser.full_name,
       amount: input.amount,
-      reference,
+      reference: transfer.id,
     };
   });
 }

@@ -8,6 +8,7 @@ import type {
   WalletChannel,
   WalletLedgerEntry,
   WalletLedgerType,
+  WalletTransfer,
 } from "@/types/wallet";
 
 // --- wallet_accounts ---------------------------------------------------
@@ -116,6 +117,16 @@ export async function getWalletByKonterId(konterId: string, db: Queryable = pool
 // account it is — the referral system only ever knows users, not
 // wallet_accounts, so the Commission Engine needs this to find the
 // referrer chain for whoever made a purchase (issue: Komisi menu).
+//
+// PRD Digides Toko §7 contract: a future STORE wallet (wallet_accounts.
+// store_id) sets none of user_id/admin_user_id/operator_user_id, so this
+// intentionally returns null for a purchase made from a store's own
+// wallet — awardCommissionForTransaction already treats a null owning
+// user as "no commission to award" (no referral chain to credit). This
+// is a deliberate product default (a store spending its own balance on
+// PPOB stock is not a personal referred purchase), not an oversight —
+// revisit explicitly if store purchases should ever earn commission for
+// whoever referred the store's owner.
 export async function getOwningUserId(walletId: string, db: Queryable = pool): Promise<string | null> {
   const result = await db.query<{ user_id: string | null }>(
     `SELECT COALESCE(wa.user_id, b.admin_user_id, k.operator_user_id) AS user_id
@@ -129,22 +140,6 @@ export async function getOwningUserId(walletId: string, db: Queryable = pool): P
   return result.rows[0]?.user_id ?? null;
 }
 
-// The inverse lookup: a user's own wallet, whether they're a plain
-// AFFILIATE, a BUMDes admin, or a Konter operator — commission payouts
-// credit whichever wallet that user actually owns.
-export async function getWalletByOwningUserId(userId: string, db: Queryable = pool): Promise<Wallet | null> {
-  const result = await db.query<Wallet>(
-    `SELECT w.* FROM wallets w
-     JOIN wallet_accounts wa ON wa.id = w.wallet_account_id
-     LEFT JOIN bumdes b ON b.id = wa.bumdes_id
-     LEFT JOIN konters k ON k.id = wa.konter_id
-     WHERE wa.user_id = $1 OR b.admin_user_id = $1 OR k.operator_user_id = $1
-     LIMIT 1`,
-    [userId],
-  );
-  return result.rows[0] ?? null;
-}
-
 // Sum of every wallet's available_balance — a platform-wide health number
 // for the Super Admin dashboard, not something any single wallet operation
 // needs, so it lives here rather than alongside postLedgerEntry().
@@ -155,6 +150,69 @@ export async function getTotalPlatformBalance(db: Queryable = pool): Promise<str
   return result.rows[0]?.sum ?? "0";
 }
 
+// --- wallet_transfers ----------------------------------------------------
+
+export interface CreateWalletTransferInput {
+  idempotency_key: string;
+  sender_wallet_id: string;
+  recipient_wallet_id: string;
+  amount: string | number;
+  created_by: string;
+}
+
+export interface CreateWalletTransferResult {
+  transfer: WalletTransfer;
+  /** true if a transfer with this idempotency_key already existed. */
+  alreadyExisted: boolean;
+}
+
+// Idempotent insert via `ON CONFLICT ... DO NOTHING` rather than
+// try/catch on the UNIQUE violation — this is always called from inside
+// wallet.service.ts's own withTransaction block, and a duplicate INSERT
+// caught as an exception would leave that surrounding transaction in
+// Postgres's "aborted" state (any command after a failed statement is
+// rejected with "current transaction is aborted" until the whole
+// transaction ends), so a genuine retry's fallback lookup would itself
+// fail instead of returning the original transfer. ON CONFLICT DO
+// NOTHING never raises an error in the first place, so the transaction
+// stays healthy and the fallback SELECT below always succeeds.
+export async function createWalletTransfer(
+  input: CreateWalletTransferInput,
+  db: Queryable = pool,
+): Promise<CreateWalletTransferResult> {
+  const result = await db.query<WalletTransfer>(
+    `INSERT INTO wallet_transfers (idempotency_key, sender_wallet_id, recipient_wallet_id, amount, created_by)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (idempotency_key) DO NOTHING
+     RETURNING *`,
+    [input.idempotency_key, input.sender_wallet_id, input.recipient_wallet_id, input.amount, input.created_by],
+  );
+  if (result.rows[0]) {
+    return { transfer: result.rows[0], alreadyExisted: false };
+  }
+  const existing = await findWalletTransferByIdempotencyKey(input.idempotency_key, db);
+  if (!existing) {
+    throw new Error("Gagal membuat transfer: konflik idempotency_key tanpa baris yang bisa ditemukan");
+  }
+  return { transfer: existing, alreadyExisted: true };
+}
+
+export async function findWalletTransferByIdempotencyKey(
+  idempotencyKey: string,
+  db: Queryable = pool,
+): Promise<WalletTransfer | null> {
+  const result = await db.query<WalletTransfer>(`SELECT * FROM wallet_transfers WHERE idempotency_key = $1`, [
+    idempotencyKey,
+  ]);
+  return result.rows[0] ?? null;
+}
+
+// PRD Digides Toko §7 contract: the explicit-`ownerType` primitive every
+// other resolver in this file is built on. When Tahap 2 adds `'STORE'` to
+// WalletAccountType and a `store_id` column, extend the column mapping
+// below to include it — this function is the one, deliberate place that
+// change belongs; never add store-wallet resolution to
+// getWalletForMitraSession or getOwningUserId above.
 export async function findWalletByOwner(
   ownerType: WalletAccountType,
   ownerId: string,
@@ -198,6 +256,7 @@ export interface PostLedgerEntryInput {
   /** Where this mutation originated — see M18 planning notes. */
   channel: WalletChannel;
   transactionId?: string | null;
+  transferId?: string | null;
   reference?: string | null;
   createdBy?: string | null;
 }
@@ -279,12 +338,13 @@ export async function postLedgerEntry(
 
   const ledgerResult = await client.query<WalletLedgerEntry>(
     `INSERT INTO wallet_ledger (
-       wallet_id, transaction_id, type, amount, balance_before, balance_after, reference, channel, created_by
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       wallet_id, transaction_id, transfer_id, type, amount, balance_before, balance_after, reference, channel, created_by
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
       input.walletId,
       input.transactionId ?? null,
+      input.transferId ?? null,
       input.type,
       amount,
       availableBefore,

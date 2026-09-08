@@ -4,6 +4,7 @@ export interface TransferInput {
   recipientUserId: string;
   amount: number;
   pin: string;
+  idempotencyKey: string;
 }
 
 export function transferToDownline(input: TransferInput) {

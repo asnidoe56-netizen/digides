@@ -28,7 +28,9 @@ import {
 import { findProductById } from "@/repositories/product.repository";
 import { findRelationshipByReferredUser, findReferralCodeByUserId } from "@/repositories/referral.repository";
 import { findTransactionById } from "@/repositories/transaction.repository";
-import { getOwningUserId, getWalletByOwningUserId, postLedgerEntry } from "@/repositories/wallet.repository";
+import { listRolesForUser } from "@/repositories/user.repository";
+import { getOwningUserId, postLedgerEntry } from "@/repositories/wallet.repository";
+import { getWalletForMitraSession } from "@/services/wallet.service";
 import type { CommissionLedgerEntry, CommissionRule, CommissionType } from "@/types/commission";
 import type { ReferralCodeHolderStatus } from "@/types/referral";
 
@@ -383,7 +385,19 @@ export async function payCommissionToBeneficiary(beneficiaryUserId: string, acto
     throw new Error("Tidak ada komisi yang tersedia untuk dibayarkan");
   }
 
-  const wallet = await getWalletByOwningUserId(beneficiaryUserId);
+  // Same role-priority resolution every other "this session's own wallet"
+  // call site uses (BUMDES_ADMIN -> their bumdes wallet, KONTER -> their
+  // konter wallet, else -> their personal USER wallet) — previously this
+  // used a separate getWalletByOwningUserId() that matched ANY of
+  // user_id/admin_user_id/operator_user_id with an unordered OR + LIMIT 1,
+  // which could silently disagree with this same resolution used
+  // elsewhere for an identity eligible on more than one branch. One
+  // beneficiary, one deterministic answer, one function.
+  const beneficiaryRoles = await listRolesForUser(beneficiaryUserId);
+  const wallet = await getWalletForMitraSession(
+    beneficiaryUserId,
+    beneficiaryRoles.map((role) => role.code),
+  );
   if (!wallet) {
     throw new Error("Wallet penerima komisi tidak ditemukan");
   }

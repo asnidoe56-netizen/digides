@@ -3,26 +3,56 @@ import { withTransaction } from "@/lib/db/transaction";
 import { postLedgerEntry } from "@/repositories/wallet.repository";
 import { recordAuditLog } from "@/repositories/audit.repository";
 import { findStoreByOwnerUserId, findStoreById } from "@/repositories/store.repository";
-import { findStoreProductById, decrementStoreProductStock } from "@/repositories/store-product.repository";
+import {
+  findStoreProductById,
+  decrementStoreProductStock,
+  listStoreInventoryEventsForOrder,
+} from "@/repositories/store-product.repository";
 import {
   createStoreOrder as createStoreOrderRow,
   findStoreOrderById,
   listStoreOrderItems,
   markStoreOrderPaid,
+  listStoreOrdersByStore,
+  countStoreOrdersByStore,
+  type ListStoreOrdersFilter,
 } from "@/repositories/store-order.repository";
 import {
   createStorePaymentRequest,
   findStorePaymentRequestById,
+  listStorePaymentRequestsByOrder,
   claimStorePaymentRequestForPayment,
   expireStorePaymentRequest,
 } from "@/repositories/store-payment.repository";
+import { listLedgerByReference } from "@/repositories/wallet.repository";
 import { verifyTransactionPin } from "@/services/auth.service";
 import { getWalletForMitraSession } from "@/services/wallet.service";
 import { getWalletForStore } from "@/services/store.service";
 import type { Store } from "@/types/store";
 import type { StoreOrder, StoreOrderItem, StorePaymentRequest } from "@/types/store-order";
+import type { StoreInventoryEvent } from "@/types/store-product";
+import type { WalletLedgerEntry } from "@/types/wallet";
 
 const PAYMENT_REQUEST_TTL_MS = 5 * 60 * 1000;
+
+// What the cashier's screen encodes into the QR (PRD §5 step 3). The
+// scheme prefix matters: the mitra app's camera scanner is shared with the
+// PLN meter-number flow, so a scanned string has to identify itself rather
+// than be guessed at by shape. Built here, server-side, so the cashier app
+// and the buyer app can never drift into two different formats — clients
+// should render/parse this string as-is, never reassemble it themselves.
+export function buildStorePaymentQrPayload(paymentRequestId: string): string {
+  return `digides://pay/${paymentRequestId}`;
+}
+
+// The buyer app's counterpart: accepts the payload above, and also a bare
+// id, so a QR produced by an older/simpler client still resolves.
+export function parseStorePaymentQrPayload(payload: string): string | null {
+  const trimmed = payload.trim();
+  const prefix = "digides://pay/";
+  const id = trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : trimmed;
+  return /^[0-9a-fA-F-]{36}$/.test(id) ? id : null;
+}
 
 export interface CreateStoreOrderItemInput {
   storeProductId: string;
@@ -39,6 +69,9 @@ export interface CreateStoreOrderResult {
   order: StoreOrder;
   items: StoreOrderItem[];
   paymentRequest: StorePaymentRequest;
+  /** Exact string the cashier screen should render as a QR — see
+   *  buildStorePaymentQrPayload. */
+  qrPayload: string;
 }
 
 // PRD Digides Toko §5 steps 1-2: the cashier (always the store's own owner
@@ -105,7 +138,7 @@ export async function createStoreOrder(input: CreateStoreOrderInput): Promise<Cr
       client,
     );
 
-    return { store, order, items, paymentRequest };
+    return { store, order, items, paymentRequest, qrPayload: buildStorePaymentQrPayload(paymentRequest.id) };
   });
 }
 
@@ -137,6 +170,73 @@ export async function getStorePaymentDetail(paymentRequestId: string): Promise<S
   }
 
   return { store: { id: store.id, name: store.name }, order, items, paymentRequest };
+}
+
+export interface ListMyStoreOrdersResult {
+  orders: StoreOrder[];
+  total: number;
+}
+
+// "Riwayat transaksi toko" (PRD §3 MVP) — always the caller's own store,
+// resolved server-side from their session.
+export async function listMyStoreOrders(
+  ownerUserId: string,
+  filter: ListStoreOrdersFilter = {},
+): Promise<ListMyStoreOrdersResult> {
+  const store = await findStoreByOwnerUserId(ownerUserId);
+  if (!store) {
+    throw new Error("Anda belum memiliki toko terdaftar");
+  }
+  const [orders, total] = await Promise.all([
+    listStoreOrdersByStore(store.id, filter),
+    countStoreOrdersByStore(store.id, filter),
+  ]);
+  return { orders, total };
+}
+
+export interface StoreOrderDetail {
+  store: Pick<Store, "id" | "name">;
+  order: StoreOrder;
+  items: StoreOrderItem[];
+  paymentRequests: StorePaymentRequest[];
+  ledgerEntries: WalletLedgerEntry[];
+  inventoryEvents: StoreInventoryEvent[];
+}
+
+// The full end-to-end trail for one order — pesanan, item, permintaan
+// bayar, ledger, stok — which is both PRD §8's last acceptance criterion
+// and exactly the data a struk renders from. The PDF itself stays a client
+// concern (the mitra app already generates Histori receipts locally), so
+// this assembles the data rather than producing a document.
+//
+// Readable by either side of the transaction: the store's owner, or the
+// buyer who actually paid it. Anyone else gets nothing — a receipt names
+// what someone bought and for how much, so it isn't public the way an
+// unpaid payment request (whose id is the QR itself) is.
+export async function getStoreOrderDetail(orderId: string, viewerUserId: string): Promise<StoreOrderDetail> {
+  const order = await findStoreOrderById(orderId);
+  if (!order) {
+    throw new Error("Pesanan tidak ditemukan");
+  }
+  const store = await findStoreById(order.store_id);
+  if (!store) {
+    throw new Error("Toko tidak ditemukan");
+  }
+
+  const [items, paymentRequests, ledgerEntries, inventoryEvents] = await Promise.all([
+    listStoreOrderItems(order.id),
+    listStorePaymentRequestsByOrder(order.id),
+    listLedgerByReference(order.id),
+    listStoreInventoryEventsForOrder(order.id),
+  ]);
+
+  const isOwner = store.owner_user_id === viewerUserId;
+  const isBuyer = paymentRequests.some((request) => request.paid_by_user_id === viewerUserId);
+  if (!isOwner && !isBuyer) {
+    throw new Error("Anda tidak berhak melihat pesanan ini");
+  }
+
+  return { store: { id: store.id, name: store.name }, order, items, paymentRequests, ledgerEntries, inventoryEvents };
 }
 
 export interface ConfirmStorePaymentInput {
@@ -229,7 +329,13 @@ export async function confirmStorePayment(input: ConfirmStorePaymentInput) {
     }
 
     for (const item of items) {
-      const updated = await decrementStoreProductStock(item.store_product_id, item.quantity, order.id, client);
+      const updated = await decrementStoreProductStock(
+        item.store_product_id,
+        item.quantity,
+        order.id,
+        input.buyerUserId,
+        client,
+      );
       if (!updated) {
         throw new Error(`Stok produk "${item.product_name}" tidak cukup`);
       }

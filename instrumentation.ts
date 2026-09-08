@@ -13,5 +13,8 @@ export async function register() {
 
     const { startMonthlyCommissionPayoutJob } = await import("@/jobs/monthly-commission-payout");
     startMonthlyCommissionPayoutJob();
+
+    const { startStorePaymentExpiryJob } = await import("@/jobs/store-payment-expiry");
+    startStorePaymentExpiryJob();
   }
 }

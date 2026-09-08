@@ -1,11 +1,13 @@
 # PRD Digides Toko
 
-> **Versi 2.4 · 8 September 2026 · Tahap 1, 2 & 3 selesai, Tahap 4 (UI) siap dimulai**
-> Menggantikan PRD v1.0/v2.1/v2.2/v2.3. Versi berformat (belum disinkronkan ke v2.4): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
+> **Versi 2.5 · 8 September 2026 · Tahap 1, 2, 3 & 3.5 selesai, Tahap 4 (UI) siap dimulai**
+> Menggantikan PRD v1.0/v2.1/v2.2/v2.3/v2.4. Versi berformat (belum disinkronkan ke v2.5): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
 
 Saluran distribusi saldo untuk bisnis PPOB Digides — warung mendapat modal jualan pulsa dari hasil belanja pelanggannya, tanpa perlu ke bank.
 
-**Status pengerjaan**: Tahap 1, 2, dan 3 (§9) sudah dikerjakan dan diverifikasi — lihat §7a (Tahap 1), §9a (Tahap 2), §9b (Tahap 3) untuk rinciannya. Seluruh migrasi Toko (`044`–`048`) sudah diterapkan. Mesin pembayaran sudah lolos seluruh kriteria §8 lewat pengujian API langsung, tanpa UI kasir sama sekali — sesuai definisi selesai Tahap 3. Yang tersisa hanyalah Tahap 4 (antarmuka: dasbor toko, katalog, kasir, struk).
+**Status pengerjaan**: Tahap 1, 2, 3, dan 3.5 (§9) sudah dikerjakan dan diverifikasi — lihat §7a (Tahap 1), §9a (Tahap 2), §9b (Tahap 3), §9c (Tahap 3.5) untuk rinciannya. Seluruh migrasi Toko (`044`–`049`) sudah diterapkan. Yang tersisa hanyalah Tahap 4 (antarmuka: dasbor toko, katalog, kasir, struk).
+
+**Tahap 3.5 muncul dari audit atas hasil Tahap 3** (bukan dari rencana awal): pemeriksaan ulang terhadap dokumen ini menemukan empat lubang yang membuat fitur belum bisa dipakai warung nyata — termasuk satu yang membatalkan premis ekonomi §1, yaitu saldo toko yang ternyata sama sekali tidak bisa dibelanjakan. Rinciannya di §9c.
 
 ---
 
@@ -127,6 +129,7 @@ Melanjutkan penomoran migrasi yang ada (terakhir `042_transactions_customer_name
 | `046_store_products` | ✅ **Sudah diterapkan** — `store_products`, `store_inventory_events` | Terpisah total dari `products` (katalog Digiflazz). Pergerakan stok dicatat sebagai event, bukan hanya angka yang ditimpa (lihat §9b). |
 | `047_store_orders` | ✅ **Sudah diterapkan** — `store_orders`, `store_order_items`, `store_payment_requests` | `store_payment_requests` menyimpan `idempotency_key`, nominal terkunci, `expires_at`, dan status (§5). |
 | `048_ledger_types` | ✅ **Sudah diterapkan** — Tambah `SALE_IN` / `SALE_OUT` ke `wallet_ledger.type` | Jangan pakai ulang `TRANSFER_IN/OUT`: laporan (Rekap Mitra, Wallet Management) sudah diperbarui membedakan "kiriman saldo" dari "penjualan toko" (lihat §9b). |
+| `049_store_product_management` | ✅ **Sudah diterapkan** — Perluas `store_inventory_events.reason` ke `'ADJUSTMENT'`, tambah kolom `created_by` | Tahap 3.5 (§9c). Tanpa ini stok hanya bisa turun: warung yang kehabisan stok tidak akan pernah bisa mengisinya ulang. |
 
 ---
 
@@ -145,7 +148,7 @@ Hanya `MENUNGGU` yang bisa berpindah ke status akhir, dan hanya sekali — dijag
 
 1. Kasir menyusun keranjang → server membuat `store_orders` beserta itemnya, dengan harga *disalin saat itu juga* (harga produk boleh berubah nanti tanpa mengubah pesanan lama).
 2. Server membuat `store_payment_requests`: nominal terkunci, `expires_at` = 5 menit, `idempotency_key` dari server.
-3. Aplikasi kasir menampilkan QR berisi identifier permintaan itu — **bukan** nominal mentah, agar tidak bisa diubah di sisi klien.
+3. Aplikasi kasir menampilkan QR berisi identifier permintaan itu — **bukan** nominal mentah, agar tidak bisa diubah di sisi klien. **Format isinya sudah ditetapkan**: `digides://pay/<id permintaan bayar>`, dibangun server (`buildStorePaymentQrPayload`) dan dikirim sebagai field `qrPayload` pada respons pembuatan pesanan. Klien menampilkan string itu apa adanya, tidak pernah merangkainya sendiri — awalan skema-nya penting karena pemindai kamera di aplikasi mitra dipakai bersama dengan alur nomor meter PLN, jadi hasil pindaian harus bisa mengenali dirinya sendiri, bukan ditebak dari bentuknya.
 4. Pembeli memindai, aplikasinya mengambil rincian dari server, lalu menampilkan nama toko, daftar item, dan total.
 5. Pembeli mengonfirmasi dengan PIN/biometriknya sendiri, di perangkatnya sendiri.
 6. Server memvalidasi ulang *semuanya* (kepemilikan, status, masa berlaku, saldo), lalu dalam satu transaksi basis data: debit dompet pembeli, kredit dompet toko, kurangi stok, tandai pesanan berhasil, catat event.
@@ -218,7 +221,7 @@ Setiap butir harus bisa dibuktikan dengan menelusuri basis data produksi, bukan 
 - [x] Mengubah nominal di sisi klien tidak mengubah jumlah yang benar-benar didebit.
 - [x] Saldo pribadi pemilik toko tidak pernah berubah akibat penjualan tokonya.
 - [x] Dompet toko tidak bisa dipakai mentransfer saldo ke pengguna lain.
-- [x] Setiap pembayaran bisa ditelusuri ujung ke ujung dari satu transaction ID: pesanan, item, ledger, stok, struk.
+- [x] Setiap pembayaran bisa ditelusuri ujung ke ujung dari satu transaction ID: pesanan, item, ledger, stok, struk. *(Sejak Tahap 3.5 seluruh jejak itu tersedia dalam satu panggilan: `GET /api/store-orders/[id]`. Catatan jujur: **dokumen struk** sebagai berkas PDF belum ada — yang sudah ada adalah seluruh data yang dipakai untuk mencetaknya, dan pencetakannya sendiri memang urusan klien, sama seperti struk Histori yang sudah dibuat di aplikasi mitra. Waktu v2.4 butir ini sempat dicentang sebelum endpoint jejaknya ada; sekarang centangnya benar-benar berdasar.)*
 
 ---
 
@@ -234,6 +237,9 @@ Selesai bila: sebuah toko bisa dibuat, diverifikasi, dan punya dompet bersaldo R
 
 **Tahap 3 — Mesin pembayaran: pesanan, permintaan bayar, QR, konfirmasi pembeli, ledger, stok.**
 Selesai bila: seluruh kriteria §8 lolos, diuji lewat API tanpa UI kasir sama sekali.
+
+**Tahap 3.5 — Penutupan lubang hasil audit Tahap 3** (disisipkan 8 September 2026, tidak ada di rencana awal).
+Selesai bila: saldo toko benar-benar bisa dibelanjakan, stok bisa diisi ulang, tidak ada pesanan yang menggantung selamanya, dan produk bisa dikelola. Lihat §9c.
 
 **Tahap 4 — Antarmuka: dasbor toko, katalog produk, kasir, struk.**
 Selesai bila: satu transaksi warung nyata selesai dari pilih produk sampai struk, di bawah 30 detik.
@@ -278,6 +284,45 @@ Mesin pembayaran (§5) dibangun persis mengikuti urutan kejadian yang ditulis di
 - Query langsung ke `wallet_accounts` mengonfirmasi dompet pribadi pemilik toko tetap Rp0 sepanjang pengujian, terpisah total dari dompet tokonya yang menerima hasil penjualan.
 
 Seluruh butir kriteria penerimaan §8 lolos dengan cara ini. Data uji yang bersifat *append-only* (baris ledger, item pesanan, event stok) sengaja **tidak** dihapus — memang tidak bisa dan tidak seharusnya bisa dihapus, itulah jaminan yang sama yang melindungi data produksi nanti; hanya hak akses Super Admin sementara dan sesi uji yang dibersihkan setelahnya. `tsc --noEmit` dan `npm run build` lokal keduanya bersih.
+
+---
+
+## 9c. Tahap 3.5 — penutupan lubang hasil audit (8 September 2026)
+
+Setelah Tahap 3 dinyatakan selesai, dokumen ini diaudit ulang terhadap hasil implementasinya. Empat lubang ditemukan — semuanya lolos justru karena setiap tahap dikerjakan setia pada definisinya sendiri, sementara beberapa item MVP §3 tidak dimiliki oleh tahap mana pun. Semua sudah ditutup di sini. Waktunya disengaja: produksi masih **0 baris** di seluruh tabel toko (`stores`, `store_products`, `store_orders`, ledger `SALE_*`) saat audit dilakukan, sehingga perubahan skema masih gratis — tanpa backfill, tanpa migrasi data. Jendela itu akan tertutup begitu ada satu warung nyata memakainya.
+
+### Temuan 1 — saldo toko tidak bisa dibelanjakan (paling kritis)
+
+Pembelian PPOB meresolusi dompet lewat `getWalletForMitraSession`, yang menurut kontraknya **tidak pernah** mengembalikan dompet `STORE`. Artinya warung bisa mengumpulkan saldo tapi tidak bisa memakainya — separuh "belanja" dari lingkaran §1 tidak pernah dibangun, dan metrik pilot utama §10 (*"saldo toko yang dibelanjakan kembali jadi produk PPOB ≥ 70%"*) mustahil bergerak dari 0%.
+
+Ditutup dengan menambahkan field opsional `payWith` (`"PERSONAL"` | `"STORE"`) pada `POST /api/transactions/execute`. Mesin transaksinya sendiri tidak disentuh — ia sejak awal menerima `walletId` dari pemanggilnya. Karena ini menyentuh alur pembelian, perubahannya diamandemenkan ke dokumen terkunci sebagai **Bagian 5c** (`docs/architecture/FLOW_KERJA_DAN_BATASAN_KERJA_TRANSAKSI.md`), lengkap dengan jaminan dan buktinya. Poin penting yang dicatat di sana: tanpa `payWith`, perilakunya identik dengan sebelumnya; `"STORE"` hanya menjangkau toko milik penelepon sendiri yang sudah `ACTIVE`; dan pembelian berdana toko **tidak memberi komisi ke siapa pun** — default yang sengaja dan sekarang tercatat terbuka, bukan tersembunyi.
+
+### Temuan 2 — stok hanya bisa turun
+
+Satu-satunya penulisan stok adalah pengurangan saat penjualan. Warung yang menjual habis stok pembukaannya tidak akan pernah bisa menjual produk itu lagi. Ini akibat langsung penyempitan `CHECK (reason IN ('SALE'))` di migrasi 046 atas nama "jangan bangun skema spekulatif" — prinsipnya benar, tapi restock bukan fitur masa depan, itu operasi harian. Ditutup lewat migrasi `049` (memperluas ke `'ADJUSTMENT'`, menambah `created_by`) dan `POST /api/store-products/[id]/stock` dengan delta bertanda: positif mengisi ulang, negatif mengoreksi susut — bentuk yang sama dengan `ADJUSTMENT` di `wallet_ledger`, dan tetap dijaga tidak bisa menembus nol.
+
+### Temuan 3 — pesanan menggantung selamanya
+
+Saat permintaan bayar kedaluwarsa, pesanannya tetap `PENDING` selamanya; status `EXPIRED`/`FAILED`/`CANCELLED` tidak pernah tercapai, dan tidak ada penyapu sama sekali — sehingga QR yang tidak pernah dipindai siapa pun akan menggantung tanpa batas. Ditutup dua sisi: jalur *lazy* (saat ada yang mencoba membayar) sekarang memindahkan permintaan **dan** pesanannya sekaligus dalam satu pernyataan (CTE yang mengubah data, jadi keduanya melihat snapshot yang sama dan tidak mungkin salah satunya saja), dan job `src/jobs/store-payment-expiry.ts` menyapu setiap 2 menit — sengaja lebih pendek dari TTL 5 menit supaya sebuah permintaan tidak pernah basi lebih dari satu putaran sapuan. Penyapunya tetap memakai transisi terjaga (`status = 'MENUNGGU'`), jadi tidak mungkin mengedaluwarsakan pembayaran yang sedang berjalan.
+
+### Temuan 4 — produk tidak bisa diubah sama sekali
+
+Hanya ada `GET` dan `POST`; ubah harga dan toggle aktif/nonaktif — dua dari empat field yang disebut eksplisit di §3 — tidak punya endpoint, sehingga `is_active` selamanya `true` dan pengecekan produk nonaktif di kode pemesanan adalah cabang yang tidak akan pernah tereksekusi. Ditutup lewat `PATCH /api/store-products/[id]`. Stok sengaja **tidak** bisa diubah dari sini: ia hanya bergerak lewat dua fungsi yang mencatat event, supaya `store_products.stock` tidak pernah bisa menyimpang dari `store_inventory_events`.
+
+### Temuan 5 — riwayat, jejak struk, dan format QR
+
+Ditutup lewat `GET /api/store-orders` (riwayat transaksi toko, §3 MVP) dan `GET /api/store-orders/[id]` yang merakit seluruh jejak satu pesanan dalam satu panggilan — pesanan, item, permintaan bayar, kedua kaki ledger, dan event stok — yang sekaligus merupakan data yang dipakai mencetak struk. Hanya bisa dilihat dua pihak yang benar-benar terlibat: pemilik toko dan pembeli yang membayarnya. Format isi QR juga ditetapkan (§5 langkah 3) dan dikirim server sebagai `qrPayload`, supaya aplikasi kasir dan aplikasi pembeli tidak pernah menebak format masing-masing.
+
+### Verifikasi
+
+Seluruhnya diuji lewat HTTP nyata ke server dev:
+- **Restock** stok 1 → 25; pengurangan berlebih (−500) ditolak; event tercatat sebagai `ADJUSTMENT +24` dengan pelakunya, terpisah dari event `SALE −2` yang membawa `order_id`.
+- **Ubah harga + nonaktifkan** berhasil; memesan produk nonaktif kini benar-benar ditolak (`"Produk ... sedang nonaktif"`) — cabang yang sebelumnya mati; akun lain tidak bisa menyentuh produk toko orang.
+- **Penyapu kedaluwarsa**: 4 permintaan basi + 4 pesanannya berpindah bersama dalam satu pernyataan; jalur *lazy* lewat HTTP juga terbukti memindahkan keduanya (`KEDALUWARSA` + `EXPIRED`). Satu baris yatim tersisa di dev adalah warisan jalur lama sebelum perbaikan ini — di produksi tidak ada, karena tabelnya masih kosong.
+- **Jejak struk**: satu panggilan mengembalikan toko, pesanan `PAID`, itemnya, permintaan bayar `BERHASIL`, dua kaki ledger (`SALE_OUT`/`SALE_IN` Rp6.000), dan event stok `SALE −2 → 8`; pihak ketiga ditolak `403`.
+- **Sumber dana toko**: diuji dengan rancangan yang tidak mungkin memicu pembelian sungguhan — bukti lengkapnya di Bagian 5c dokumen alur terkunci.
+
+`tsc --noEmit` dan `npm run build` keduanya bersih.
 
 ---
 

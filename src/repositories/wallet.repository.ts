@@ -375,6 +375,21 @@ export async function postLedgerEntry(
   return { wallet: updateResult.rows[0], ledgerEntry: ledgerResult.rows[0] };
 }
 
+// Read-only lookup by the free-text `reference` column — used by the store
+// receipt/trace endpoint to pull both legs (SALE_OUT/SALE_IN) of one store
+// payment, which both carry that payment's order id as their reference.
+// Never used by any write path.
+export async function listLedgerByReference(
+  reference: string,
+  db: Queryable = pool,
+): Promise<WalletLedgerEntry[]> {
+  const result = await db.query<WalletLedgerEntry>(
+    `SELECT * FROM wallet_ledger WHERE reference = $1 ORDER BY created_at ASC`,
+    [reference],
+  );
+  return result.rows;
+}
+
 export async function listLedgerForWallet(
   walletId: string,
   limit = 50,

@@ -71,3 +71,53 @@ export async function markStoreOrderPaid(orderId: string, client: PoolClient): P
   );
   return result.rows[0] ?? null;
 }
+
+export interface ListStoreOrdersFilter {
+  status?: StoreOrder["status"];
+  limit?: number;
+  offset?: number;
+}
+
+// "Riwayat transaksi toko" (PRD §3's MVP list). Scoped by store_id, which
+// the caller never supplies directly — store-payment.service.ts resolves it
+// from the session's own store first.
+export async function listStoreOrdersByStore(
+  storeId: string,
+  filter: ListStoreOrdersFilter = {},
+  db: Queryable = pool,
+): Promise<StoreOrder[]> {
+  const params: unknown[] = [storeId];
+  let statusFilter = "";
+  if (filter.status) {
+    params.push(filter.status);
+    statusFilter = `AND status = $${params.length}`;
+  }
+  params.push(filter.limit ?? 20, filter.offset ?? 0);
+
+  const result = await db.query<StoreOrder>(
+    `SELECT * FROM store_orders
+     WHERE store_id = $1 ${statusFilter}
+     ORDER BY created_at DESC
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+  );
+  return result.rows;
+}
+
+export async function countStoreOrdersByStore(
+  storeId: string,
+  filter: ListStoreOrdersFilter = {},
+  db: Queryable = pool,
+): Promise<number> {
+  const params: unknown[] = [storeId];
+  let statusFilter = "";
+  if (filter.status) {
+    params.push(filter.status);
+    statusFilter = `AND status = $${params.length}`;
+  }
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*) FROM store_orders WHERE store_id = $1 ${statusFilter}`,
+    params,
+  );
+  return Number(result.rows[0].count);
+}

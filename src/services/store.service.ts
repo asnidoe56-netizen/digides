@@ -14,6 +14,33 @@ export async function getWalletForStore(storeId: string): Promise<Wallet | null>
   return findWalletByOwner("STORE", storeId);
 }
 
+// PRD Digides Toko §1's closing loop and §6 rule 9: a store's balance is
+// spendable ONLY inside the Digides catalog (a PPOB purchase) and can never
+// leave as a transfer. This resolver is the "spend" half of that rule made
+// real — before Tahap 3.5 a store wallet could receive sales but had no way
+// to spend anything, which left the whole economic premise of the feature
+// ("jualan sembako Anda otomatis jadi modal jualan pulsa") unreachable.
+//
+// Deliberately separate from getWalletForStore: this one enforces the
+// conditions for SPENDING (the caller really owns this store, and the store
+// is verified), whereas getWalletForStore is the neutral lookup used for
+// crediting a sale. Callers never pass a store id — it is always resolved
+// from the caller's own session, so this cannot reach anyone else's store.
+export async function getSpendableStoreWalletForOwner(ownerUserId: string): Promise<Wallet> {
+  const store = await findStoreByOwnerUserId(ownerUserId);
+  if (!store) {
+    throw new Error("Anda belum memiliki toko terdaftar");
+  }
+  if (store.status !== "ACTIVE") {
+    throw new Error("Toko Anda belum diverifikasi, saldonya belum bisa dibelanjakan");
+  }
+  const wallet = await getWalletForStore(store.id);
+  if (!wallet) {
+    throw new Error("Wallet toko tidak ditemukan");
+  }
+  return wallet;
+}
+
 export interface RegisterStoreInput {
   ownerUserId: string;
   name: string;

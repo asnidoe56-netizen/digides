@@ -5,6 +5,8 @@
 > Bagian 5a adalah amandemen sadar atas aturan #3/#8 versi sebelumnya, diinstruksikan eksplisit oleh pemilik produk pada 2026-09-07, dan sudah lolos uji nyata end-to-end di produksi pada hari yang sama (lihat catatan verifikasi lengkap di akhir Bagian 5a) — termasuk kasus SKU asli Gagal dua kali berturut-turut lalu SUKSES lewat cadangan kedua, dengan ledger saldo terbukti tepat satu RESERVE dan satu DEBIT.
 >
 > Bagian 5b adalah perbaikan bug pada `createTransaction`, diinstruksikan eksplisit oleh pemilik produk pada 2026-09-08 setelah ditemukan saat mengerjakan PRD Digides Toko Tahap 1 (`docs/product/PRD_DIGIDES_TOKO.md` §7a). Ini bukan perubahan aturan — aturan #3 (idempotency) tetap sama persis — melainkan perbaikan cara aturan itu **diimplementasikan** supaya benar-benar bekerja seperti yang sudah didokumentasikan. Dibuktikan lewat reproduksi langsung di database (bug lama dan perbaikannya sama-sama direproduksi berdampingan, bukan sekadar menunggu kejadian nyata) — lihat Bagian 5b untuk buktinya.
+>
+> Bagian 5c adalah penambahan pilihan **sumber dana** pembelian (dompet pribadi, seperti selama ini, atau dompet toko milik penelepon sendiri), diinstruksikan eksplisit oleh pemilik produk pada 2026-09-08 sebagai bagian dari Tahap 3.5 PRD Digides Toko (`docs/product/PRD_DIGIDES_TOKO.md` §9c). Mesin transaksinya sendiri tidak disentuh — yang berubah hanya cara satu berkas route meresolusi dompet milik penelepon, dan tanpa field baru itu perilakunya identik dengan sebelumnya. Lihat Bagian 5c untuk jaminan dan buktinya.
 
 ---
 
@@ -164,6 +166,33 @@ Komisi belum diamati secara langsung pada kejadian #2 (tergantung apakah pembeli
 
 ---
 
+## 5c. 🔒 Sumber Dana Pembelian: Dompet Pribadi atau Dompet Toko (Amandemen 2026-09-08)
+
+**Ini penambahan pilihan sumber dana, bukan perubahan mesin transaksi.** Diinstruksikan eksplisit oleh pemilik produk pada 2026-09-08 ("kerjakan semua temuan") setelah analisis pasca-Tahap 3 menemukan bahwa saldo yang terkumpul di dompet toko sama sekali **tidak bisa dibelanjakan** — yang membatalkan seluruh premis ekonomi Digides Toko (`docs/product/PRD_DIGIDES_TOKO.md` §1: *"jualan sembako Anda otomatis jadi modal jualan pulsa"*), karena separuh "belanja" dari lingkaran itu tidak pernah dibangun.
+
+**Yang berubah — hanya satu berkas, dan bukan `transaction.service.ts`**: `src/app/api/transactions/execute/route.ts` sekarang menerima satu field opsional `payWith` (`"PERSONAL"` | `"STORE"`). Mesin transaksinya sendiri (`executeTransaction` dan seluruh alur RESERVE → provider → DEBIT/RELEASE, webhook, polling) **tidak disentuh sama sekali** — ia sejak awal menerima `walletId` dari pemanggilnya; yang berubah hanyalah dompet mana milik penelepon sendiri yang diserahkan ke sana.
+
+**Jaminan yang tetap dipegang:**
+1. **`payWith` adalah pemilih sumber, bukan id dompet.** Klien tetap tidak pernah bisa menyebut dompet mana pun; dompetnya tetap diresolusi 100% di server dari sesi penelepon sendiri. Tidak mungkin membelanjakan dompet orang lain, sama seperti sebelumnya.
+2. **Tanpa `payWith`, perilakunya identik dengan sebelum amandemen ini** — tetap `getWalletForMitraSession`, dompet pribadi/operasional. Kedua klien yang ada (web dan aplikasi mitra) tidak mengirim field ini dan sama sekali tidak terpengaruh.
+3. **`"STORE"` hanya bisa menjangkau toko milik penelepon sendiri, dan hanya bila toko itu berstatus `ACTIVE`** (`getSpendableStoreWalletForOwner` di `src/services/store.service.ts`). Toko yang belum diverifikasi atau disuspend tidak bisa membelanjakan saldonya.
+4. **Aturan #9 PRD Toko tetap utuh**: dompet toko boleh berbelanja di katalog Digides, tapi tetap tidak pernah bisa menjadi sumber transfer saldo ke pengguna lain — `transferToDownline` tetap hanya memakai `getWalletForMitraSession`, yang menurut kontraknya tidak pernah mengembalikan dompet `STORE`.
+5. **Komisi**: pembelian yang didanai dompet toko **tidak menghasilkan komisi untuk siapa pun**. Ini bukan kecelakaan — `getOwningUserId` memang mengembalikan `null` untuk dompet `STORE` (tidak ada `user_id` pada baris arc-nya), dan `awardCommissionForTransaction` menangani itu dengan `return []` yang bersih, bukan error. Sudah didokumentasikan sebagai default sengaja sejak Tahap 1. Kalau nanti diputuskan pembelian toko juga harus memberi komisi ke upline pemiliknya, itu perubahan satu keputusan produk — dicatat di sini supaya pilihannya sadar, bukan tersembunyi.
+
+**Satu perubahan urutan yang perlu dicatat**: resolusi dompet sekarang terjadi SESUDAH validasi skema (dulu sebelumnya), karena dompet mana yang dipakai bergantung pada isi body. Efeknya hanya pada pesan error mana yang muncul lebih dulu bila body tidak valid DAN dompet tidak ada — sebelumnya "Wallet tidak ditemukan", sekarang "Data tidak valid". Tidak ada dampak finansial.
+
+**Verifikasi — SELESAI, diuji lewat HTTP nyata dengan rancangan yang tidak mungkin memicu pembelian sungguhan (dev lokal memakai kredensial Digiflazz produksi, jadi pembelian nyata = uang nyata):**
+- [x] **Urutan operasi diperiksa lebih dulu**: `RESERVE` (pengurangan saldo) terjadi di `executeTransaction` **sebelum** `settleWithProvider` memanggil Digiflazz — sehingga kegagalan "saldo tidak cukup" dijamin berhenti sebelum provider tersentuh.
+- [x] **Penjaga "belum punya toko"**: akun tanpa toko + `payWith:"STORE"` ditolak (`"Anda belum memiliki toko terdaftar"`).
+- [x] **Penjaga "toko belum diverifikasi"**: toko berstatus `SUBMITTED` + `payWith:"STORE"` ditolak (`"Toko Anda belum diverifikasi, saldonya belum bisa dibelanjakan"`).
+- [x] **Uji menentukan**: dompet pribadi diisi Rp100.000 (lebih dari cukup) sementara dompet toko hanya Rp6.000, lalu `payWith:"STORE"` untuk produk seharga ±Rp19.000 → gagal `"Saldo tidak cukup"`. Kalau kode diam-diam memakai dompet pribadi, transaksi ini justru akan BERHASIL — jadi kegagalannya sendiri adalah buktinya bahwa dompet toko benar-benar yang dipakai. Varian `PERSONAL`-nya sengaja **tidak** dijalankan justru karena akan berhasil dan memanggil Digiflazz sungguhan.
+- [x] Sesudahnya: kedua saldo tidak bergerak sama sekali dan tidak ada baris `transactions` tersisa (rollback bersih).
+- [x] Saldo uji dikembalikan lewat baris ledger `ADJUSTMENT` baru (bukan UPDATE langsung, sesuai aturan #7 PRD Toko), dan hak Super Admin sementara dicabut kembali.
+- [x] Kode lulus `tsc --noEmit` dan `npm run build`.
+- [ ] **Belum diamati**: pembelian PPOB nyata yang benar-benar berhasil didanai dompet toko. Ini baru mungkin setelah Tahap 4 (UI) memberi warung cara memilih sumber dana, dan sengaja tidak dipaksakan sekarang karena satu-satunya cara membuktikannya adalah membeli produk sungguhan dengan uang sungguhan.
+
+---
+
 ## 6. Yang Aman Disentuh (murni presentasi, bukan logika)
 
 - Ikon, warna, teks/copy pada layar hasil (SUCCESS/FAILED/PENDING) — selama tidak mengubah kapan status itu ditampilkan.
@@ -204,6 +233,7 @@ Kalau ke depan dibangun kategori PPOB baru, atau integrasi provider selain Digif
 - `src/features/mitra-histori/components/histori-detail-view.tsx`
 - **Bagian 5a (SKU cadangan otomatis)**: `src/repositories/product.repository.ts` (`findBackupProductCandidates`), `src/repositories/transaction.repository.ts` (`lockTransactionForUpdate`, `swapTransactionProductForBackup`), `src/services/commission.service.ts` (`awardCommissionForTransaction`'s profit cap), `src/features/transaction/components/transaction-detail.tsx` (catatan pergantian SKU di Super Admin), migrasi `041_transaction_backup_sku.sql`
 - **Bagian 5b (perbaikan idempotency)**: `src/repositories/transaction.repository.ts` (`createTransaction`)
+- **Bagian 5c (sumber dana pembelian)**: `src/app/api/transactions/execute/route.ts` (field `payWith`), `src/services/store.service.ts` (`getSpendableStoreWalletForOwner`)
 
 **Flutter (`digides_mitra`):**
 - `lib/features/purchase/purchase_screen.dart` — `_submitPurchase`, `_startPolling`, `_pollOnce`

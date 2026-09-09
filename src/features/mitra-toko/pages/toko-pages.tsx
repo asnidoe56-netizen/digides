@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { listStoreOrdersByStore } from "@/repositories/store-order.repository";
 import { listStoreSettlements } from "@/repositories/store.repository";
+import { listStoreProductCategories } from "@/repositories/store-product-category.repository";
 import { getMyStore, getWalletForStore } from "@/services/store.service";
 import { listMyStoreProducts } from "@/services/store-product.service";
 import {
@@ -72,9 +73,16 @@ export async function TokoProdukPage({ basePath }: TokoRouteProps) {
   const store = await getMyStore(session.userId);
   if (!store) redirect(basePath);
 
-  const products = await listMyStoreProducts(session.userId);
+  // Categories come from the server alongside the products so the form's
+  // picker is populated the moment the dialog opens — a fetch on dialog
+  // open would show an empty dropdown for the first instant, on exactly
+  // the screen where an owner is registering ten products in a row.
+  const [products, categories] = await Promise.all([
+    listMyStoreProducts(session.userId),
+    listStoreProductCategories({ onlyActive: true }),
+  ]);
 
-  return <ProdukView products={products} basePath={basePath} />;
+  return <ProdukView products={products} categories={categories} basePath={basePath} />;
 }
 
 export async function TokoRiwayatPage({ basePath }: TokoRouteProps) {

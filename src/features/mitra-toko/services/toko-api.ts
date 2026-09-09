@@ -1,7 +1,7 @@
 import { apiFetch } from "@/lib/api/client";
 import type { Store } from "@/types/store";
 import type { StoreOrder, StoreOrderItem, StorePaymentRequest } from "@/types/store-order";
-import type { StoreInventoryEvent, StoreProduct } from "@/types/store-product";
+import type { StoreInventoryEvent, StoreProduct, StoreProductCategory } from "@/types/store-product";
 import type { Wallet, WalletLedgerEntry } from "@/types/wallet";
 
 // --- toko ---------------------------------------------------------------
@@ -66,21 +66,53 @@ export function listMyStoreProducts() {
   return apiFetch<{ products: StoreProduct[] }>("/api/store-products");
 }
 
-export function createStoreProduct(input: { name: string; price: number; stock: number }) {
+export function createStoreProduct(input: {
+  name: string;
+  price: number;
+  stock: number;
+  barcode?: string | null;
+  categoryId?: string | null;
+  costPrice?: number | null;
+}) {
   return apiFetch<{ product: StoreProduct }>("/api/store-products", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
+// barcode/categoryId/costPrice are `string | null | undefined` on purpose:
+// omit a key to leave it alone, send null to clear it. An owner correcting
+// a mistyped barcode needs the second, and the API distinguishes them.
 export function updateStoreProduct(
   id: string,
-  input: { name?: string; price?: number; isActive?: boolean },
+  input: {
+    name?: string;
+    price?: number;
+    isActive?: boolean;
+    barcode?: string | null;
+    categoryId?: string | null;
+    costPrice?: number | null;
+  },
 ) {
   return apiFetch<{ product: StoreProduct }>(`/api/store-products/${id}`, {
     method: "PATCH",
     body: JSON.stringify(input),
   });
+}
+
+// The shared fixed list behind the category picker and the cashier's tabs
+// (PRD Kasir Pintar §6.2).
+export function listStoreProductCategories() {
+  return apiFetch<{ categories: StoreProductCategory[] }>("/api/store-product-categories");
+}
+
+// The scan lookup (§5). `product: null` means an unknown barcode, which is
+// an ordinary outcome — it drives the "Tambah produk baru?" offer, not an
+// error banner.
+export function lookupStoreProductByBarcode(barcode: string) {
+  return apiFetch<{ product: StoreProduct | null }>(
+    `/api/store-products/lookup?barcode=${encodeURIComponent(barcode)}`,
+  );
 }
 
 /** Signed — positive restocks, negative corrects shrinkage. */

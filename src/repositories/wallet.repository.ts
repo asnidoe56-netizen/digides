@@ -133,15 +133,16 @@ export async function getWalletByKonterId(konterId: string, db: Queryable = pool
 // wallet_accounts, so the Commission Engine needs this to find the
 // referrer chain for whoever made a purchase (issue: Komisi menu).
 //
-// PRD Digides Toko §7 contract: a future STORE wallet (wallet_accounts.
-// store_id) sets none of user_id/admin_user_id/operator_user_id, so this
-// intentionally returns null for a purchase made from a store's own
-// wallet — awardCommissionForTransaction already treats a null owning
-// user as "no commission to award" (no referral chain to credit). This
-// is a deliberate product default (a store spending its own balance on
-// PPOB stock is not a personal referred purchase), not an oversight —
-// revisit explicitly if store purchases should ever earn commission for
-// whoever referred the store's owner.
+// PRD Digides Toko §7 contract: a STORE wallet (wallet_accounts.store_id)
+// sets none of user_id/admin_user_id/operator_user_id, so this returns
+// null for it. Since 2026-09-09 that is no longer reachable in practice —
+// a store wallet can't fund a purchase at all (§5d of the locked flow
+// doc: its balance is moved into the owner's main wallet first, and the
+// purchase is then an ordinary personal one that earns its upline
+// commission normally). The null branch stays as a safe floor for the one
+// historical store-funded transaction and for any future caller, and
+// awardCommissionForTransaction already treats a null owning user as "no
+// commission to award" rather than an error.
 export async function getOwningUserId(walletId: string, db: Queryable = pool): Promise<string | null> {
   const result = await db.query<{ user_id: string | null }>(
     `SELECT COALESCE(wa.user_id, b.admin_user_id, k.operator_user_id) AS user_id

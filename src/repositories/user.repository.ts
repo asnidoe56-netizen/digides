@@ -165,7 +165,42 @@ export async function updateUserPassword(
   passwordHash: string,
   db: Queryable = pool,
 ): Promise<void> {
-  await db.query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [id, passwordHash]);
+  // Clears must_change_password in the same statement that writes the new
+  // hash. The two must move together: a password the account holder chose
+  // is exactly what the flag was waiting for, and leaving it set would
+  // trap them on the Ganti Password screen forever.
+  await db.query(
+    `UPDATE users SET password_hash = $2, must_change_password = false WHERE id = $1`,
+    [id, passwordHash],
+  );
+}
+
+// docs/security/PEMULIHAN_AKSES_AKUN.md §4 Prioritas 1 — a Super Admin
+// issuing a temporary password.
+//
+// Deliberately a different function from updateUserPassword, not a flag on
+// it, because the two do opposite things to must_change_password and
+// confusing them would be a silent security failure: an admin-issued
+// password that did NOT set the flag would quietly become the account's
+// permanent password, known to someone who is not its owner.
+//
+// locked_until is cleared here too. An account that reached this point is
+// almost always one that locked itself out guessing, and handing someone a
+// temporary password while leaving them locked out for another ten minutes
+// would be a strange kind of help.
+export async function resetUserPasswordByAdmin(
+  id: string,
+  passwordHash: string,
+  db: Queryable = pool,
+): Promise<User | null> {
+  const result = await db.query<User>(
+    `UPDATE users
+     SET password_hash = $2, must_change_password = true, locked_until = NULL
+     WHERE id = $1
+     RETURNING *`,
+    [id, passwordHash],
+  );
+  return result.rows[0] ?? null;
 }
 
 export async function updateUserStatus(

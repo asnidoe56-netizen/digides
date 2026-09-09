@@ -10,6 +10,12 @@ export interface User {
   /** Set when brute-force login detection trips security_policies'
    *  max_login_attempts — login is rejected while this is in the future. */
   locked_until: Date | null;
+  /** Set when a Super Admin issues a temporary password
+   *  (docs/security/PEMULIHAN_AKSES_AKUN.md §4). While true, the mitra can
+   *  log in but every screen sends them to Ganti Password first — a
+   *  password an admin knows must never stay the account's real one.
+   *  Cleared by POST /api/account/change-password. */
+  must_change_password: boolean;
   /** Akun > Keamanan's "Batasi Perangkat" — this account's own override of
    *  security_policies.max_devices_per_user. Null means "use the platform
    *  default". See security.service.ts's getEffectiveDeviceLimit. */

@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/password-input";
 import { ApiError } from "@/lib/api/client";
 import { loginSchema, type LoginFormValues } from "../schemas/login.schema";
-import { homeRouteForRoles } from "@/lib/auth/home-route";
+import { changePasswordRouteForRoles, homeRouteForRoles } from "@/lib/auth/home-route";
 import { loginUser } from "../services/auth-api";
 
 // Where each role lands after login — shared with the store payment page,

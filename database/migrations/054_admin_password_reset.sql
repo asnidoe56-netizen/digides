@@ -1,0 +1,30 @@
+-- docs/security/PEMULIHAN_AKSES_AKUN.md §4 Prioritas 1: a Super Admin can
+-- issue a temporary password to a mitra who has forgotten theirs.
+--
+-- Until now Digides had no password recovery of any kind: no "Lupa
+-- Password" page, no admin reset, no OTP. The only route that existed
+-- (POST /api/account/change-password) asks for the OLD password, which is
+-- the one thing a person who forgot it cannot supply. A mitra who forgot
+-- their password lost their account permanently — and a mitra account
+-- holds a wallet balance.
+--
+-- This flag is what stops an admin-issued password from becoming the
+-- account's real password. The temporary one gets the mitra back IN;
+-- their next screen is Ganti Password, and nothing else, until they pick
+-- one only they know. Cleared by
+-- POST /api/account/change-password.
+--
+-- NOT NULL DEFAULT false so every existing account is unaffected: nobody
+-- is forced through a password change they did not ask for.
+ALTER TABLE users ADD COLUMN must_change_password boolean NOT NULL DEFAULT false;
+
+-- Why there is no `temporary_password` column, and why there never should
+-- be: the temporary password is shown to the admin exactly once, in the
+-- response to the reset request, and only its bcrypt hash is stored — in
+-- password_hash, like any other password. Keeping the plaintext anywhere,
+-- even briefly, would turn this table into a list of working credentials.
+--
+-- The transaction PIN is deliberately untouched by all of this. It lives
+-- in its own table with its own hash, and an admin who resets a password
+-- still cannot spend a single rupiah of that mitra's balance. That
+-- separation is the reason this feature is safe to build at all.

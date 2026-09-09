@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Lock } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
-import { UserEditProfileDialog, UserStatusActions } from "@/features/users";
+import { UserEditProfileDialog, UserRecoveryActions, UserStatusActions } from "@/features/users";
 import { getSession } from "@/lib/auth/session";
 import { findUserById, listRolesForUser, toPublicUserProfile } from "@/repositories/user.repository";
 import { findWilayahNamesByCodes } from "@/repositories/wilayah.repository";
@@ -14,6 +14,11 @@ const ROLE_LABEL: Record<string, string> = {
   KONTER: "Konter",
   AFFILIATE: "Affiliate",
 };
+
+const timeFormatter = new Intl.DateTimeFormat("id-ID", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 const dateFormatter = new Intl.DateTimeFormat("id-ID", {
   day: "numeric",
@@ -53,6 +58,13 @@ export default async function UserDetailPage({ params }: UserDetailPageProps) {
     .filter((name): name is string => Boolean(name));
   const hasLocation = user.registration_latitude != null && user.registration_longitude != null;
 
+  // Computed on the server, so an admin who leaves this page open doesn't
+  // watch a countdown tick — they refresh, and get the truth.
+  const isLocked = user.locked_until !== null && user.locked_until > new Date();
+  const minutesLeft = isLocked
+    ? Math.max(1, Math.ceil((user.locked_until!.getTime() - Date.now()) / 60_000))
+    : 0;
+
   return (
     <div className="flex flex-col gap-6">
       <Link
@@ -81,6 +93,24 @@ export default async function UserDetailPage({ params }: UserDetailPageProps) {
         <div>
           <p className="text-xs text-muted-foreground">Status</p>
           <StatusBadge status={user.status} />
+          {/* The gap this page used to have. `status` says ACTIVE for an
+              account that is locked out and cannot log in at all, so an
+              admin reading this screen concluded nothing was wrong while
+              the mitra was stuck in a fifteen-minute loop. Shown only
+              while the lock is actually in force — a lock that has
+              already expired is history, not a state. */}
+          {isLocked ? (
+            <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-destructive">
+              <Lock className="size-3.5" />
+              Terkunci sampai {timeFormatter.format(user.locked_until!)} (
+              {minutesLeft} menit lagi)
+            </p>
+          ) : null}
+          {user.must_change_password ? (
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Password sementara aktif — wajib diganti saat masuk.
+            </p>
+          ) : null}
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Role</p>
@@ -118,6 +148,24 @@ export default async function UserDetailPage({ params }: UserDetailPageProps) {
             </a>
           ) : null}
         </div>
+      </div>
+
+      {/* Separated from "Aksi Akun" on purpose. Recovery gives an account
+          back; Tangguhkan and Hapus take it away. Sitting them in one row
+          is how an admin trying to help a locked-out mitra ends up
+          suspending them. */}
+      <div className="rounded-lg border p-4">
+        <p className="text-sm font-medium">Pemulihan Akses</p>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Untuk pengguna yang tidak bisa masuk — terkunci karena salah password berkali-kali, atau
+          lupa passwordnya.
+        </p>
+        <UserRecoveryActions
+          userId={user.id}
+          userName={user.full_name}
+          lockedUntil={user.locked_until?.toISOString() ?? null}
+          isSelf={user.id === session?.userId}
+        />
       </div>
 
       <div className="rounded-lg border p-4">

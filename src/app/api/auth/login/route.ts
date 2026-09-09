@@ -82,6 +82,17 @@ export async function POST(request: Request) {
     email: user.email,
     full_name: user.full_name,
     roles: roleCodes,
+    // Set when a Super Admin issued a temporary password
+    // (docs/security/PEMULIHAN_AKSES_AKUN.md §4). Both clients send the
+    // user straight to Ganti Password when this is true.
+    //
+    // Honest about what this is: a steer, not a gate. It stops a
+    // temporary password from quietly becoming the account's real one,
+    // which is its job. What actually contains the risk of an admin
+    // issuing a password is elsewhere — every reset is written to the
+    // audit log with the admin's own id, and the transaction PIN is never
+    // touched, so a reset alone still cannot move a single rupiah.
+    must_change_password: user.must_change_password,
   });
 
   response.cookies.set(SESSION_COOKIE_NAME, token, {

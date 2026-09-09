@@ -1,10 +1,10 @@
 # Pemulihan Akses Akun — Rencana Kerja
 
-**Status:** Belum dikerjakan · dicatat sebagai backlog
+**Status:** Prioritas 1 & 2 **selesai** (9 September 2026) · Prioritas 3 masih ditunda
 **Dibuat:** 9 September 2026
 **Pemicu:** kasus nyata di produksi (lihat §1)
 **Prioritas:** tinggi — ini kehilangan akses permanen, bukan sekadar ketidaknyamanan
-**Menunggu:** dibahas setelah PRD Kasir Pintar
+**Menunggu:** Prioritas 3 menunggu gateway WhatsApp
 
 ---
 
@@ -138,7 +138,83 @@ manual terasa berat.
 
 ## 6. Catatan untuk kasus Azizah cell
 
-Sampai Prioritas 1 selesai, akun ini **belum bisa dipulihkan**. Membuka kuncinya
-lewat Keamanan → Insiden hanya menghentikan penguncian, tidak mengembalikan
-password yang terlupa. Emailnya bisa langsung diberitahukan:
-`julfikarpodungge7@gmail.com`.
+Sejak Prioritas 1 selesai, akun ini **sudah bisa dipulihkan**. Langkahnya, di
+panel Super Admin → Pengguna → Azizah cell → **Pemulihan Akses**:
+
+1. Tekan **Atur Ulang Password**. Password sementara muncul sekali — catat.
+2. Sampaikan langsung kepadanya, beserta emailnya:
+   `julfikarpodungge7@gmail.com`.
+3. Dia masuk memakai password sementara itu, dan aplikasi langsung membawanya
+   ke Ganti Password. Isi "Password Saat Ini" dengan password sementara tadi.
+
+Tombol **Buka Kunci** tidak diperlukan di kasusnya: mengatur ulang password
+sekaligus membuka kuncinya. Buka Kunci berguna untuk kasus yang berbeda —
+seseorang yang **ingat** passwordnya tapi terkunci karena salah ketik
+berkali-kali.
+
+---
+
+## 7. Apa yang sudah dibangun (9 September 2026)
+
+**Migrasi `054_admin_password_reset.sql`** — satu kolom, `users.must_change_password`.
+
+**Backend**
+
+| Berkas | Isi |
+|---|---|
+| `src/services/account-recovery.service.ts` | `resetUserPasswordAsAdmin`, `unlockUserAccount` |
+| `src/repositories/user.repository.ts` | `resetUserPasswordByAdmin` (fungsi terpisah dari `updateUserPassword`) |
+| `POST /api/users/[id]/reset-password` | Super Admin saja |
+| `POST /api/users/[id]/unlock` | Super Admin saja |
+
+**Antarmuka**
+
+- Halaman pengguna Super Admin: status kunci beserta sisa menitnya, panel
+  **Pemulihan Akses** yang sengaja dipisah dari **Aksi Akun** — pemulihan
+  mengembalikan akun, Tangguhkan dan Hapus mengambilnya.
+- Password sementara ditampilkan sekali dalam dialog dengan tombol salin.
+- Flutter: login dengan password sementara langsung mendarat di Ganti Password
+  tanpa layar di belakangnya.
+- Web: login mengarahkan ke Ganti Password untuk BUMDes dan Konter.
+
+### Keputusan yang perlu diketahui orang berikutnya
+
+**`resetUserPasswordByAdmin` sengaja fungsi terpisah**, bukan parameter pada
+`updateUserPassword`. Keduanya melakukan hal berlawanan pada
+`must_change_password`, dan mencampurnya akan jadi kegagalan yang tidak
+bersuara: password terbitan admin yang **tidak** memasang tanda itu akan
+diam-diam menjadi password tetap akun tersebut, diketahui orang yang bukan
+pemiliknya.
+
+**Password sementara tidak pernah tersimpan sebagai teks.** Hanya hash
+bcrypt-nya, di `password_hash`, seperti password biasa. Kalau admin kehilangan
+catatannya sebelum sempat menyampaikan, dia mengulang reset dan mendapat yang
+berbeda. Itu ongkos yang disengaja.
+
+**Abjadnya tanpa 0, O, 1, I, dan l.** Password ini dibaca dari layar dan
+diucapkan lewat telepon; salah dengar satu huruf mengirim mitra kembali ke
+penguncian yang justru sedang diakhiri.
+
+**Pemaksaan ganti password itu arahan, bukan gerbang.** Orang yang menutup
+paksa aplikasinya lalu membukanya lagi mendarat di beranda, karena cookie
+sesinya memang sudah sah. Yang benar-benar menahan risiko admin menerbitkan
+password ada di tempat lain: setiap reset tercatat di audit log atas nama
+admin itu, dan **PIN transaksi tidak pernah disentuh** — reset saja tidak bisa
+memindahkan satu rupiah pun.
+
+### Yang masih kurang
+
+- **AFFILIATE dan SUPER_ADMIN tidak punya halaman Ganti Password di web.**
+  `changePasswordRouteForRoles` mengembalikan null untuk keduanya, dan
+  pemanggilnya jatuh ke beranda. Untuk AFFILIATE — yaitu sebagian besar
+  mitra — jalur nyatanya ada di aplikasi Digides Mitra, tempat alur paksa itu
+  memang bekerja.
+- Prioritas 3 (OTP WhatsApp) belum dikerjakan sama sekali.
+
+### Verifikasi
+
+18 pemeriksaan lewat API sungguhan di server dev, semuanya lulus — termasuk:
+akun terkunci ditolak walau passwordnya benar; membuka kunci akun yang tidak
+terkunci ditolak alih-alih pura-pura berhasil; password lama langsung mati;
+hash PIN transaksi sama persis sebelum dan sesudah reset; password sementara
+tidak muncul di `users` maupun di `audit_logs`; dan non-Super-Admin ditolak.

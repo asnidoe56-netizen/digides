@@ -14,6 +14,7 @@ import {
   Scale,
   Settings,
   Share2,
+  DatabaseBackup,
   Shield,
   Store,
   Tags,
@@ -54,6 +55,7 @@ export const NAV_ITEMS: Record<RoleCode, NavItem[]> = {
     { label: "Audit Log", href: "/dashboard/super-admin/audit-logs", icon: ClipboardList },
     { label: "Tim Support", href: "/dashboard/super-admin/support", icon: LifeBuoy },
     { label: "Keamanan", href: "/dashboard/super-admin/security", icon: Shield },
+    { label: "Cadangan Data", href: "/dashboard/super-admin/backup", icon: DatabaseBackup },
     { label: "Pengaturan", href: "/dashboard/super-admin/settings", icon: Settings },
   ],
   // Populated when their dashboards are built (M03.5 continues per role).

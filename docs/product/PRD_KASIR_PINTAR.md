@@ -11,11 +11,12 @@ Membuat kasir warung secepat kasir minimarket: **pindai barang, masuk keranjang,
 
 Kasir Digides Toko hari ini sudah berfungsi, tapi bekerja dengan cara **mengetik**: kasir mengetik sebagian nama produk, hasilnya tersaring, lalu ditekan. Untuk warung dengan 10 produk itu cukup. Untuk warung dengan 150 SKU rokok dan minuman, itu titik lambat yang membuat kasir kalah cepat dibanding mencatat di buku.
 
-Yang diusulkan di sini ada tiga, dan hanya tiga:
+Yang diusulkan di sini ada empat, dan hanya empat:
 
 1. **Barcode pada produk** — dipindai saat menambah produk, dipindai lagi saat menjual.
 2. **Kategori produk** (Rokok, Minuman, dan seterusnya) — untuk menyaring cepat di kasir dan untuk laporan "rokok laku berapa bulan ini".
 3. **Kasir mode pindai** — kamera menyala, pindai, langsung masuk keranjang.
+4. **Modal & margin** — harga beli disimpan di samping harga jual, sehingga warung bisa tahu **untungnya**, bukan cuma omzetnya.
 
 **Yang tidak diusulkan**: timbangan, harga bertingkat, diskon, promo, printer termal, multi-kasir. Semua itu menambah permukaan tanpa menjawab pertanyaan yang sedang diuji (§10 PRD Toko: apakah warung mau memakainya sama sekali).
 
@@ -29,6 +30,12 @@ Kategori menyelesaikan masalah yang berbeda: **barang tanpa barcode**. Gorengan,
 
 Dua jalur ini saling melengkapi, dan keduanya perlu ada. Kasir yang hanya bisa memindai akan gagal di gorengan; kasir yang hanya bisa mencari teks akan lambat di rokok.
 
+### Dan satu masalah ketiga: warung tidak tahu untungnya
+
+Hari ini `store_products` hanya menyimpan **harga jual**. Tidak ada modal di mana pun — tidak di produk, tidak di baris pesanan. Akibatnya Riwayat Toko hanya bisa menjawab *"berapa jualan hari ini"*, tidak pernah *"berapa untung hari ini"* — padahal itu pertanyaan yang sebenarnya ditanyakan pemilik warung tiap tutup toko.
+
+Yang membuat ini janggal: **sisi PPOB Digides sudah memisahkannya sejak awal.** Tabel `transactions` punya `base_price` (modal dari Digiflazz) *dan* `selling_price`, lengkap dengan menu Keuntungan untuk Super Admin. Toko justru tidak punya padanannya. Ini bukan fitur baru yang eksotis — ini menyamakan Toko dengan pola yang sudah terbukti di rumah sendiri.
+
 ---
 
 ## 2. Fondasi yang sudah ada
@@ -40,9 +47,11 @@ Sengaja diinventarisasi supaya tidak ada yang dibangun ulang.
 | Pemindai kamera di aplikasi mitra | `QrScanScreen` (`mobile_scanner`), dipakai untuk nomor meter PLN dan QR pembayaran toko. Dibuat **tanpa batasan format**, jadi ia sudah membaca EAN-13/UPC barang kemasan hari ini — tidak perlu paket baru. | SUDAH ADA |
 | Produk toko + stok + aktif/nonaktif | `store_products` + `store_inventory_events` | SUDAH ADA |
 | Keranjang, total, QR bayar, struk | `store_orders`, `store_payment_requests`, `struk_pdf.dart` | SUDAH ADA |
+| Pola modal vs harga jual | `transactions.base_price` / `selling_price` + menu Keuntungan — sudah berjalan bertahun-tahun di sisi PPOB, tinggal ditiru untuk Toko. | SUDAH ADA (di PPOB) |
 | Kolom barcode pada produk | Belum ada. | BARU |
 | Kategori produk | Belum ada. | BARU |
 | Kasir mode pindai | Belum ada — kasir sekarang hanya cari-ketik. | BARU |
+| Modal & margin produk toko | Belum ada. `store_products` hanya punya `price`; `store_order_items` hanya menyimpan `unit_price`. | BARU |
 
 **Konsekuensi penting**: karena pemindainya sudah ada dan sudah terbukti di produksi, bagian tersulit fitur ini (izin kamera, siklus hidup controller, penanganan frame ganda) **sudah selesai dan sudah teruji**. Yang tersisa sebagian besar adalah data dan layar.
 
@@ -58,7 +67,9 @@ Sengaja diinventarisasi supaya tidak ada yang dibangun ulang.
 - Kasir: tombol pindai; barang langsung masuk keranjang
 - Kasir: baris tab kategori untuk barang tanpa barcode
 - Barcode tidak dikenal → tawarkan "Tambah produk baru" dengan barcode sudah terisi
-- Laporan penjualan per kategori di Riwayat Toko
+- **Modal (harga beli) pada produk**, opsional, dengan margin tampil langsung saat mengisi harga jual
+- **Pembantu margin**: isi persen, harga jual terhitung sendiri dan dibulatkan ke kelipatan wajar
+- Laporan **penjualan dan untung** per kategori di Riwayat Toko
 
 **Sengaja di luar MVP**
 
@@ -66,8 +77,9 @@ Sengaja diinventarisasi supaya tidak ada yang dibangun ulang.
 - Printer termal Bluetooth — struk sudah bisa dibagikan/dicetak lewat PDF
 - Diskon, promo, harga grosir, harga member
 - Multi-kasir / akun karyawan (sudah dinyatakan di luar MVP oleh PRD Toko)
-- Katalog barcode bersama antar-toko (lihat §6 — ini keputusan besar tersendiri)
-- Pemindai di web (lihat §7)
+- Katalog barcode bersama antar-toko (lihat §6.3 — ini keputusan besar tersendiri)
+- Pemindai di web (lihat §6.4)
+- Rata-rata modal bergerak / FIFO — modal dicatat per produk, bukan per batch pembelian
 
 ---
 
@@ -79,8 +91,9 @@ Melanjutkan penomoran migrasi yang ada (terakhir `050_store_settlement.sql`).
 |---|---|---|
 | `051_store_product_barcode` | Tambah `store_products.barcode text`, indeks unik parsial **per toko** | Uniknya `(store_id, barcode)`, **bukan** global — lihat §6.1. Nullable, karena mayoritas barang warung tidak punya barcode. |
 | `052_store_product_category` | Tabel `product_categories` (daftar baku), kolom `store_products.category_id` | Daftar baku dipakai bersama semua toko supaya laporan lintas-warung mungkin; lihat §6.2. Nullable → produk lama tetap valid tanpa migrasi data. |
+| `053_store_product_cost` | Tambah `store_products.cost_price` dan `store_order_items.unit_cost` | Keduanya nullable — warung yang tidak mau mencatat modal tetap berjalan persis seperti sekarang. `unit_cost` **disalin saat checkout**, sama seperti `unit_price` sudah disalin; lihat §6.5 untuk alasannya. Margin tidak pernah disimpan, selalu dihitung. |
 
-Keduanya **hanya menambah**, tidak mengubah kolom yang ada, sehingga tidak menyentuh mesin pembayaran maupun ledger sama sekali.
+Ketiganya **hanya menambah kolom nullable**, tidak mengubah satu pun kolom yang ada, sehingga tidak menyentuh mesin pembayaran maupun ledger sama sekali.
 
 ---
 
@@ -150,14 +163,33 @@ Aturan proyek ini selama ini: **web adalah sumber kebenaran**, Flutter menyusul.
 
 **Rekomendasi**: backend dan skema tetap dikerjakan lebih dulu di `digides` (tetap sumber kebenaran untuk data dan API), tapi **layar mode pindai dibuat di Flutter lebih dulu**, dan web mendapat versi tanpa kamera (input barcode manual + tab kategori). Ini penyimpangan yang disengaja dan dicatat, bukan kelalaian.
 
+### 6.5 Modal harus disalin saat checkout, bukan dibaca dari produk
+
+Ini keputusan yang paling mudah salah, dan akibatnya baru terasa berbulan-bulan kemudian.
+
+Harga modal berubah: rokok naik harga, warung memperbarui modalnya dari Rp18.000 jadi Rp19.500. Kalau laporan untung membaca **modal produk saat ini**, maka untung bulan lalu ikut berubah setiap kali modal diperbarui — laporan yang sudah dicetak kemarin tidak akan sama isinya hari ini. Itu bukan laporan, itu tebakan yang bergerak.
+
+**Keputusan: salin `unit_cost` ke `store_order_items` saat pesanan dibuat**, persis seperti `unit_price` dan `product_name` yang sudah disalin di sana hari ini, dan persis seperti `transactions.base_price` yang sudah membekukan modal Digiflazz di sisi PPOB. Untung sebuah pesanan dihitung dari angka yang berlaku **saat transaksi itu terjadi**, dan tidak pernah berubah lagi setelahnya.
+
+**Margin tidak pernah disimpan.** Ia selalu `harga jual − modal`. Menyimpan keduanya mengundang keduanya berbeda.
+
+### 6.6 Cara mengisi: modal + harga jual, dengan persen sebagai pembantu
+
+Pemilik warung berpikir dalam rupiah — *"beli 10 ribu, jual 12 ribu"* — bukan dalam persen. Jadi kolom utamanya adalah **Modal** dan **Harga Jual**, dan marginnya tampil hidup di bawahnya (`Untung Rp2.000 · 20%`).
+
+Persen tetap berguna, tapi sebagai **pembantu, bukan sumber kebenaran**: ada tombol kecil "isi margin %", diketik `20`, harga jual terisi otomatis — lalu pemilik warung bebas menimpanya. Satu detail yang gampang terlewat: hasil hitungan persen menghasilkan angka seperti Rp11.640, sementara harga warung selalu bulat. **Bulatkan ke kelipatan Rp500 ke atas**, dan biarkan angkanya tetap bisa diedit.
+
+Modal juga **boleh dikosongkan**. Warung yang tidak mau repot mencatat modal tetap berjualan seperti sekarang; produk tanpa modal hanya tidak ikut dihitung di laporan untung, dan itu dinyatakan apa adanya di layar — bukan ditampilkan sebagai untung Rp0, yang akan menyesatkan.
+
 ---
 
 ## 7. Sentuhan pada kode yang sudah jalan
 
 | Berkas | Perubahan | Risiko |
 |---|---|---|
-| `store_products` | +2 kolom nullable | Rendah — tidak ada kolom lama yang berubah |
-| `store-product.service.ts` | Terima `barcode` & `categoryId` saat buat/ubah | Rendah |
+| `store_products` | +3 kolom nullable (barcode, kategori, modal) | Rendah — tidak ada kolom lama yang berubah |
+| `store_order_items` | +1 kolom nullable (`unit_cost`), disalin saat checkout | Rendah — kolom lama tetap, baris lama tetap valid |
+| `store-product.service.ts` | Terima `barcode`, `categoryId`, `costPrice` saat buat/ubah | Rendah |
 | `POST /api/store-orders` | **Tidak berubah** — kasir tetap mengirim `storeProductId` | Nol |
 | Mesin pembayaran, ledger, stok | **Tidak disentuh sama sekali** | Nol |
 | `QrScanScreen` (Flutter) | Dipakai ulang; perlu opsi "jangan tutup setelah satu pindaian" | Rendah — tambah parameter, perilaku lama tetap default |
@@ -175,23 +207,27 @@ Yang perlu digarisbawahi: **fitur ini tidak menyentuh satu baris pun kode yang m
 - [ ] Dua toko berbeda bisa mendaftarkan barcode yang sama persis tanpa saling mengganggu.
 - [ ] Barang tanpa barcode tetap bisa dijual secepat sekarang, lewat tab kategori atau pencarian nama.
 - [ ] Riwayat Toko bisa menjawab "berapa penjualan kategori Rokok bulan ini".
+- [ ] Riwayat Toko bisa menjawab "berapa **untung** hari ini", bukan hanya omzetnya.
+- [ ] Mengubah modal sebuah produk **tidak mengubah** angka untung pesanan yang sudah lewat.
+- [ ] Produk tanpa modal tetap bisa dijual, dan dinyatakan apa adanya di laporan — bukan dihitung untung Rp0.
+- [ ] Mengisi margin persen menghasilkan harga jual bulat yang masih bisa diedit.
 - [ ] Menambahkan barcode dan kategori tidak mengubah satu pun perilaku pembayaran, ledger, atau stok yang sudah ada.
 
 ---
 
 ## 9. Urutan pengerjaan
 
-**Tahap 1 — Data.** Migrasi 051 & 052, endpoint produk menerima barcode + kategori, daftar kategori baku di-seed.
-Selesai bila: sebuah produk bisa disimpan dengan barcode dan kategori lewat API, dan dua toko bisa memakai barcode yang sama.
+**Tahap 1 — Data.** Migrasi 051, 052 & 053; endpoint produk menerima barcode, kategori, dan modal; daftar kategori baku di-seed; `unit_cost` ikut disalin saat pesanan dibuat.
+Selesai bila: sebuah produk bisa disimpan dengan barcode, kategori, dan modal lewat API; dua toko bisa memakai barcode yang sama; dan mengubah modal produk tidak mengubah untung pesanan yang sudah lewat.
 
-**Tahap 2 — Kelola produk.** Layar tambah/ubah produk (Flutter & web) menerima barcode dan kategori; di Flutter barcode bisa diisi dengan memindai.
-Selesai bila: pemilik warung bisa mendaftarkan 10 produk berbarcode dalam beberapa menit.
+**Tahap 2 — Kelola produk.** Layar tambah/ubah produk (Flutter & web) menerima barcode, kategori, dan modal, dengan margin tampil hidup dan pembantu persen; di Flutter barcode bisa diisi dengan memindai.
+Selesai bila: pemilik warung bisa mendaftarkan 10 produk berbarcode beserta modalnya dalam beberapa menit.
 
 **Tahap 3 — Kasir mode pindai (Flutter).** Kamera menyala terus, pindai → keranjang, getar + nama sekejap, tangani barcode asing.
 Selesai bila: satu transaksi 5 barang berbarcode selesai di bawah 20 detik.
 
-**Tahap 4 — Tab kategori & laporan.** Baris tab kategori di kasir, rekap penjualan per kategori di Riwayat.
-Selesai bila: barang tanpa barcode terjual sama cepatnya, dan laporan per kategori bisa dibaca.
+**Tahap 4 — Tab kategori & laporan untung.** Baris tab kategori di kasir; rekap penjualan **dan untung** per kategori di Riwayat.
+Selesai bila: barang tanpa barcode terjual sama cepatnya, dan pemilik warung bisa membaca untungnya hari itu — bukan cuma omzetnya.
 
 ---
 
@@ -203,6 +239,8 @@ Selesai bila: barang tanpa barcode terjual sama cepatnya, dan laporan per katego
 | Kamera HP murah lambat/gagal fokus | Kasir kembali mengetik, fitur tak terpakai | Pencarian nama & tab kategori tetap ada berdampingan, bukan diganti |
 | Warung malas mendaftarkan barcode | Manfaatnya tidak pernah terasa | Pendaftaran dibuat satu alur: pindai → nama → harga → simpan. Kalau tetap tidak dipakai, itu jawaban yang berguna untuk pilot §10 PRD Toko |
 | Barang tanpa barcode terlupakan dalam desain | Kasir jadi lebih lambat untuk gorengan/es batu, yaitu barang yang justru paling sering | Tab kategori masuk MVP, bukan fase berikutnya |
+| Modal dibaca dari produk, bukan disalin | Untung bulan lalu ikut berubah setiap modal diperbarui — laporan jadi angka yang bergerak | `unit_cost` disalin ke baris pesanan sejak migrasi pertama (§6.5) |
+| Warung mengisi modal asal-asalan | Laporan untung menyesatkan, lebih buruk daripada tidak ada | Modal dibuat opsional dan produk tanpa modal dinyatakan apa adanya, bukan dihitung untung Rp0 |
 | Fitur ini menunda uji coba warung nyata | Yang paling mahal — model bisnisnya belum tervalidasi | Pertimbangkan menjalankan pilot §10 lebih dulu dengan kasir yang ada; kalau warung memang memakainya, kasir pintar jadi jauh lebih layak dibangun |
 
 ---

@@ -134,3 +134,66 @@ export async function countStoreOrdersByStore(
   );
   return Number(result.rows[0].count);
 }
+
+// PRD Kasir Pintar §9 Tahap 4: sales AND profit per category, for one
+// store over one date range.
+//
+// Three things this query gets right, each of which would be a quiet
+// error to get wrong:
+//
+// 1. It reads unit_cost from store_order_items, NEVER store_products.
+//    cost_price. §6.5: modal was frozen at checkout, so re-pricing a
+//    product today must not move last month's profit. Joining
+//    store_products here at all is only safe for the CATEGORY name; the
+//    money all comes from the frozen row.
+//
+// 2. Only PAID orders count. A pending or expired order moved no goods
+//    and earned nothing, and counting it would flatter the report.
+//
+// 3. Profit is NULL, not zero, when an item's modal was never filled in.
+//    SUM() skips NULLs silently, which would understate cost and so
+//    OVERSTATE profit — the exact wrong direction for a shopkeeper's
+//    trust. So the profit sum is guarded: it returns NULL for the whole
+//    group if any row in it lacks unit_cost, and `items_without_cost`
+//    tells the UI how many, so the screen can say "3 barang belum ada
+//    modalnya" instead of quietly printing a number that is too good.
+export interface StoreCategorySalesRow {
+  category_id: string | null;
+  category_name: string | null;
+  items_sold: string;
+  revenue: string;
+  /** Null when any item in this category has no unit_cost — see above. */
+  profit: string | null;
+  items_without_cost: string;
+}
+
+export async function sumStoreSalesByCategory(
+  storeId: string,
+  range: { from: Date; to: Date },
+  db: Queryable = pool,
+): Promise<StoreCategorySalesRow[]> {
+  const result = await db.query<StoreCategorySalesRow>(
+    `SELECT
+       p.category_id,
+       c.name AS category_name,
+       SUM(i.quantity)::text AS items_sold,
+       SUM(i.subtotal)::text AS revenue,
+       CASE
+         WHEN COUNT(*) FILTER (WHERE i.unit_cost IS NULL) > 0 THEN NULL
+         ELSE SUM(i.subtotal - (i.unit_cost * i.quantity))::text
+       END AS profit,
+       COUNT(*) FILTER (WHERE i.unit_cost IS NULL)::text AS items_without_cost
+     FROM store_order_items i
+     JOIN store_orders o ON o.id = i.order_id
+     JOIN store_products p ON p.id = i.store_product_id
+     LEFT JOIN store_product_categories c ON c.id = p.category_id
+     WHERE o.store_id = $1
+       AND o.status = 'PAID'
+       AND o.created_at >= $2
+       AND o.created_at < $3
+     GROUP BY p.category_id, c.name
+     ORDER BY SUM(i.subtotal) DESC`,
+    [storeId, range.from, range.to],
+  );
+  return result.rows;
+}

@@ -6,22 +6,33 @@ import { ArrowLeft, Loader2, Minus, PackageOpen, Plus, Search, ShoppingCart } fr
 import { ApiError } from "@/lib/api/client";
 import { formatMoney } from "@/lib/formatting/money";
 import { cn } from "@/lib/utils";
-import type { StoreProduct } from "@/types/store-product";
+import type { StoreProduct, StoreProductCategory } from "@/types/store-product";
 import { createStoreOrder, type CreateStoreOrderResponse } from "../services/toko-api";
 import { KasirQrScreen } from "./kasir-qr-screen";
 
 export interface KasirViewProps {
   storeName: string;
   products: StoreProduct[];
+  categories: StoreProductCategory[];
   basePath: string;
 }
+
+// A tab id of its own for "products the owner never filed anywhere". It
+// can't be null, because null already means "Semua" — and those products
+// still sell, so hiding them behind no tab at all would make part of the
+// shelf unreachable once an owner starts using categories.
+const UNCATEGORISED = "__tanpa-kategori__";
 
 // The cashier screen: search, tap to add, watch the total, one button to
 // turn it into a QR. Deliberately a single screen — a warung transaction
 // has to be finishable in seconds (PRD §9's Tahap 4 bar is under 30
 // seconds end to end), so there is no multi-step wizard here.
-export function KasirView({ storeName, products, basePath }: KasirViewProps) {
+export function KasirView({ storeName, products, categories, basePath }: KasirViewProps) {
   const [query, setQuery] = useState("");
+  // null = "Semua". PRD Kasir Pintar §3: the tabs exist for everything
+  // with no barcode — gorengan, es batu, rokok ketengan — which is often
+  // the fastest-moving half of the shelf.
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,11 +40,31 @@ export function KasirView({ storeName, products, basePath }: KasirViewProps) {
 
   const sellable = useMemo(() => products.filter((product) => product.is_active), [products]);
 
+  // Only categories this warung actually sells something from. A tab row
+  // listing all six when the shop stocks two is four taps of
+  // disappointment, and it pushes the useful tabs off the edge.
+  const usedCategories = useMemo(() => {
+    const present = new Set(sellable.map((product) => product.category_id));
+    return categories.filter((category) => present.has(category.id));
+  }, [sellable, categories]);
+
+  const hasUncategorised = useMemo(
+    () => sellable.some((product) => product.category_id === null),
+    [sellable],
+  );
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return sellable;
-    return sellable.filter((product) => product.name.toLowerCase().includes(needle));
-  }, [sellable, query]);
+    return sellable.filter((product) => {
+      // Search beats the tab: someone typing a name wants that product,
+      // not "that product, but only if it happens to sit in the tab I
+      // left open" — which would look like the search is broken.
+      if (needle) return product.name.toLowerCase().includes(needle);
+      if (activeCategoryId === null) return true;
+      if (activeCategoryId === UNCATEGORISED) return product.category_id === null;
+      return product.category_id === activeCategoryId;
+    });
+  }, [sellable, query, activeCategoryId]);
 
   const lines = useMemo(
     () =>
@@ -131,6 +162,35 @@ export function KasirView({ storeName, products, basePath }: KasirViewProps) {
             />
           </div>
         </div>
+
+        {/* Hidden entirely while searching: the tabs would be filtering
+            nothing, and a row of dead chips under an active search reads
+            as broken. Also hidden when there is only one group to choose
+            from, since a lone "Semua" tab is decoration. */}
+        {!query.trim() && usedCategories.length + (hasUncategorised ? 1 : 0) > 1 ? (
+          <div className="flex gap-2 overflow-x-auto px-4 pb-3">
+            <CategoryTab
+              label="Semua"
+              isActive={activeCategoryId === null}
+              onClick={() => setActiveCategoryId(null)}
+            />
+            {usedCategories.map((category) => (
+              <CategoryTab
+                key={category.id}
+                label={category.name}
+                isActive={activeCategoryId === category.id}
+                onClick={() => setActiveCategoryId(category.id)}
+              />
+            ))}
+            {hasUncategorised ? (
+              <CategoryTab
+                label="Tanpa kategori"
+                isActive={activeCategoryId === UNCATEGORISED}
+                onClick={() => setActiveCategoryId(UNCATEGORISED)}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {/* The extra bottom padding exists only to clear the fixed cart bar,
@@ -257,5 +317,35 @@ function EmptyCatalog({ basePath }: { basePath: string }) {
         Kelola Produk
       </Link>
     </div>
+  );
+}
+
+// A category chip. `shrink-0` matters more than it looks: inside the
+// horizontally scrolling row, without it the chips squeeze themselves
+// narrower instead of scrolling, and "Makanan Ringan" wraps into an
+// unreadable two-line stub.
+function CategoryTab({
+  label,
+  isActive,
+  onClick,
+}: {
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={isActive}
+      className={cn(
+        "shrink-0 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors",
+        isActive
+          ? "border-red-600 bg-red-600 text-white"
+          : "border-border bg-background text-muted-foreground hover:bg-accent",
+      )}
+    >
+      {label}
+    </button>
   );
 }

@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth/session";
 import { listStoreOrdersByStore } from "@/repositories/store-order.repository";
 import { listStoreSettlements } from "@/repositories/store.repository";
 import { listStoreProductCategories } from "@/repositories/store-product-category.repository";
+import { getMyStoreSalesReport } from "@/services/store-report.service";
 import { getMyStore, getWalletForStore } from "@/services/store.service";
 import { listMyStoreProducts } from "@/services/store-product.service";
 import {
@@ -61,9 +62,19 @@ export async function TokoKasirPage({ basePath }: TokoRouteProps) {
   // verifikasi) properly.
   if (!store || store.status !== "ACTIVE") redirect(basePath);
 
-  const products = await listMyStoreProducts(session.userId);
+  const [products, categories] = await Promise.all([
+    listMyStoreProducts(session.userId),
+    listStoreProductCategories({ onlyActive: true }),
+  ]);
 
-  return <KasirView storeName={store.name} products={products} basePath={basePath} />;
+  return (
+    <KasirView
+      storeName={store.name}
+      products={products}
+      categories={categories}
+      basePath={basePath}
+    />
+  );
 }
 
 export async function TokoProdukPage({ basePath }: TokoRouteProps) {
@@ -92,9 +103,12 @@ export async function TokoRiwayatPage({ basePath }: TokoRouteProps) {
   const store = await getMyStore(session.userId);
   if (!store) redirect(basePath);
 
-  const { orders } = await listMyStoreOrders(session.userId, { limit: 50 });
+  const [{ orders }, report] = await Promise.all([
+    listMyStoreOrders(session.userId, { limit: 50 }),
+    getMyStoreSalesReport(session.userId),
+  ]);
 
-  return <RiwayatView orders={orders} basePath={basePath} />;
+  return <RiwayatView orders={orders} report={report} basePath={basePath} />;
 }
 
 export async function TokoStrukPage({ basePath, orderId }: TokoRouteProps & { orderId: string }) {

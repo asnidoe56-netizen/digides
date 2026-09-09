@@ -6,6 +6,8 @@ import { ArrowLeft, ChevronRight, ReceiptText } from "lucide-react";
 import { formatMoney } from "@/lib/formatting/money";
 import { cn } from "@/lib/utils";
 import type { StoreOrder, StoreOrderStatus } from "@/types/store-order";
+import type { StoreSalesReport } from "@/services/store-report.service";
+import { LabaHarianCard } from "./laba-harian-card";
 import { StoreOrderStatusBadge } from "./store-status-badge";
 
 const FILTERS: Array<{ label: string; value: StoreOrderStatus | "ALL" }> = [
@@ -17,19 +19,17 @@ const FILTERS: Array<{ label: string; value: StoreOrderStatus | "ALL" }> = [
 
 export interface RiwayatViewProps {
   orders: StoreOrder[];
+  /** Today's sales and profit per category — PRD Kasir Pintar Tahap 4. */
+  report: StoreSalesReport;
   basePath: string;
 }
 
 // Filtering happens client-side over the page already fetched, not by
 // re-querying per tab — a warung's recent history is small, and an
 // instant tab switch matters more here than exactness across pages.
-export function RiwayatView({ orders, basePath }: RiwayatViewProps) {
+export function RiwayatView({ orders, report, basePath }: RiwayatViewProps) {
   const [filter, setFilter] = useState<StoreOrderStatus | "ALL">("ALL");
   const visible = filter === "ALL" ? orders : orders.filter((order) => order.status === filter);
-
-  const paidTotal = orders
-    .filter((order) => order.status === "PAID")
-    .reduce((sum, order) => sum + Number(order.total_amount), 0);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -65,10 +65,13 @@ export function RiwayatView({ orders, basePath }: RiwayatViewProps) {
       </div>
 
       <div className="flex flex-col gap-4 px-4 pb-6">
-        <div className="rounded-2xl border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Total penjualan lunas (halaman ini)</p>
-          <p className="mt-1 text-2xl font-bold">{formatMoney(paidTotal)}</p>
-        </div>
+        {/* Replaces the old "total penjualan lunas (halaman ini)" card.
+            That figure was scoped to whatever happened to be on this page
+            — an implementation detail leaking into the UI, and a number
+            that quietly changed meaning as the history grew. "Hari ini"
+            is a figure a shopkeeper can actually check against their own
+            cash box. */}
+        <LabaHarianCard report={report} />
 
         {visible.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed px-6 py-12 text-center">

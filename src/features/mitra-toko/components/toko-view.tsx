@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
   ChevronRight,
@@ -24,6 +25,7 @@ import type { StoreOrder } from "@/types/store-order";
 import type { Wallet as WalletType } from "@/types/wallet";
 import { getMyStore } from "../services/toko-api";
 import { StoreOrderStatusBadge, StoreStatusBadge } from "./store-status-badge";
+import { SettleBalanceDialog } from "./settle-balance-dialog";
 import { StoreRegisterForm } from "./store-register-form";
 
 export interface TokoViewProps {
@@ -209,6 +211,7 @@ function TokoDashboard({
   const [visible, setVisible] = useState(true);
   const [balance, setBalance] = useState(wallet?.available_balance ?? "0");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSettling, setIsSettling] = useState(false);
 
   // Same discipline as the Beranda balance card: always re-read from the
   // server, never recompute locally, so the figure on screen can't drift
@@ -267,8 +270,18 @@ function TokoDashboard({
             </button>
           </div>
           <p className="mt-2 text-xs text-white/75">
-            Saldo ini bisa langsung dibelanjakan untuk kulakan pulsa &amp; token di Digides.
+            Pindahkan ke saldo utama Anda untuk dipakai kulakan pulsa &amp; token.
           </p>
+
+          <button
+            type="button"
+            onClick={() => setIsSettling(true)}
+            disabled={Number(balance) <= 0}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-red-600 disabled:opacity-50"
+          >
+            <ArrowDownToLine className="size-4" />
+            Pindahkan ke Saldo Utama
+          </button>
         </div>
       </div>
 
@@ -357,6 +370,10 @@ function TokoDashboard({
           )}
         </div>
       </div>
+
+      {isSettling ? (
+        <SettleBalanceDialog storeBalance={balance} onClose={() => setIsSettling(false)} />
+      ) : null}
     </div>
   );
 }

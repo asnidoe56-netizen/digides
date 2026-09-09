@@ -46,6 +46,73 @@ export async function findStoreByOwnerUserId(ownerUserId: string, db: Queryable 
   return result.rows[0] ?? null;
 }
 
+// --- store_settlements ---------------------------------------------------
+
+export interface StoreSettlement {
+  id: string;
+  idempotency_key: string;
+  store_id: string;
+  store_wallet_id: string;
+  destination_wallet_id: string;
+  amount: string;
+  created_by: string;
+  created_at: Date;
+}
+
+export interface CreateStoreSettlementInput {
+  idempotency_key: string;
+  store_id: string;
+  store_wallet_id: string;
+  destination_wallet_id: string;
+  amount: string | number;
+  created_by: string;
+}
+
+export interface CreateStoreSettlementResult {
+  settlement: StoreSettlement;
+  /** true if a settlement with this idempotency_key already existed. */
+  alreadyExisted: boolean;
+}
+
+// Idempotent insert via ON CONFLICT DO NOTHING rather than try/catch on
+// the UNIQUE violation — this always runs inside an open withTransaction,
+// where a caught exception would leave the whole Postgres transaction
+// aborted and the fallback lookup would fail too. Same shape, same
+// reasoning, as createWalletTransfer and createTransaction; see §5b of
+// FLOW_KERJA_DAN_BATASAN_KERJA_TRANSAKSI.md for why that matters.
+export async function createStoreSettlement(
+  input: CreateStoreSettlementInput,
+  db: Queryable = pool,
+): Promise<CreateStoreSettlementResult> {
+  const result = await db.query<StoreSettlement>(
+    `INSERT INTO store_settlements (
+       idempotency_key, store_id, store_wallet_id, destination_wallet_id, amount, created_by
+     ) VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (idempotency_key) DO NOTHING
+     RETURNING *`,
+    [
+      input.idempotency_key,
+      input.store_id,
+      input.store_wallet_id,
+      input.destination_wallet_id,
+      input.amount,
+      input.created_by,
+    ],
+  );
+  if (result.rows[0]) {
+    return { settlement: result.rows[0], alreadyExisted: false };
+  }
+
+  const existing = await db.query<StoreSettlement>(
+    `SELECT * FROM store_settlements WHERE idempotency_key = $1`,
+    [input.idempotency_key],
+  );
+  if (!existing.rows[0]) {
+    throw new Error("Gagal memindahkan saldo: konflik idempotency_key tanpa baris yang bisa ditemukan");
+  }
+  return { settlement: existing.rows[0], alreadyExisted: true };
+}
+
 // --- Super Admin: daftar toko -------------------------------------------
 
 export interface StoreListItem extends Store {

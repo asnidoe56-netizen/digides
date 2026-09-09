@@ -4,7 +4,6 @@ import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 import { getSession } from "@/lib/auth/session";
 import { executeTransaction, type TransactionAuth } from "@/services/transaction.service";
 import { getWalletForMitraSession } from "@/services/wallet.service";
-import { getSpendableStoreWalletForOwner } from "@/services/store.service";
 
 const mobileBiometricAssertionSchema = z.object({
   credentialId: z.string().min(1),
@@ -40,14 +39,6 @@ const executeSchema = z
     // mitra ran one right before submitting — see ExecuteTransactionInput.
     // customerName's doc comment. Purely denormalized display data.
     customerName: z.string().trim().max(255).optional(),
-    // Which of the caller's OWN wallets funds this purchase. Absent means
-    // PERSONAL, which is byte-for-byte today's behaviour — both existing
-    // clients (web and the mitra app) send nothing and are unaffected.
-    // "STORE" spends the caller's own store's balance, the one thing a
-    // store wallet is allowed to do with its money (PRD Digides Toko §1,
-    // §6 rule 9). This is a *source selector*, never a wallet id: the
-    // actual wallet is still resolved entirely server-side below.
-    payWith: z.enum(["PERSONAL", "STORE"]).optional(),
   })
   .refine(
     (data) =>
@@ -57,11 +48,16 @@ const executeSchema = z
 
 // The buyer-facing counterpart to transaction.service.ts's executeTransaction
 // — walletId is always resolved server-side from the caller's own session
-// (never trusted from the request body), so this can only ever spend a
-// wallet the caller themselves owns. `payWith` picks WHICH of their own
-// wallets (personal by default, or their own store's), and is the only
-// influence a client has over that choice; see
-// FLOW_KERJA_DAN_BATASAN_KERJA_TRANSAKSI.md §5c.
+// (never trusted from the request body), so this can only ever spend the
+// caller's own wallet.
+//
+// A purchase is ALWAYS funded from the caller's personal/operating wallet.
+// The `payWith: "STORE"` option that briefly existed here was withdrawn on
+// 2026-09-09 (see §5d of FLOW_KERJA_DAN_BATASAN_KERJA_TRANSAKSI.md): store
+// money now reaches a purchase only after its owner explicitly moves it
+// into this wallet ("Pindahkan ke Saldo Utama"), which keeps the store's
+// own ledger readable as a shop's ledger. Do not reintroduce a
+// store-funded purchase path here without a fresh product decision.
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) {
@@ -77,19 +73,7 @@ export async function POST(request: Request) {
     );
   }
 
-  let wallet;
-  if (parsed.data.payWith === "STORE") {
-    try {
-      wallet = await getSpendableStoreWalletForOwner(session.userId);
-    } catch (error) {
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : "Wallet toko tidak ditemukan" },
-        { status: 400 },
-      );
-    }
-  } else {
-    wallet = await getWalletForMitraSession(session.userId, session.roles);
-  }
+  const wallet = await getWalletForMitraSession(session.userId, session.roles);
   if (!wallet) {
     return NextResponse.json({ error: "Wallet tidak ditemukan untuk akun ini" }, { status: 400 });
   }

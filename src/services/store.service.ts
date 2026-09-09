@@ -1,7 +1,15 @@
 import { withTransaction } from "@/lib/db/transaction";
-import { createStore, findStoreByOwnerUserId, findStoreById, verifyStore as verifyStoreRow } from "@/repositories/store.repository";
-import { provisionWalletForAccount, findWalletByOwner } from "@/repositories/wallet.repository";
+import {
+  createStore,
+  createStoreSettlement,
+  findStoreByOwnerUserId,
+  findStoreById,
+  verifyStore as verifyStoreRow,
+} from "@/repositories/store.repository";
+import { provisionWalletForAccount, findWalletByOwner, postLedgerEntry } from "@/repositories/wallet.repository";
 import { recordAuditLog } from "@/repositories/audit.repository";
+import { verifyTransactionPin } from "@/services/auth.service";
+import { getWalletForMitraSession } from "@/services/wallet.service";
 import type { Wallet } from "@/types/wallet";
 import type { Store } from "@/types/store";
 
@@ -14,31 +22,117 @@ export async function getWalletForStore(storeId: string): Promise<Wallet | null>
   return findWalletByOwner("STORE", storeId);
 }
 
-// PRD Digides Toko §1's closing loop and §6 rule 9: a store's balance is
-// spendable ONLY inside the Digides catalog (a PPOB purchase) and can never
-// leave as a transfer. This resolver is the "spend" half of that rule made
-// real — before Tahap 3.5 a store wallet could receive sales but had no way
-// to spend anything, which left the whole economic premise of the feature
-// ("jualan sembako Anda otomatis jadi modal jualan pulsa") unreachable.
+export interface SettleStoreBalanceInput {
+  ownerUserId: string;
+  ownerRoles: string[];
+  /** Rupiah, a positive whole number. */
+  amount: number;
+  pin: string;
+  /** Client-generated, same role as a purchase's own: a retried request
+   *  (double-tap, a timed-out request the app resubmits) with the same key
+   *  is a safe no-op, never a second move. */
+  idempotencyKey: string;
+}
+
+// "Pindahkan ke Saldo Utama" — a store owner moving their own store's
+// balance into their own main/operating wallet, which since 2026-09-09 is
+// the only way store money reaches a PPOB purchase.
 //
-// Deliberately separate from getWalletForStore: this one enforces the
-// conditions for SPENDING (the caller really owns this store, and the store
-// is verified), whereas getWalletForStore is the neutral lookup used for
-// crediting a sale. Callers never pass a store id — it is always resolved
-// from the caller's own session, so this cannot reach anyone else's store.
-export async function getSpendableStoreWalletForOwner(ownerUserId: string): Promise<Wallet> {
-  const store = await findStoreByOwnerUserId(ownerUserId);
+// This is NOT a withdrawal and NOT a transfer: both wallets belong to the
+// same person, and §6 rule 9's ban on a store wallet sending balance to
+// another *user* is untouched — transferToDownline still resolves only
+// through getWalletForMitraSession, which never returns a store wallet.
+// The dedicated STORE_SETTLEMENT_* ledger types keep that distinction
+// legible instead of hiding an internal move among peer transfers.
+//
+// Why it exists: the store's ledger should read as a shop's ledger. When
+// store balance funded purchases directly, that ledger filled with
+// RESERVE/DEBIT/RELEASE rows and backup-SKU noise, which would make the
+// books unreadable once the cashier grows refunds, shifts and supplier
+// purchases.
+export async function settleStoreBalance(input: SettleStoreBalanceInput) {
+  if (!Number.isInteger(input.amount) || input.amount <= 0) {
+    throw new Error("Nominal pemindahan tidak valid");
+  }
+
+  await verifyTransactionPin(input.ownerUserId, input.pin);
+
+  const store = await findStoreByOwnerUserId(input.ownerUserId);
   if (!store) {
     throw new Error("Anda belum memiliki toko terdaftar");
   }
   if (store.status !== "ACTIVE") {
-    throw new Error("Toko Anda belum diverifikasi, saldonya belum bisa dibelanjakan");
+    throw new Error("Toko Anda belum diverifikasi, saldonya belum bisa dipindahkan");
   }
-  const wallet = await getWalletForStore(store.id);
-  if (!wallet) {
+
+  const [storeWallet, destinationWallet] = await Promise.all([
+    getWalletForStore(store.id),
+    getWalletForMitraSession(input.ownerUserId, input.ownerRoles),
+  ]);
+  if (!storeWallet) {
     throw new Error("Wallet toko tidak ditemukan");
   }
-  return wallet;
+  if (!destinationWallet) {
+    throw new Error("Saldo utama Anda tidak ditemukan");
+  }
+
+  return withTransaction(async (client) => {
+    // Claims the move before either ledger leg is posted, so a retry with
+    // the same key returns the original result instead of moving twice.
+    const { settlement, alreadyExisted } = await createStoreSettlement(
+      {
+        idempotency_key: input.idempotencyKey,
+        store_id: store.id,
+        store_wallet_id: storeWallet.id,
+        destination_wallet_id: destinationWallet.id,
+        amount: input.amount,
+        created_by: input.ownerUserId,
+      },
+      client,
+    );
+
+    if (alreadyExisted) {
+      return { settlementId: settlement.id, amount: input.amount, storeName: store.name };
+    }
+
+    await postLedgerEntry(client, {
+      walletId: storeWallet.id,
+      type: "STORE_SETTLEMENT_OUT",
+      amount: input.amount,
+      channel: "WEB",
+      settlementId: settlement.id,
+      reference: settlement.id,
+      createdBy: input.ownerUserId,
+    });
+
+    await postLedgerEntry(client, {
+      walletId: destinationWallet.id,
+      type: "STORE_SETTLEMENT_IN",
+      amount: input.amount,
+      channel: "WEB",
+      settlementId: settlement.id,
+      reference: settlement.id,
+      createdBy: input.ownerUserId,
+    });
+
+    await recordAuditLog(
+      {
+        actor_user_id: input.ownerUserId,
+        action: "STORE_BALANCE_SETTLED",
+        entity: "stores",
+        entity_id: store.id,
+        new_value: {
+          amount: input.amount,
+          store_wallet_id: storeWallet.id,
+          destination_wallet_id: destinationWallet.id,
+          settlement_id: settlement.id,
+        },
+      },
+      client,
+    );
+
+    return { settlementId: settlement.id, amount: input.amount, storeName: store.name };
+  });
 }
 
 export interface RegisterStoreInput {

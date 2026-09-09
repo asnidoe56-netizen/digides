@@ -24,6 +24,23 @@ export interface RegisterStoreInput {
   addressDetail?: string;
 }
 
+export interface SettleStoreBalanceInput {
+  amount: number;
+  pin: string;
+  idempotencyKey: string;
+}
+
+/// Moves store balance into the owner's own main wallet — the only route
+/// by which store money funds a PPOB purchase. Not a withdrawal: both
+/// wallets belong to the same person, and the server resolves both of them
+/// from the session.
+export function settleStoreBalance(input: SettleStoreBalanceInput) {
+  return apiFetch<{ result: { settlementId: string; amount: number; storeName: string } }>(
+    "/api/stores/settle",
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
 export function registerStore(input: RegisterStoreInput) {
   return apiFetch<{ store: Store; wallet: Wallet }>("/api/stores", {
     method: "POST",

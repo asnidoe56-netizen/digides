@@ -272,6 +272,7 @@ export interface PostLedgerEntryInput {
   channel: WalletChannel;
   transactionId?: string | null;
   transferId?: string | null;
+  settlementId?: string | null;
   reference?: string | null;
   createdBy?: string | null;
 }
@@ -326,11 +327,13 @@ export async function postLedgerEntry(
       case "COMMISSION":
       case "TRANSFER_IN":
       case "SALE_IN":
+      case "STORE_SETTLEMENT_IN":
         availableDelta = amount;
         break;
       case "PAYOUT":
       case "TRANSFER_OUT":
       case "SALE_OUT":
+      case "STORE_SETTLEMENT_OUT":
         availableDelta = -amount;
         break;
     }
@@ -355,13 +358,14 @@ export async function postLedgerEntry(
 
   const ledgerResult = await client.query<WalletLedgerEntry>(
     `INSERT INTO wallet_ledger (
-       wallet_id, transaction_id, transfer_id, type, amount, balance_before, balance_after, reference, channel, created_by
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       wallet_id, transaction_id, transfer_id, settlement_id, type, amount, balance_before, balance_after, reference, channel, created_by
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
     [
       input.walletId,
       input.transactionId ?? null,
       input.transferId ?? null,
+      input.settlementId ?? null,
       input.type,
       amount,
       availableBefore,
@@ -453,8 +457,8 @@ export async function verifyLedgerConsistency(
   const ledgerResult = await db.query<{ sum: string | null }>(
     `SELECT SUM(
        CASE
-         WHEN type IN ('RESERVE', 'PAYOUT', 'TRANSFER_OUT', 'SALE_OUT') THEN -amount
-         WHEN type IN ('RELEASE', 'REFUND', 'TOPUP', 'COMMISSION', 'TRANSFER_IN', 'SALE_IN') THEN amount
+         WHEN type IN ('RESERVE', 'PAYOUT', 'TRANSFER_OUT', 'SALE_OUT', 'STORE_SETTLEMENT_OUT') THEN -amount
+         WHEN type IN ('RELEASE', 'REFUND', 'TOPUP', 'COMMISSION', 'TRANSFER_IN', 'SALE_IN', 'STORE_SETTLEMENT_IN') THEN amount
          WHEN type = 'ADJUSTMENT' THEN amount
          ELSE 0
        END
@@ -783,6 +787,8 @@ export async function sumLedgerAmountsByType(
     TRANSFER_IN: "0",
     SALE_OUT: "0",
     SALE_IN: "0",
+    STORE_SETTLEMENT_OUT: "0",
+    STORE_SETTLEMENT_IN: "0",
   };
   for (const row of result.rows) {
     totals[row.type] = row.total;

@@ -14,11 +14,10 @@ import { getTransactionBiometricOptions, listMyBiometricCredentials } from "@/fe
 import { MERCHANDISING_LABELS, type MerchandisingFilter } from "../lib/merchandising-config";
 import { MerchandisingTabs } from "./merchandising-tabs";
 import { FeatureBadges, PromoBanner, PromoFooterCard } from "./promo-highlights";
-import { PaymentSourcePicker, type PaymentSource } from "./payment-source-picker";
 import { PurchaseConfirmationScreen } from "./purchase-confirmation-screen";
 import { PurchasePinScreen } from "./purchase-pin-screen";
 import { PurchaseResultScreen, type PurchaseResultStatus } from "./purchase-result-screen";
-import { executePurchase, getLiveProductPrice, getSpendableStore, getTransaction, verifyCustomerName } from "../services/purchase-api";
+import { executePurchase, getLiveProductPrice, getTransaction, verifyCustomerName } from "../services/purchase-api";
 
 export interface CustomerIdFieldConfig {
   /** e.g. "Nomor Tujuan" (telco/e-money/PLN) or "ID Game" (Games). */
@@ -171,11 +170,6 @@ export function CategoryPurchaseFlow({
   // Filled in only once a live, single-SKU Digiflazz check succeeds (see
   // handleProceedToConfirm) — null means "still showing the page-load
   // estimate," which is what the browse screen's bottom bar shows.
-  // Which of the caller's own wallets pays. Always starts PERSONAL, so a
-  // mitra without a store — and a mitra who simply doesn't choose — keeps
-  // exactly the behaviour they had before store wallets existed.
-  const [paymentSource, setPaymentSource] = useState<PaymentSource>("PERSONAL");
-  const [myStore, setMyStore] = useState<{ name: string; balance: string } | null>(null);
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [isCheckingPrice, setIsCheckingPrice] = useState(false);
   const [priceCheckError, setPriceCheckError] = useState<string | null>(null);
@@ -239,26 +233,6 @@ export function CategoryPurchaseFlow({
   // not on page load, and not re-checked on every render. A device with no
   // platform authenticator, or an account with zero registered
   // credentials, simply never sees the "Gunakan Biometrik" button.
-  // Asked once, when the mitra reaches the confirmation screen — not on
-  // page load, since the overwhelming majority of purchases are made by
-  // someone with no store at all and shouldn't pay for an extra request
-  // just to browse a catalogue. A failure here silently leaves the picker
-  // hidden: the personal wallet is the correct default either way.
-  useEffect(() => {
-    if (phase !== "confirm" || myStore !== null) return;
-    let cancelled = false;
-    getSpendableStore()
-      .then((store) => {
-        if (!cancelled && store) setMyStore(store);
-      })
-      .catch(() => {
-        // No store, not verified, or offline — keep the single-wallet flow.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [phase, myStore]);
-
   useEffect(() => {
     if (phase !== "pin" || !browserSupportsWebAuthn()) return;
     let cancelled = false;
@@ -361,7 +335,6 @@ export function CategoryPurchaseFlow({
         idempotencyKey,
         auth,
         customerName: verifiedName ?? undefined,
-        payWith: paymentSource,
       });
 
       if (transaction.status === "SUCCESS") {
@@ -520,21 +493,8 @@ export function CategoryPurchaseFlow({
         verifiedTariffPower={verifiedTariffPower}
         nominalLabel={extractNominalLabel(selectedProduct.product_name, categoryName, selectedBrand.name)}
         price={sellingPrice}
-        availableBalance={paymentSource === "STORE" && myStore ? myStore.balance : availableBalance}
-        paymentSourceLabel={paymentSource === "STORE" && myStore ? myStore.name : undefined}
+        availableBalance={availableBalance}
         referenceId={idempotencyKey}
-        paymentSourcePicker={
-          myStore ? (
-            <PaymentSourcePicker
-              value={paymentSource}
-              onChange={setPaymentSource}
-              personalBalance={availableBalance}
-              storeName={myStore.name}
-              storeBalance={myStore.balance}
-              price={sellingPrice}
-            />
-          ) : null
-        }
         onBack={() => {
           setLivePrice(null);
           setPhase("browse");

@@ -48,6 +48,8 @@ export async function GET(request: Request) {
           TRANSFER_IN: "0",
           SALE_OUT: "0",
           SALE_IN: "0",
+          STORE_SETTLEMENT_OUT: "0",
+          STORE_SETTLEMENT_IN: "0",
         }),
     wallet ? sumTransactionVolume(filter) : Promise.resolve({ count: 0, total_value: "0" }),
   ]);

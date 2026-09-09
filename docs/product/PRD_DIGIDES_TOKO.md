@@ -1,13 +1,17 @@
 # PRD Digides Toko
 
-> **Versi 2.7 · 9 September 2026 · Tahap 1–4 selesai (web + Flutter), terverifikasi di produksi**
-> Menggantikan PRD v1.0/v2.1/v2.2/v2.3/v2.4/v2.5/v2.6. Versi berformat (belum disinkronkan ke v2.7): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
+> **Versi 2.8 · 9 September 2026 · Tahap 1–4 selesai (web + Flutter), terverifikasi di produksi**
+> Menggantikan PRD v1.0/v2.1/v2.2/v2.3/v2.4/v2.5/v2.6/v2.7. Versi berformat (belum disinkronkan ke v2.8): https://claude.ai/code/artifact/024b6af2-f941-4ca5-958a-ab67a536ffea
 
 Saluran distribusi saldo untuk bisnis PPOB Digides — warung mendapat modal jualan pulsa dari hasil belanja pelanggannya, tanpa perlu ke bank.
 
 **Status pengerjaan**: Tahap 1, 2, 3, 3.5, dan 4 (§9) sudah dikerjakan dan diverifikasi — lihat §7a (Tahap 1), §9a (Tahap 2), §9b (Tahap 3), §9c (Tahap 3.5), §9d (Tahap 4) untuk rinciannya. Seluruh migrasi Toko (`044`–`049`) sudah diterapkan. Antarmukanya sudah jadi **di web** (sumber kebenaran proyek ini) **dan sudah diport ke aplikasi mitra Flutter**, memakai API yang sama persis tanpa perubahan backend. Verifikasi toko oleh Super Admin juga sudah punya menunya sendiri (`/dashboard/super-admin/toko`) — sebelumnya endpoint verifikasinya ada tapi tak punya tombol, sehingga tidak ada toko yang bisa aktif tanpa panggilan API manual.
 
 **Sudah terbukti di produksi dengan uang sungguhan** — satu warung nyata ("Alfat Mart") menerima pembayaran Rp28.000 dari pembeli nyata, lengkap dengan dua kaki ledger, pengurangan stok, dan satu pesanan lain yang kedaluwarsa dengan bersih. Rinciannya di §8a.
+
+**Perubahan aturan 9 September 2026 — saldo toko dipindahkan dulu, tidak lagi membelanjakan langsung.** Kemampuan membeli langsung dari dompet toko (`payWith: "STORE"`, dibangun 8 September) **ditarik kembali** atas keputusan pemilik produk. Sekarang pemilik toko memindahkan saldonya lebih dulu ke saldo utamanya sendiri lewat **"Pindahkan ke Saldo Utama"**, lalu berbelanja seperti mitra biasa. Alasannya pembukuan: buku toko harus terbaca sebagai buku warung, bukan tercampur baris `RESERVE`/`DEBIT`/`RELEASE` dan keriuhan SKU cadangan — yang akan jadi masalah nyata begitu kasirnya tumbuh punya refund, shift, dan kulakan supplier. Rinciannya di §9e; amandemen alur terkuncinya di Bagian 5d.
+
+**Dua aturan komisi yang menyertainya** (diputuskan eksplisit, mudah tertukar): pelanggan yang belanja di warung **tidak** memberi komisi kepada siapa pun — ini terjamin secara struktur, karena mesin komisi hanya dipicu transaksi PPOB dan pembayaran toko tidak pernah menyentuhnya. Sebaliknya, pemilik toko yang membeli pulsa dengan saldo yang sudah dipindahkan **tetap** memberi komisi ke upline-nya, seperti pembelian biasa.
 
 **Tahap 3.5 muncul dari audit atas hasil Tahap 3** (bukan dari rencana awal): pemeriksaan ulang terhadap dokumen ini menemukan empat lubang yang membuat fitur belum bisa dipakai warung nyata — termasuk satu yang membatalkan premis ekonomi §1, yaitu saldo toko yang ternyata sama sekali tidak bisa dibelanjakan. Rinciannya di §9c.
 
@@ -381,6 +385,34 @@ Diuji ujung ke ujung di browser sungguhan (Playwright, viewport ponsel), bukan h
 Dua cacat ditemukan lewat pengujian ini dan sudah diperbaiki: **ketidakcocokan hidrasi React** pada hitung mundur (dihitung saat render di server lalu berbeda sedetik di klien — kini dihitung khusus di klien), dan ruang kosong besar di Kasir karena padding untuk bar keranjang selalu aktif (kini hanya saat keranjang terisi).
 
 **Belum termasuk**: port ke aplikasi mitra Flutter (memakai API yang sama, tanpa perubahan backend), dan pemindai kamera sisi pembeli — di web pembeli membuka tautan `/bayar/<id>`, sedangkan pemindaian QR memang milik aplikasi Flutter yang pemindainya sudah ada (§2).
+
+---
+
+## 9e. Pemindahan saldo toko — mengganti pembelian langsung (9 September 2026)
+
+Sehari setelah §9c membuka kemampuan membelanjakan saldo toko langsung, pemilik produk memutuskan menggantinya dengan **pemindahan eksplisit**. Ini bukan pembatalan lingkaran §1 — lingkarannya tetap tertutup, hanya lewat satu langkah yang terlihat.
+
+**Aturan yang berlaku sekarang:**
+
+```
+Toko (sembako)   →  Pindahkan ke Saldo Utama  →  Mitra (pulsa)
+  SALE_IN            STORE_SETTLEMENT_OUT/IN       RESERVE → DEBIT
+```
+
+**Kenapa.** Buku toko harus terbaca sebagai buku warung. Saat saldo toko mendanai pembelian secara langsung, ledger toko ikut terisi `RESERVE`/`DEBIT`/`RELEASE`, percobaan yang gagal, dan pergantian SKU cadangan. Untuk hari ini masih terbaca; begitu kasirnya tumbuh punya refund, shift kasir, bayar karyawan, dan kulakan dari supplier, pembukuannya jadi tidak bisa dipakai. Efek sampingnya justru bagus: kalimat §1 — *"jualan sembako Anda otomatis jadi modal jualan pulsa"* — berhenti jadi kiasan dan menjadi satu baris ledger yang benar-benar ada.
+
+**Yang dibangun:**
+
+1. **Migrasi `050_store_settlement.sql`** — dua jenis ledger baru `STORE_SETTLEMENT_OUT`/`STORE_SETTLEMENT_IN`, tabel `store_settlements` ber-`idempotency_key UNIQUE` (append-only), dan kolom `wallet_ledger.settlement_id`. Sengaja **bukan** `TRANSFER_OUT/IN`: pasangan itu berarti "kirim ke pengguna lain", sesuatu yang aturan §6 no. 9 larang untuk dompet toko. Ini hal berbeda — satu orang memindahkan uangnya sendiri antara dua dompet miliknya.
+2. **`settleStoreBalance`** (`store.service.ts`) + `POST /api/stores/settle` — digerbang PIN, hanya toko `ACTIVE`, kedua dompet diresolusi di server, baris settlement diklaim lebih dulu sebelum kaki ledger mana pun diposting.
+3. **UI "Pindahkan ke Saldo Utama"** di dasbor Toko, web dan Flutter.
+4. **`payWith` dihapus** dari titik masuk pembelian di ketiga tempat (route, web, Flutter). Amandemen §5d dokumen alur terkunci mencatat penarikannya.
+
+**Aturan §6 no. 9 tetap utuh**: dompet toko tetap tidak pernah bisa mengirim saldo ke pengguna lain. `transferToDownline` tetap hanya memakai `getWalletForMitraSession`, yang menurut kontraknya tidak pernah mengembalikan dompet `STORE`.
+
+**Satu catatan riwayat**: transaksi DANA Rp1.700 pada 8 September didanai dompet toko selagi aturan lama berlaku. `listReadableWalletIds` karena itu tetap dipertahankan — tanpa itu, transaksi nyata tersebut akan hilang dari Histori pemiliknya meski dompet toko tidak akan pernah lagi jadi sumber transaksi baru.
+
+**Diverifikasi** lewat HTTP nyata di dev: pemindahan Rp5.000 memindahkan dompet toko 12.000 → 7.000 dan saldo utama 0 → 5.000, dengan tepat dua kaki ledger tertaut satu `settlement_id`; permintaan ulang dengan kunci sama mengembalikan hasil identik tanpa memindahkan dua kali (tabel `store_settlements` tetap satu baris); dan percobaan melebihi saldo toko ditolak bersih. `tsc`, `npm run build`, dan `flutter analyze` semuanya bersih.
 
 ---
 

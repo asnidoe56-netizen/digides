@@ -40,7 +40,11 @@ export type WalletLedgerType =
   | "TRANSFER_OUT"
   | "TRANSFER_IN"
   | "SALE_OUT"
-  | "SALE_IN";
+  | "SALE_IN"
+  // A store owner moving their own store's balance into their own main
+  // wallet — never a movement between two people, unlike TRANSFER_*.
+  | "STORE_SETTLEMENT_OUT"
+  | "STORE_SETTLEMENT_IN";
 
 // Where the mutation originated — issue M18 sections 11, 24, 25: every
 // channel shares the same wallet/ledger, this only records provenance for
@@ -53,6 +57,7 @@ export interface WalletLedgerEntry {
   wallet_id: string;
   transaction_id: string | null;
   transfer_id: string | null;
+  settlement_id: string | null;
   type: WalletLedgerType;
   amount: string;
   balance_before: string;

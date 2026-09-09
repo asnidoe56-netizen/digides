@@ -6,7 +6,9 @@
 >
 > Bagian 5b adalah perbaikan bug pada `createTransaction`, diinstruksikan eksplisit oleh pemilik produk pada 2026-09-08 setelah ditemukan saat mengerjakan PRD Digides Toko Tahap 1 (`docs/product/PRD_DIGIDES_TOKO.md` §7a). Ini bukan perubahan aturan — aturan #3 (idempotency) tetap sama persis — melainkan perbaikan cara aturan itu **diimplementasikan** supaya benar-benar bekerja seperti yang sudah didokumentasikan. Dibuktikan lewat reproduksi langsung di database (bug lama dan perbaikannya sama-sama direproduksi berdampingan, bukan sekadar menunggu kejadian nyata) — lihat Bagian 5b untuk buktinya.
 >
-> Bagian 5c adalah penambahan pilihan **sumber dana** pembelian (dompet pribadi, seperti selama ini, atau dompet toko milik penelepon sendiri), diinstruksikan eksplisit oleh pemilik produk pada 2026-09-08 sebagai bagian dari Tahap 3.5 PRD Digides Toko (`docs/product/PRD_DIGIDES_TOKO.md` §9c). Mesin transaksinya sendiri tidak disentuh — yang berubah hanya cara satu berkas route meresolusi dompet milik penelepon, dan tanpa field baru itu perilakunya identik dengan sebelumnya. Lihat Bagian 5c untuk jaminan dan buktinya.
+> Bagian 5c dulunya menambahkan pilihan **sumber dana** pembelian (dompet pribadi atau dompet toko sendiri), diinstruksikan pemilik produk pada 2026-09-08. **Kemampuan itu sudah ditarik kembali pada 2026-09-09** — bagiannya dibiarkan utuh sebagai catatan sejarah, tapi jangan dipakai sebagai acuan.
+>
+> Bagian 5d adalah aturan yang **berlaku sekarang**: pembelian selalu didanai saldo utama, dan saldo toko harus dipindahkan dulu ke saldo utama lewat jalur tersendiri. Diputuskan eksplisit oleh pemilik produk pada 2026-09-09 dengan alasan pembukuan — buku toko harus terbaca sebagai buku warung. Mesin transaksinya sendiri tetap tidak pernah disentuh, baik oleh 5c maupun 5d.
 
 ---
 
@@ -166,7 +168,9 @@ Komisi belum diamati secara langsung pada kejadian #2 (tergantung apakah pembeli
 
 ---
 
-## 5c. 🔒 Sumber Dana Pembelian: Dompet Pribadi atau Dompet Toko (Amandemen 2026-09-08)
+## 5c. ⛔ Sumber Dana Pembelian: Dompet Pribadi atau Dompet Toko (Amandemen 2026-09-08 — **DITARIK 2026-09-09, lihat Bagian 5d**)
+
+> **Bagian ini sudah tidak berlaku.** Kemampuan `payWith` ditarik satu hari setelah dibuat, atas keputusan pemilik produk. Isinya dibiarkan utuh sebagai catatan sejarah — supaya jelas apa yang pernah ada, apa yang sudah terbukti bekerja, dan kenapa akhirnya dilepas. Untuk aturan yang berlaku sekarang, baca Bagian 5d.
 
 **Ini penambahan pilihan sumber dana, bukan perubahan mesin transaksi.** Diinstruksikan eksplisit oleh pemilik produk pada 2026-09-08 ("kerjakan semua temuan") setelah analisis pasca-Tahap 3 menemukan bahwa saldo yang terkumpul di dompet toko sama sekali **tidak bisa dibelanjakan** — yang membatalkan seluruh premis ekonomi Digides Toko (`docs/product/PRD_DIGIDES_TOKO.md` §1: *"jualan sembako Anda otomatis jadi modal jualan pulsa"*), karena separuh "belanja" dari lingkaran itu tidak pernah dibangun.
 
@@ -189,7 +193,40 @@ Komisi belum diamati secara langsung pada kejadian #2 (tergantung apakah pembeli
 - [x] Sesudahnya: kedua saldo tidak bergerak sama sekali dan tidak ada baris `transactions` tersisa (rollback bersih).
 - [x] Saldo uji dikembalikan lewat baris ledger `ADJUSTMENT` baru (bukan UPDATE langsung, sesuai aturan #7 PRD Toko), dan hak Super Admin sementara dicabut kembali.
 - [x] Kode lulus `tsc --noEmit` dan `npm run build`.
-- [ ] **Belum diamati**: pembelian PPOB nyata yang benar-benar berhasil didanai dompet toko. Ini baru mungkin setelah Tahap 4 (UI) memberi warung cara memilih sumber dana, dan sengaja tidak dipaksakan sekarang karena satu-satunya cara membuktikannya adalah membeli produk sungguhan dengan uang sungguhan.
+- [x] **Teramati nyata di produksi (2026-09-08 18:07)**: pembelian DANA 1.000 seharga Rp1.700 oleh Sidik Mohamad benar-benar didanai dompet toko "Alfat Mart" dan berhasil di Digiflazz dalam 2 detik. Ini sekaligus satu-satunya transaksi berdana toko yang pernah ada — lihat catatan di Bagian 5d soal kenapa ia harus tetap terbaca.
+
+---
+
+## 5d. 🔒 Pembelian Selalu Didanai Saldo Utama; Saldo Toko Dipindahkan Dulu (Amandemen 2026-09-09)
+
+**Ini menarik kembali kemampuan yang ditambahkan Bagian 5c**, atas keputusan eksplisit dan sadar pemilik produk pada 2026-09-09, setelah diskusi desain yang mempertimbangkan alternatifnya lebih dulu. Aturan barunya:
+
+> Sebuah pembelian PPOB **selalu** didanai dompet pribadi/operasional penelepon. Saldo toko sampai ke pembelian hanya lewat satu jalan: pemiliknya **memindahkannya dulu** ke saldo utamanya sendiri ("Pindahkan ke Saldo Utama").
+
+**Alasannya pembukuan, bukan keamanan.** Buku toko harus terbaca sebagai buku warung. Ketika saldo toko mendanai pembelian secara langsung, ledger toko ikut terisi baris `RESERVE`/`DEBIT`/`RELEASE`, percobaan gagal, dan keriuhan SKU cadangan — yang akan membuat pembukuannya tidak terbaca begitu kasirnya tumbuh punya refund, shift, bayar karyawan, dan kulakan dari supplier. Memindahkan secara eksplisit juga membuat kalimat PRD sendiri — *"jualan sembako Anda otomatis jadi modal jualan pulsa"* — menjadi **satu baris ledger yang benar-benar ada**, bukan kiasan.
+
+**Yang berubah:**
+1. `src/app/api/transactions/execute/route.ts` — field `payWith` dihapus. Dompet kembali diresolusi tunggal lewat `getWalletForMitraSession`, persis seperti sebelum Bagian 5c. `getSpendableStoreWalletForOwner` ikut dihapus karena tidak lagi punya pemanggil.
+2. Mesin transaksinya sendiri **tetap tidak pernah disentuh**, sama seperti pada 5c.
+3. Jalur baru: `settleStoreBalance` (`src/services/store.service.ts`) + `POST /api/stores/settle`, memakai dua jenis ledger baru `STORE_SETTLEMENT_OUT`/`STORE_SETTLEMENT_IN` (migrasi `050_store_settlement.sql`) dan tabel `store_settlements` ber-`idempotency_key UNIQUE`.
+
+**Jaminan yang dipegang:**
+1. **Ini bukan pencairan dan bukan transfer.** Kedua dompet milik orang yang sama, dan keduanya diresolusi di server dari sesi — klien tidak pernah menyebut dompet mana pun.
+2. **Aturan #9 PRD Toko tetap utuh**: dompet toko tetap tidak pernah bisa mengirim saldo ke **pengguna lain**. `transferToDownline` tetap hanya memakai `getWalletForMitraSession`, yang menurut kontraknya tidak pernah mengembalikan dompet `STORE`.
+3. **Jenis ledgernya sengaja terpisah dari `TRANSFER_*`**, supaya "pindah ke dompet sendiri" tidak pernah tertukar dengan "kirim ke orang lain" di laporan maupun saat diaudit.
+4. **Idempoten**: baris `store_settlements` diklaim lebih dulu lewat `ON CONFLICT DO NOTHING` sebelum kaki ledger mana pun diposting — pola yang sama persis dengan `createWalletTransfer` dan `createTransaction` (lihat Bagian 5b soal kenapa polanya harus begitu, bukan try/catch).
+5. **Komisi — dua hal berbeda yang mudah tertukar, diputuskan eksplisit oleh pemilik produk:**
+   - **Pelanggan membayar di warung** (beli rokok, sembako) **tidak memberi komisi kepada siapa pun**. Ini terjamin secara struktur, bukan lewat pengecualian yang bisa lupa dipasang: mesin komisi hanya dipicu dari `transaction.service.ts` untuk transaksi PPOB, dan `confirmStorePayment` tidak pernah menyentuhnya.
+   - **Pemilik toko membeli pulsa/token** dengan saldo yang sudah dipindahkan **tetap memberi komisi kepada upline-nya**, seperti pembelian biasa. Tidak ada pengecualian yang diinginkan di sini. Ini juga memperbaiki keanehan sebelumnya: "pembelian toko tanpa komisi" pada Bagian 5c sebenarnya tidak pernah merupakan keputusan produk — ia jatuh begitu saja dari skema (`getOwningUserId` mengembalikan `null` untuk dompet `STORE`).
+
+**Catatan penting soal riwayat**: transaksi DANA Rp1.700 pada 2026-09-08 didanai dompet toko selagi Bagian 5c masih berlaku. Karena itu `listReadableWalletIds` (`wallet.service.ts`) **tetap dipertahankan** meski dompet toko tidak akan pernah lagi menjadi sumber transaksi baru — tanpa itu, transaksi nyata tersebut akan hilang lagi dari Histori pemiliknya.
+
+**Verifikasi — SELESAI, diuji lewat HTTP nyata di database dev:**
+- [x] Pemindahan Rp5.000 berhasil: dompet toko 12.000 → 7.000, saldo utama 0 → 5.000.
+- [x] **Idempotensi**: permintaan kedua dengan `idempotencyKey` yang sama mengembalikan `settlementId` yang sama persis, saldo **tidak** berpindah dua kali, dan tabel `store_settlements` tetap berisi **satu** baris.
+- [x] **Ledger benar**: tepat dua kaki — `STORE_SETTLEMENT_OUT` (12.000 → 7.000) dan `STORE_SETTLEMENT_IN` (0 → 5.000) — keduanya tertaut ke `settlement_id` yang sama.
+- [x] **Penjaga nominal**: percobaan memindahkan melebihi saldo toko ditolak (`"Saldo toko tidak cukup untuk pemindahan ini."`) tanpa mengubah apa pun.
+- [x] Kode lulus `tsc --noEmit`, `npm run build`, dan `flutter analyze`.
 
 ---
 
@@ -233,7 +270,7 @@ Kalau ke depan dibangun kategori PPOB baru, atau integrasi provider selain Digif
 - `src/features/mitra-histori/components/histori-detail-view.tsx`
 - **Bagian 5a (SKU cadangan otomatis)**: `src/repositories/product.repository.ts` (`findBackupProductCandidates`), `src/repositories/transaction.repository.ts` (`lockTransactionForUpdate`, `swapTransactionProductForBackup`), `src/services/commission.service.ts` (`awardCommissionForTransaction`'s profit cap), `src/features/transaction/components/transaction-detail.tsx` (catatan pergantian SKU di Super Admin), migrasi `041_transaction_backup_sku.sql`
 - **Bagian 5b (perbaikan idempotency)**: `src/repositories/transaction.repository.ts` (`createTransaction`)
-- **Bagian 5c (sumber dana pembelian)**: `src/app/api/transactions/execute/route.ts` (field `payWith`), `src/services/store.service.ts` (`getSpendableStoreWalletForOwner`)
+- **Bagian 5d (pemindahan saldo toko)**: `src/services/store.service.ts` (`settleStoreBalance`), `src/app/api/stores/settle/route.ts`, `src/repositories/store.repository.ts` (`createStoreSettlement`), migrasi `050_store_settlement.sql`. Bagian 5c (`payWith`) sudah ditarik — tidak ada berkas yang tersisa untuknya.
 
 **Flutter (`digides_mitra`):**
 - `lib/features/purchase/purchase_screen.dart` — `_submitPurchase`, `_startPolling`, `_pollOnce`

@@ -113,6 +113,22 @@ export async function createStoreSettlement(
   return { settlement: existing.rows[0], alreadyExisted: true };
 }
 
+// A store's own settlement history — "kapan saya memindahkan uang keluar".
+// The ledger already records every move, but nothing surfaced it to the
+// merchant; this is the read behind that list. Scoped by store_id, which
+// callers resolve from their own session rather than supplying.
+export async function listStoreSettlements(
+  storeId: string,
+  limit = 20,
+  db: Queryable = pool,
+): Promise<StoreSettlement[]> {
+  const result = await db.query<StoreSettlement>(
+    `SELECT * FROM store_settlements WHERE store_id = $1 ORDER BY created_at DESC LIMIT $2`,
+    [storeId, limit],
+  );
+  return result.rows;
+}
+
 // --- Super Admin: daftar toko -------------------------------------------
 
 export interface StoreListItem extends Store {
@@ -201,6 +217,25 @@ export async function countStoresByStatus(
     [status],
   );
   return Number(result.rows[0].count);
+}
+
+// Super Admin suspend/reactivate. Guarded the same compare-and-swap way
+// as verifyStore, with the allowed source status supplied by the caller so
+// the transition is always explicit: ACTIVE -> SUSPENDED to stop a store
+// taking payments, SUSPENDED -> ACTIVE to let it trade again. Deliberately
+// cannot reach a store that was never verified — a DRAFT/SUBMITTED store
+// has nothing to suspend.
+export async function setStoreStatus(
+  storeId: string,
+  fromStatus: StoreStatus,
+  toStatus: StoreStatus,
+  db: Queryable = pool,
+): Promise<Store | null> {
+  const result = await db.query<Store>(
+    `UPDATE stores SET status = $3 WHERE id = $1 AND status = $2 RETURNING *`,
+    [storeId, fromStatus, toStatus],
+  );
+  return result.rows[0] ?? null;
 }
 
 // Compare-and-swap on status, same discipline as the PPOB transaction

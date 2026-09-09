@@ -24,6 +24,18 @@ export interface RegisterStoreInput {
   addressDetail?: string;
 }
 
+export interface StoreSettlementRecord {
+  id: string;
+  amount: string;
+  created_at: string;
+}
+
+/// A merchant's own "when did I move money out" list. The ledger has
+/// always recorded every move; this is what finally shows it to them.
+export function listStoreSettlements() {
+  return apiFetch<{ settlements: StoreSettlementRecord[] }>("/api/stores/settlements");
+}
+
 export interface SettleStoreBalanceInput {
   amount: number;
   pin: string;

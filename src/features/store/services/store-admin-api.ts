@@ -10,3 +10,13 @@ export function verifyStore(storeId: string) {
     method: "POST",
   });
 }
+
+/// Stop a store trading, or let it trade again. Suspending blocks the two
+/// things that move money — creating an order and settling balance out —
+/// and never touches the balance already in the store's wallet.
+export function setStoreSuspension(storeId: string, suspend: boolean) {
+  return apiFetch<{ store: Store }>(`/api/stores/${storeId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ suspend }),
+  });
+}

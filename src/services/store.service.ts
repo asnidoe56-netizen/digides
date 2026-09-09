@@ -4,6 +4,7 @@ import {
   createStoreSettlement,
   findStoreByOwnerUserId,
   findStoreById,
+  setStoreStatus,
   verifyStore as verifyStoreRow,
 } from "@/repositories/store.repository";
 import { provisionWalletForAccount, findWalletByOwner, postLedgerEntry } from "@/repositories/wallet.repository";
@@ -62,7 +63,14 @@ export async function settleStoreBalance(input: SettleStoreBalanceInput) {
     throw new Error("Anda belum memiliki toko terdaftar");
   }
   if (store.status !== "ACTIVE") {
-    throw new Error("Toko Anda belum diverifikasi, saldonya belum bisa dipindahkan");
+    // A suspended store is not an unverified one — saying "belum
+    // diverifikasi" to an owner whose store was suspended would send them
+    // looking for a verification that already happened.
+    throw new Error(
+      store.status === "SUSPENDED"
+        ? "Toko Anda sedang ditangguhkan, saldonya belum bisa dipindahkan"
+        : "Toko Anda belum diverifikasi, saldonya belum bisa dipindahkan",
+    );
   }
 
   const [storeWallet, destinationWallet] = await Promise.all([
@@ -220,4 +228,41 @@ export async function verifyStore(storeId: string, verifiedByUserId: string): Pr
   });
 
   return verified;
+}
+
+// Super Admin: stop a store trading, or let it trade again. Suspending
+// blocks the two things that move money — creating an order (kasir) and
+// settling balance out — because both require an ACTIVE store; it never
+// touches the balance already sitting in the store's wallet, and the
+// owner can still read their own history.
+export async function setStoreSuspension(
+  storeId: string,
+  suspend: boolean,
+  actorUserId: string,
+): Promise<Store> {
+  const store = await findStoreById(storeId);
+  if (!store) {
+    throw new Error("Toko tidak ditemukan");
+  }
+
+  const from = suspend ? "ACTIVE" : "SUSPENDED";
+  const to = suspend ? "SUSPENDED" : "ACTIVE";
+  const updated = await setStoreStatus(storeId, from, to);
+  if (!updated) {
+    throw new Error(
+      suspend
+        ? `Toko berstatus ${store.status}, hanya toko aktif yang bisa ditangguhkan`
+        : `Toko berstatus ${store.status}, hanya toko yang ditangguhkan yang bisa diaktifkan`,
+    );
+  }
+
+  await recordAuditLog({
+    actor_user_id: actorUserId,
+    action: suspend ? "STORE_SUSPENDED" : "STORE_REACTIVATED",
+    entity: "stores",
+    entity_id: storeId,
+    new_value: { status: to },
+  });
+
+  return updated;
 }

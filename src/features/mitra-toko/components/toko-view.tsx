@@ -28,10 +28,19 @@ import { StoreOrderStatusBadge, StoreStatusBadge } from "./store-status-badge";
 import { SettleBalanceDialog } from "./settle-balance-dialog";
 import { StoreRegisterForm } from "./store-register-form";
 
+export interface StoreSettlementSummary {
+  id: string;
+  amount: string;
+  created_at: Date | string;
+}
+
 export interface TokoViewProps {
   store: Store | null;
   wallet: WalletType | null;
   recentOrders: StoreOrder[];
+  /** "Kapan saya memindahkan uang keluar" — the ledger has always
+   *  recorded these, but nothing showed them to the merchant. */
+  recentSettlements: StoreSettlementSummary[];
   /** e.g. "/dashboard/bumdes/toko" — every sub-route is derived from it. */
   basePath: string;
   homeHref: string;
@@ -40,14 +49,30 @@ export interface TokoViewProps {
 // The Toko section's home. Three genuinely different screens rather than
 // one screen with things greyed out, because the three states are three
 // different jobs: convince, wait, operate.
-export function TokoView({ store, wallet, recentOrders, basePath, homeHref }: TokoViewProps) {
+export function TokoView({
+  store,
+  wallet,
+  recentOrders,
+  recentSettlements,
+  basePath,
+  homeHref,
+}: TokoViewProps) {
   if (!store) {
     return <TokoOnboarding homeHref={homeHref} />;
   }
   if (store.status !== "ACTIVE") {
     return <TokoPending store={store} homeHref={homeHref} />;
   }
-  return <TokoDashboard store={store} wallet={wallet} recentOrders={recentOrders} basePath={basePath} homeHref={homeHref} />;
+  return (
+    <TokoDashboard
+      store={store}
+      wallet={wallet}
+      recentOrders={recentOrders}
+      recentSettlements={recentSettlements}
+      basePath={basePath}
+      homeHref={homeHref}
+    />
+  );
 }
 
 function TokoHeader({ title, backHref }: { title: string; backHref: string }) {
@@ -199,12 +224,14 @@ function TokoDashboard({
   store,
   wallet,
   recentOrders,
+  recentSettlements,
   basePath,
   homeHref,
 }: {
   store: Store;
   wallet: WalletType | null;
   recentOrders: StoreOrder[];
+  recentSettlements: StoreSettlementSummary[];
   basePath: string;
   homeHref: string;
 }) {
@@ -370,6 +397,41 @@ function TokoDashboard({
           )}
         </div>
       </div>
+
+      {/* Shown only once there is something to show — a merchant who has
+          never moved money doesn't need an empty card explaining a
+          feature they haven't used. */}
+      {recentSettlements.length > 0 ? (
+        <div className="flex flex-col gap-3 px-4 pb-6">
+          <h2 className="font-semibold">Pemindahan Terakhir</h2>
+          <div className="flex flex-col gap-2">
+            {recentSettlements.map((settlement) => (
+              <div
+                key={settlement.id}
+                className="flex items-center justify-between gap-3 rounded-2xl border bg-card p-3"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                    <ArrowDownToLine className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="font-semibold">{formatMoney(settlement.amount)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(settlement.created_at).toLocaleString("id-ID", {
+                        day: "numeric",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+                </div>
+                <span className="shrink-0 text-xs text-muted-foreground">ke Saldo Utama</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {isSettling ? (
         <SettleBalanceDialog storeBalance={balance} onClose={() => setIsSettling(false)} />

@@ -90,7 +90,14 @@ export async function createStoreOrder(input: CreateStoreOrderInput): Promise<Cr
     throw new Error("Anda belum memiliki toko terdaftar");
   }
   if (store.status !== "ACTIVE") {
-    throw new Error("Toko Anda belum diverifikasi, belum bisa menerima pembayaran");
+    // Same distinction the settlement flow makes: a suspended store has
+    // already been verified, so saying otherwise sends its owner chasing
+    // a step they've completed.
+    throw new Error(
+      store.status === "SUSPENDED"
+        ? "Toko Anda sedang ditangguhkan, belum bisa menerima pembayaran"
+        : "Toko Anda belum diverifikasi, belum bisa menerima pembayaran",
+    );
   }
 
   const orderItems: { store_product_id: string; product_name: string; unit_price: string; quantity: number; subtotal: string }[] = [];

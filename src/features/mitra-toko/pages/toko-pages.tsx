@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { listStoreOrdersByStore } from "@/repositories/store-order.repository";
+import { listStoreSettlements } from "@/repositories/store.repository";
 import { getMyStore, getWalletForStore } from "@/services/store.service";
 import { listMyStoreProducts } from "@/services/store-product.service";
 import {
@@ -31,9 +32,10 @@ export async function TokoHomePage({ basePath, homeHref }: TokoRouteProps) {
   if (!session) redirect("/login");
 
   const store = await getMyStore(session.userId);
-  const [wallet, recentOrders] = await Promise.all([
+  const [wallet, recentOrders, recentSettlements] = await Promise.all([
     store ? getWalletForStore(store.id) : Promise.resolve(null),
     store ? listStoreOrdersByStore(store.id, { limit: RECENT_ORDER_LIMIT }) : Promise.resolve([]),
+    store ? listStoreSettlements(store.id, RECENT_ORDER_LIMIT) : Promise.resolve([]),
   ]);
 
   return (
@@ -41,6 +43,7 @@ export async function TokoHomePage({ basePath, homeHref }: TokoRouteProps) {
       store={store}
       wallet={wallet}
       recentOrders={recentOrders}
+      recentSettlements={recentSettlements}
       basePath={basePath}
       homeHref={homeHref}
     />

@@ -30,7 +30,7 @@ export function LabaHarianCard({ report }: { report: StoreSalesReport }) {
       ) : report.totalProfit === null ? (
         <p className="mt-2 rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
           Untung belum bisa dihitung — <span className="font-medium">{report.totalItemsWithoutCost} barang</span>{" "}
-          terjual tanpa modal tercatat. Isi modalnya di Produk Toko supaya
+          terjual tanpa modal tercatat. Isi modalnya di Kelola Produk supaya
           laporan ini lengkap.
         </p>
       ) : (

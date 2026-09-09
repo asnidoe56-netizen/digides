@@ -337,7 +337,7 @@ function TokoDashboard({
             <span className="flex size-10 items-center justify-center rounded-xl bg-red-50 text-red-600">
               <Package className="size-5" />
             </span>
-            <span className="text-sm font-semibold">Produk</span>
+            <span className="text-sm font-semibold">Kelola Produk</span>
             <span className="text-xs text-muted-foreground">Harga, stok, aktif/nonaktif</span>
           </Link>
 

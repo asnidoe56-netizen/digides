@@ -58,16 +58,27 @@ export function ProdukView({ products, categories, basePath }: ProdukViewProps) 
         >
           <ArrowLeft className="size-5" />
         </Link>
-        <h1 className="flex-1 font-semibold">Produk Toko</h1>
-        <button
-          type="button"
-          onClick={() => setDialog({ kind: "create" })}
-          aria-label="Tambah produk"
-          className="flex size-8 items-center justify-center rounded-full bg-white/15 hover:bg-white/25"
-        >
-          <Plus className="size-5" />
-        </button>
+        <h1 className="flex-1 font-semibold">Kelola Produk</h1>
       </header>
+
+      {/* The add action moved out of the header and down here, with words
+          on it. In the header a bare "+" sat a thumb-width from the back
+          arrow — the two most different actions on the screen, side by
+          side at the far end of a one-handed reach — and an icon alone
+          left the owner guessing: add a product, add stock, add a
+          category? */}
+      {products.length > 0 ? (
+        <div className="px-4 pt-4">
+          <button
+            type="button"
+            onClick={() => setDialog({ kind: "create" })}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-700"
+          >
+            <Plus className="size-5" />
+            Tambah Produk
+          </button>
+        </div>
+      ) : null}
 
       <div className="flex flex-1 flex-col gap-2 px-4 py-4">
         {products.length === 0 ? (

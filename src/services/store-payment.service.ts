@@ -100,7 +100,14 @@ export async function createStoreOrder(input: CreateStoreOrderInput): Promise<Cr
     );
   }
 
-  const orderItems: { store_product_id: string; product_name: string; unit_price: string; quantity: number; subtotal: string }[] = [];
+  const orderItems: {
+    store_product_id: string;
+    product_name: string;
+    unit_price: string;
+    unit_cost: string | null;
+    quantity: number;
+    subtotal: string;
+  }[] = [];
   let total = 0;
   for (const line of input.items) {
     if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
@@ -120,6 +127,20 @@ export async function createStoreOrder(input: CreateStoreOrderInput): Promise<Cr
       store_product_id: product.id,
       product_name: product.name,
       unit_price: String(unitPrice),
+      // PRD Kasir Pintar §6.5: modal is COPIED here, at the moment the
+      // order is created, and never read back from the product
+      // afterwards. If the profit report read the product's current
+      // cost_price instead, then updating modal — cigarettes going from
+      // Rp18.000 to Rp19.500 — would silently rewrite last month's
+      // profit, and a report printed yesterday would no longer match
+      // itself today. Same rule product_name and unit_price above
+      // already follow, and the same rule transactions.base_price
+      // follows for Digiflazz cost.
+      //
+      // Left null when the owner hasn't filled modal in. It must stay
+      // null rather than becoming 0: a zero here would be read as "this
+      // item cost nothing", inventing profit that was never earned.
+      unit_cost: product.cost_price === null ? null : String(Number(product.cost_price)),
       quantity: line.quantity,
       subtotal: String(subtotal),
     });

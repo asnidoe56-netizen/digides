@@ -107,7 +107,7 @@ Melanjutkan penomoran migrasi yang ada (terakhir `050_store_settlement.sql`).
 | Migrasi | Isi | Catatan penting |
 |---|---|---|
 | `051_store_product_barcode` | Tambah `store_products.barcode text`, indeks unik parsial per toko | Unik pada `(store_id, barcode)`, **bukan** global — §6.1. Nullable, karena mayoritas barang warung tidak punya barcode. |
-| `052_store_product_category` | Tabel `product_categories` (daftar baku), kolom `store_products.category_id` | Daftar baku dipakai bersama semua toko supaya laporan lintas-warung mungkin — §6.2. Nullable, produk lama tetap valid tanpa migrasi data. |
+| `052_store_product_category` | Tabel `store_product_categories` (daftar baku), kolom `store_products.category_id` | Daftar baku dipakai bersama semua toko supaya laporan lintas-warung mungkin — §6.2. Nullable, produk lama tetap valid tanpa migrasi data. Namanya diberi awalan `store_` karena tabel `categories` (migrasi 004) sudah dipakai katalog PPOB — dua nama yang mirip di domain berbeda adalah kekeliruan yang menunggu terjadi. |
 | `053_store_product_cost` | Tambah `store_products.cost_price` dan `store_order_items.unit_cost` | Keduanya nullable. `unit_cost` **disalin saat checkout**, sama seperti `unit_price` sudah disalin — §6.5. Margin tidak pernah disimpan, selalu dihitung. |
 
 Ketiganya **hanya menambah kolom nullable**, tidak mengubah satu pun kolom yang ada, sehingga tidak menyentuh mesin pembayaran maupun ledger sama sekali.

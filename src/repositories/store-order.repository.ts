@@ -7,6 +7,11 @@ export interface CreateStoreOrderItemInput {
   store_product_id: string;
   product_name: string;
   unit_price: string | number;
+  /** PRD Kasir Pintar §6.5 — modal frozen at checkout, exactly as
+   *  unit_price freezes the selling price one field up. Null when the
+   *  product has no modal filled in, which the profit report states as
+   *  such rather than counting as Rp0 cost. */
+  unit_cost?: string | number | null;
   quantity: number;
   subtotal: string | number;
 }
@@ -37,10 +42,18 @@ export async function createStoreOrder(
   const items: StoreOrderItem[] = [];
   for (const item of input.items) {
     const itemResult = await client.query<StoreOrderItem>(
-      `INSERT INTO store_order_items (order_id, store_product_id, product_name, unit_price, quantity, subtotal)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO store_order_items (order_id, store_product_id, product_name, unit_price, unit_cost, quantity, subtotal)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [order.id, item.store_product_id, item.product_name, item.unit_price, item.quantity, item.subtotal],
+      [
+        order.id,
+        item.store_product_id,
+        item.product_name,
+        item.unit_price,
+        item.unit_cost ?? null,
+        item.quantity,
+        item.subtotal,
+      ],
     );
     items.push(itemResult.rows[0]);
   }

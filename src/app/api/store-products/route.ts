@@ -3,10 +3,20 @@ import { z } from "zod";
 import { getSession } from "@/lib/auth/session";
 import { createMyStoreProduct, listMyStoreProducts } from "@/services/store-product.service";
 
+// barcode/categoryId/costPrice are all `.nullable().optional()`: absent
+// means "not provided", explicit null means "no barcode / no category / no
+// modal". Both are ordinary, expected states — PRD Kasir Pintar §3 keeps
+// all three optional because most warung goods have no barcode and plenty
+// of owners don't know their modal on day one. The barcode string itself
+// is normalised in the service, not here, so every caller (web, Flutter,
+// a future import) gets the same treatment.
 const createProductSchema = z.object({
   name: z.string().trim().min(1, "Nama produk wajib diisi"),
   price: z.number().int().positive(),
   stock: z.number().int().min(0),
+  barcode: z.string().nullable().optional(),
+  categoryId: z.string().uuid().nullable().optional(),
+  costPrice: z.number().int().min(0).nullable().optional(),
 });
 
 // The cashier's product search (§3 MVP) — always the caller's own store,
@@ -49,6 +59,9 @@ export async function POST(request: Request) {
       name: parsed.data.name,
       price: parsed.data.price,
       stock: parsed.data.stock,
+      barcode: parsed.data.barcode,
+      categoryId: parsed.data.categoryId,
+      costPrice: parsed.data.costPrice,
     });
     return NextResponse.json({ product }, { status: 201 });
   } catch (error) {

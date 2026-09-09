@@ -1,0 +1,43 @@
+-- PRD Kasir Pintar §4 (Tahap 1): modal (harga beli) — the number that
+-- turns "omzet hari ini" into "untung hari ini".
+--
+-- §6.6, and this is the boundary most easily destroyed by whoever touches
+-- this next, so it is written where the column itself lives: THIS IS NOT A
+-- SECOND MARKUP LAYER. Digides' markup (`markup_rules`) is set by Super
+-- Admin and decides what a mitra PAYS Digides. This is set by the
+-- shopkeeper and describes what THEY paid their own supplier. It never
+-- touches a transaction price, never enters the PPOB pricing engine, and
+-- is read by exactly one thing: that warung's own profit report.
+--
+-- Hard rule: transaction.service.ts and catalog.service.ts must never read
+-- this column. If a future change makes them want to, that is a product
+-- decision to take deliberately, not a query to add quietly.
+--
+-- Nullable, because a warung that doesn't know its modal must still be
+-- able to sell. §10's risk line applies: a product with no modal is
+-- reported AS HAVING NO MODAL, never as Rp0 profit — a made-up zero would
+-- silently understate profit, and a wrong report is worse than no report.
+ALTER TABLE store_products ADD COLUMN cost_price numeric(18, 0) CHECK (cost_price >= 0);
+
+-- §6.5: modal is COPIED at checkout, never read back from the product.
+--
+-- This is the decision whose absence only hurts months later. Cigarette
+-- prices rise; the warung updates modal from Rp18.000 to Rp19.500. If the
+-- profit report read the product's CURRENT modal, last month's profit
+-- would change every time modal is edited — the report printed yesterday
+-- would not match the same report today. That is not a report, it is a
+-- moving guess.
+--
+-- So `unit_cost` freezes modal at the moment the order is created, exactly
+-- as `unit_price` already freezes the selling price one column over, and
+-- exactly as transactions.base_price freezes the Digiflazz cost. The rule
+-- is one the codebase already follows in three places; this is the fourth.
+--
+-- Margin is never stored anywhere. It is always computed:
+-- unit_price - unit_cost. Storing it would create a third number that can
+-- disagree with the two it came from.
+--
+-- Nullable for two reasons that both matter: order rows written before
+-- this migration have nothing to backfill with, and a product whose modal
+-- was never filled in must still be sellable.
+ALTER TABLE store_order_items ADD COLUMN unit_cost numeric(18, 0) CHECK (unit_cost >= 0);

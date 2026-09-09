@@ -18,6 +18,11 @@ export interface StoreOrderItem {
   store_product_id: string;
   product_name: string;
   unit_price: string;
+  /** Modal frozen at checkout — PRD Kasir Pintar §6.5. Null when the
+   *  product had no modal filled in; the profit report says so rather
+   *  than counting it as Rp0 cost. Margin is never stored: it is always
+   *  unit_price − unit_cost. */
+  unit_cost: string | null;
   quantity: number;
   subtotal: string;
   created_at: Date;

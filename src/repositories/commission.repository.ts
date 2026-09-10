@@ -482,3 +482,26 @@ export async function markCommissionAutoRunMonth(
 ): Promise<void> {
   await db.query(`UPDATE commission_settings SET last_auto_run_month = $2 WHERE id = $1`, [id, yearMonth]);
 }
+
+// Berapa komisi yang sudah dijanjikan dari margin SATU transaksi.
+//
+// Dibutuhkan mesin cashback (PRD Cashback §6.2): cashback dan komisi minum
+// dari gelas yang sama — margin Digides pada transaksi itu — dan tanpa
+// angka ini cashback tidak punya cara mengetahui berapa yang tersisa.
+//
+// CANCELLED dan REVERSED tidak dihitung: keduanya adalah komisi yang
+// dibatalkan, jadi uangnya kembali tersedia untuk cashback. PENDING ikut
+// dihitung meskipun belum cair — ia janji yang sudah dibuat, dan janji yang
+// belum dibayar tetap uang yang sudah dialokasikan.
+export async function sumCommissionForTransaction(
+  transactionId: string,
+  db: Queryable = pool,
+): Promise<number> {
+  const result = await db.query<{ total: string }>(
+    `SELECT COALESCE(SUM(amount), 0)::text AS total
+     FROM commission_ledger
+     WHERE transaction_id = $1 AND status NOT IN ('CANCELLED', 'REVERSED')`,
+    [transactionId],
+  );
+  return Number(result.rows[0].total);
+}

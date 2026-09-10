@@ -44,7 +44,13 @@ export type WalletLedgerType =
   // A store owner moving their own store's balance into their own main
   // wallet — never a movement between two people, unlike TRANSFER_*.
   | "STORE_SETTLEMENT_OUT"
-  | "STORE_SETTLEMENT_IN";
+  | "STORE_SETTLEMENT_IN"
+  // Hadiah yang kembali ke pembeli sendiri setelah transaksinya sukses
+  // (PRD Cashback). Bukan REFUND — pembeliannya tetap sah dan produknya
+  // tetap terkirim; ini bagian dari margin Digides yang sengaja
+  // dikembalikan. Dan bukan COMMISSION — komisi dibayar ke upline, ini ke
+  // pembelinya sendiri.
+  | "CASHBACK";
 
 // Where the mutation originated — issue M18 sections 11, 24, 25: every
 // channel shares the same wallet/ledger, this only records provenance for

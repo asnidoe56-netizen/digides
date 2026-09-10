@@ -7,6 +7,7 @@ import { verifyTransactionPin } from "@/services/auth.service";
 import { verifyTransactionBiometric } from "@/services/biometric.service";
 import { verifyMobileBiometricTransaction, type MobileBiometricAssertion } from "@/services/mobile-biometric.service";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
+import { awardCashbackForTransaction } from "@/services/cashback.service";
 import { awardCommissionForTransaction } from "@/services/commission.service";
 import {
   findBackupProductCandidates,
@@ -498,6 +499,18 @@ async function captureTransaction(
     // here is logged, not thrown, so the sale stands either way.
     await awardCommissionForTransaction(finalTransaction.id, actorUserId).catch((error) => {
       console.error(`Commission award failed for transaction ${finalTransaction.id}:`, error);
+    });
+
+    // Cashback runs AFTER commission, and that order is load-bearing (PRD
+    // Cashback §6.2): both are paid out of the same margin, and cashback is
+    // only allowed what commission left behind. Commission is a promise to
+    // the upline that came first and must not be shrunk by a newer feature.
+    //
+    // Caught for the same reason commission is: the pulsa has already
+    // reached the customer. Failing a completed sale because a reward could
+    // not be written would manufacture a loss out of a gift.
+    await awardCashbackForTransaction(finalTransaction.id, actorUserId).catch((error) => {
+      console.error(`Cashback award failed for transaction ${finalTransaction.id}:`, error);
     });
   }
 

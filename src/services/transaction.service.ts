@@ -25,6 +25,7 @@ import {
   listTransactionsWithDetail,
   countTransactionsWithDetail,
   findTransactionWithDetailById,
+  getProviderContactTiming,
   lockTransactionForUpdate,
   recordTransactionEvent,
   sumReservedTransactions,
@@ -43,6 +44,23 @@ import type { WalletChannel } from "@/types/wallet";
 // platform's margin can be eroded before it gives up and genuinely fails
 // the purchase like before this mechanism existed.
 const MAX_BACKUP_SKU_ATTEMPTS = 2;
+
+// §5e (amandemen 2026-09-11) — dua aturan dari dokumentasi Cek Status
+// Digiflazz yang sebelumnya tidak dijaga kode sama sekali:
+//
+// 1. "Pemanggilan API untuk transaksi/data yang sama tidak dilakukan
+//    berulang dalam interval kurang dari 1 menit" — risiko race condition
+//    atau duplikasi yang secara tertulis BUKAN tanggung jawab Digiflazz.
+//    Di produksi, 7 dari 53 transaksi pertama sudah melanggarnya (6 oleh job,
+//    3–50 detik setelah submit; 1 oleh 5 klik "Cek Status" dalam 89 detik).
+export const PROVIDER_RECHECK_COOLDOWN_SECONDS = 60;
+// 2. "Jangan pernah Cek Status transaksi yang sudah lewat 90 HARI karena
+//    akan menyebabkan pembuatan transaksi BARU." Ditolak mulai 85 hari,
+//    menyisakan jarak untuk selisih zona waktu dan jam.
+const MAX_STATUS_CHECK_AGE_DAYS = 85;
+// Job otomatis berhenti jauh sebelum itu. Sesudahnya transaksi hanya bisa
+// dicek lewat tombol admin, yang tetap dibatasi dua aturan di atas.
+export const AUTO_STATUS_CHECK_MAX_AGE_DAYS = 7;
 
 export async function getTransactionList(filter: ListTransactionsFilter = {}) {
   return listTransactionsWithDetail(filter);
@@ -197,7 +215,48 @@ export async function executeTransaction(input: ExecuteTransactionInput): Promis
     return transaction;
   }
 
+  // §5e: a retry that lands less than a minute after this ref_id last
+  // reached Digiflazz (or on a transaction too old to check safely) hands
+  // back the RESERVED row without calling Digiflazz. Both clients already
+  // treat RESERVED as "still processing" and poll, and the job picks the
+  // transaction up once the minute has passed.
+  if (alreadyExisted) {
+    const recheck = await evaluateProviderRecheck(transaction.id);
+    if (!recheck.allowed) {
+      return transaction;
+    }
+  }
+
   return settleWithProvider(transaction, product.sku, input.actorUserId);
+}
+
+type ProviderRecheckDecision =
+  | { allowed: true }
+  | { allowed: false; reason: "TOO_SOON"; waitSeconds: number }
+  | { allowed: false; reason: "TOO_OLD" };
+
+// The one place §5e's two Digiflazz rules are decided, shared by every path
+// that can send an ALREADY-submitted ref_id back to Digiflazz: an admin's
+// "Cek Status", the pending-transaction-check job (which also pre-filters
+// the same rules in SQL), and a retried executeTransaction. Never applies to
+// a transaction's first submit, nor to a backup-SKU retry (§5a) — that one
+// carries a brand-new ref_id.
+async function evaluateProviderRecheck(transactionId: string): Promise<ProviderRecheckDecision> {
+  const timing = await getProviderContactTiming(transactionId);
+  if (!timing) {
+    throw new Error("Transaksi tidak ditemukan");
+  }
+  if (timing.age_seconds >= MAX_STATUS_CHECK_AGE_DAYS * 24 * 60 * 60) {
+    return { allowed: false, reason: "TOO_OLD" };
+  }
+  if (timing.seconds_since_last_contact < PROVIDER_RECHECK_COOLDOWN_SECONDS) {
+    return {
+      allowed: false,
+      reason: "TOO_SOON",
+      waitSeconds: Math.max(1, Math.ceil(PROVIDER_RECHECK_COOLDOWN_SECONDS - timing.seconds_since_last_contact)),
+    };
+  }
+  return { allowed: true };
 }
 
 // Resolves a transaction still stuck in RESERVED (provider never
@@ -216,6 +275,21 @@ export async function checkTransactionStatus(
   }
   if (transaction.status !== "RESERVED") {
     return transaction;
+  }
+
+  // §5e — refused with a message the admin's "Cek Status" button shows as
+  // is. The job's own SQL already skips both cases, so it only lands here
+  // if a webhook or an admin check touched the transaction between its
+  // query and this call; that run then logs it as an error and the next
+  // run, three minutes later, checks it normally.
+  const recheck = await evaluateProviderRecheck(transaction.id);
+  if (!recheck.allowed) {
+    if (recheck.reason === "TOO_OLD") {
+      throw new Error(
+        `Transaksi ini sudah berumur lebih dari ${MAX_STATUS_CHECK_AGE_DAYS} hari. Cek status tidak dikirim ke Digiflazz, karena untuk transaksi di atas 90 hari Digiflazz justru membuat pembelian baru. Periksa langsung di dashboard Digiflazz.`,
+      );
+    }
+    throw new Error(`Transaksi ini baru saja diperiksa ke Digiflazz. Coba lagi dalam ${recheck.waitSeconds} detik.`);
   }
 
   const product = await findProductById(transaction.product_id);

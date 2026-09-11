@@ -3,7 +3,12 @@ import { MoneyDisplay } from "@/components/money-display";
 import { PageHeader } from "@/components/page-header";
 import { PaginationControls } from "@/components/pagination-controls";
 import { TransactionList } from "@/features/transaction";
-import { getReservedTransactionsSummary, getTransactionCount, getTransactionList } from "@/services/transaction.service";
+import {
+  AUTO_STATUS_CHECK_MAX_AGE_DAYS,
+  getReservedTransactionsSummary,
+  getTransactionCount,
+  getTransactionList,
+} from "@/services/transaction.service";
 
 const PAGE_SIZE = 20;
 
@@ -46,7 +51,7 @@ export default async function TransaksiTertahanPage({ searchParams }: TransaksiT
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Transaksi Tertahan"
-        description="Transaksi yang masih menahan saldo mitra karena Digiflazz belum memberi jawaban akhir."
+        description={`Transaksi yang masih menahan saldo mitra karena Digiflazz belum memberi jawaban akhir. Sistem memeriksanya otomatis setiap 3 menit selama ${AUTO_STATUS_CHECK_MAX_AGE_DAYS} hari pertama; sesudahnya gunakan tombol Cek Status.`}
       />
 
       <div className="grid gap-4 sm:grid-cols-2">

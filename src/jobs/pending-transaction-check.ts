@@ -1,5 +1,9 @@
-import { listByStatus } from "@/repositories/transaction.repository";
-import { checkTransactionStatus } from "@/services/transaction.service";
+import { listReservedDueForStatusCheck } from "@/repositories/transaction.repository";
+import {
+  AUTO_STATUS_CHECK_MAX_AGE_DAYS,
+  checkTransactionStatus,
+  PROVIDER_RECHECK_COOLDOWN_SECONDS,
+} from "@/services/transaction.service";
 
 // Some Digiflazz products (DANA and other async-settled E-Money SKUs)
 // answer the initial /transaction call with "Pending" even in production —
@@ -9,9 +13,10 @@ import { checkTransactionStatus } from "@/services/transaction.service";
 // Tertahan and clicks "Cek Status" by hand.
 const CHECK_INTERVAL_MS = 3 * 60 * 1000;
 
-// Caps how many stuck transactions one run resolves — listByStatus already
-// orders oldest-first, so a backlog drains oldest-to-newest across runs
-// rather than one run trying to walk an unbounded list.
+// Caps how many stuck transactions one run resolves —
+// listReservedDueForStatusCheck already orders oldest-first, so a backlog
+// drains oldest-to-newest across runs rather than one run trying to walk an
+// unbounded list.
 const BATCH_SIZE = 50;
 
 export interface PendingTransactionCheckSummary {
@@ -23,7 +28,15 @@ export interface PendingTransactionCheckSummary {
 // Exported on its own (not just via the interval) so it can be triggered
 // directly — e.g. a one-off manual run, or a test.
 export async function runPendingTransactionCheck(): Promise<PendingTransactionCheckSummary> {
-  const pending = await listByStatus("RESERVED", BATCH_SIZE);
+  // §5e: skips transactions Digiflazz was contacted about less than a minute
+  // ago (before this, the job re-submitted 3–50 seconds after a purchase's
+  // first submit in production), and stops auto-checking transactions older
+  // than AUTO_STATUS_CHECK_MAX_AGE_DAYS — those stay reachable through the
+  // admin's "Cek Status" button, which enforces its own 90-day guard.
+  const pending = await listReservedDueForStatusCheck(BATCH_SIZE, {
+    minSecondsSinceLastContact: PROVIDER_RECHECK_COOLDOWN_SECONDS,
+    maxAgeDays: AUTO_STATUS_CHECK_MAX_AGE_DAYS,
+  });
   let resolved = 0;
   let errors = 0;
 

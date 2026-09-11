@@ -9,6 +9,8 @@
 > Bagian 5c dulunya menambahkan pilihan **sumber dana** pembelian (dompet pribadi atau dompet toko sendiri), diinstruksikan pemilik produk pada 2026-09-08. **Kemampuan itu sudah ditarik kembali pada 2026-09-09** — bagiannya dibiarkan utuh sebagai catatan sejarah, tapi jangan dipakai sebagai acuan.
 >
 > Bagian 5d adalah aturan yang **berlaku sekarang**: pembelian selalu didanai saldo utama, dan saldo toko harus dipindahkan dulu ke saldo utama lewat jalur tersendiri. Diputuskan eksplisit oleh pemilik produk pada 2026-09-09 dengan alasan pembukuan — buku toko harus terbaca sebagai buku warung. Mesin transaksinya sendiri tetap tidak pernah disentuh, baik oleh 5c maupun 5d.
+>
+> Bagian 5e adalah amandemen sadar atas aturan #3 dan #7, diinstruksikan eksplisit oleh pemilik produk pada 2026-09-11: **jeda minimal 60 detik** sebelum `ref_id` yang sama dikirim lagi ke Digiflazz, dan **batas umur** cek status (job berhenti setelah 7 hari, semua jalur menolak di atas 85 hari). Keduanya berasal dari dokumentasi Cek Status resmi Digiflazz; aturan jeda terbukti sudah dilanggar 7 kali di produksi tanpa kerugian (lihat buktinya di Bagian 5e).
 
 ---
 
@@ -106,6 +108,8 @@ Daftar ini murni tentang **logika**, bukan tampilan (lihat Bagian 6 untuk yang b
 6. **Cadence polling client**: 3 detik × 20x percobaan (≤60 detik total). Ini nilai yang sudah diuji nyaman secara UX dan aman terhadap batas rate-limit Digiflazz (rc 85, "1 menit sekali" per dokumentasi resmi).
 7. **Interval job reconciliation**: 3 menit (`CHECK_INTERVAL_MS`, `src/jobs/pending-transaction-check.ts`). Jangan dipercepat tanpa mempertimbangkan ulang rc 85/86 (limitasi transaksi & limitasi cek nomor PLN dari Digiflazz).
 8. **Tidak pernah membuat transaksi kedua** — tidak ada kondisi apa pun (retry, timeout, error jaringan) yang boleh memicu `submitDigiflazzTransaction` dipanggil dengan `ref_id` baru untuk niat pembelian yang sama. **Pengecualian tunggal, disengaja (lihat Bagian 5a)**: saat Digiflazz menjawab **"Gagal"** (bukan timeout, bukan error jaringan — jawaban definitif), mekanisme SKU-cadangan-otomatis boleh memicu `submitDigiflazzTransaction` sekali lagi untuk SKU **lain** (nominal sama, produk berbeda) pada baris transaksi yang sama, maksimal `MAX_BACKUP_SKU_ATTEMPTS` (2) kali. Ini tetap bukan "transaksi kedua" untuk niat pembelian yang sama secara longgar — setiap percobaan adalah usaha genuinely baru untuk memenuhi permintaan pembeli yang sama dengan produk yang berbeda, bukan mengulang permintaan yang identik.
+
+**Catatan Bagian 5e (2026-09-11)**, berlaku di atas aturan #3 dan #7: "kirim ulang dengan `ref_id` sama = cek status" hanya boleh terjadi kalau kontak terakhir dengan Digiflazz untuk transaksi itu sudah lewat **60 detik** dan umur transaksinya di bawah **85 hari**. Job reconciliation tetap berinterval 3 menit, tetapi hanya mengambil transaksi yang lolos jeda itu dan berumur di bawah 7 hari. Lihat Bagian 5e.
 
 ---
 
@@ -230,6 +234,55 @@ Komisi belum diamati secara langsung pada kejadian #2 (tergantung apakah pembeli
 
 ---
 
+## 5e. 🔒 Jeda Minimal dan Batas Umur Cek Status ke Digiflazz (Amandemen 2026-09-11)
+
+**Latar belakang**: halaman Cek Status di dokumentasi resmi Digiflazz memuat dua aturan yang sebelumnya tidak dijaga kode sama sekali:
+
+> *"Untuk menjaga konsistensi proses, kami menyarankan agar pemanggilan API untuk transaksi/data yang sama tidak dilakukan berulang dalam interval kurang dari 1 (satu) menit. Pemanggilan berulang dalam rentang waktu tersebut dapat menimbulkan race condition atau duplikasi proses. Segala risiko yang timbul dari kondisi tersebut berada di luar tanggung jawab kami."*
+
+> *Prepaid: "Jangan pernah mencoba untuk melakukan Cek Status terhadap transaksi yang sudah lewat 90 HARI karena hal tersebut akan menyebabkan pembuatan transaksi BARU."*
+
+**Aturan pertama sudah dilanggar di produksi.** Audit baca-saja pada 2026-09-11 atas 53 transaksi pertama (2–11 September), dicocokkan dengan log nginx:
+- **7 transaksi** menerima panggilan ulang `ref_id` yang sama kurang dari 60 detik setelah panggilan sebelumnya.
+- **6 oleh job reconciliation**, 3–50 detik setelah submit pertama. Penyebabnya: `listByStatus("RESERVED")` mengambil semua transaksi RESERVED tanpa melihat kapan terakhir dihubungi. Pada detik-detik itu tidak ada permintaan HTTP apa pun di log nginx, jadi panggilannya bukan dari klien atau webhook.
+- **1 oleh tombol "Cek Status" Super Admin**: 5 klik dalam 89 detik, 4 di antaranya dalam 11 detik (transaksi 2026-09-03 01:10).
+- **Tanpa kerugian**: di setiap jawaban ulang, `buyer_last_saldo` deposit tidak berubah, dan ledger tiap transaksi tepat satu RESERVE + satu DEBIT/RELEASE. Digiflazz memperlakukannya sebagai cek status — tapi secara tertulis mereka tidak menanggung kalau suatu saat tidak.
+
+**Aturan kedua belum pernah terpicu** (transaksi tertua 2026-09-02, jadi paling cepat bisa terjadi 2026-12-01), tapi sudah tercatat sebagai isu laten di Bagian 7 sejak dokumen ini dibuat.
+
+Diinstruksikan eksplisit oleh pemilik produk pada 2026-09-11.
+
+**Cara kerja**:
+
+1. **"Kontak terakhir" dihitung dari data yang sudah ada** — `getProviderContactTiming` (`src/repositories/transaction.repository.ts`): yang paling baru dari `transactions.created_at` dan `transaction_events.created_at` terbaru. Tidak ada kolom baru dan tidak ada migrasi: baris RESERVE + event pertamanya ditulis tepat sebelum submit pertama, dan setiap jawaban Pending maupun gagal koneksi sesudahnya juga menulis event. Detik dihitung dengan `now()` milik basis data.
+2. **Satu titik keputusan** — `evaluateProviderRecheck` (`src/services/transaction.service.ts`), dipakai setiap jalur yang bisa mengirim `ref_id` yang **sudah pernah** dikirim kembali ke Digiflazz:
+   - `checkTransactionStatus` (tombol admin dan job): menolak dengan pesan *"Transaksi ini baru saja diperiksa ke Digiflazz. Coba lagi dalam N detik."* atau *"Transaksi ini sudah berumur lebih dari 85 hari…"*. Tombol Cek Status menampilkan pesan itu apa adanya.
+   - `executeTransaction` yang diulang dengan `idempotency_key` sama selagi transaksinya masih RESERVED: mengembalikan baris RESERVED tanpa memanggil Digiflazz. Web dan Flutter sudah memperlakukan RESERVED sebagai "diproses" lalu polling, dan job mengambilnya begitu satu menit lewat.
+   - **Tidak** berlaku untuk submit pertama, dan tidak untuk percobaan SKU cadangan (Bagian 5a) — keduanya membawa `ref_id` baru.
+3. **Konstanta**: `PROVIDER_RECHECK_COOLDOWN_SECONDS = 60`; `MAX_STATUS_CHECK_AGE_DAYS = 85` (jarak 5 hari dari batas 90 untuk selisih zona waktu dan jam); `AUTO_STATUS_CHECK_MAX_AGE_DAYS = 7`.
+4. **Job** — `listReservedDueForStatusCheck` menggantikan `listByStatus`: hanya transaksi RESERVED yang kontak terakhirnya sudah ≥ 60 detik **dan** umurnya < 7 hari, tertua lebih dulu. Interval 3 menit (aturan #7) dan batch 50 tidak berubah. Transaksi yang lewat 7 hari tetap tampil di Transaksi Tertahan dan tetap bisa dicek lewat tombol sampai 85 hari; teks halaman itu kini menyebutkannya.
+5. **Yang sengaja tidak berubah**: funnel tunggal `applyDigiflazzResult`, compare-and-swap status, ledger RESERVE/DEBIT/RELEASE, verifikasi webhook, polling klien 3 detik × 20 (klien bertanya ke server Digides, bukan ke Digiflazz), SKU cadangan (5a), idempotency (5b).
+
+**Risiko yang diketahui, disengaja belum ditutup** (gaya yang sama seperti Bagian 7):
+- `submitDigiflazzTransaction` memakai `fetch` tanpa batas waktu. Kalau satu panggilan menggantung lebih dari 60 detik tanpa jawaban, belum ada event baru yang tertulis, sehingga job berikutnya bisa mengirim ulang `ref_id` yang sama selagi panggilan pertama masih terbuka. Belum pernah teramati — jawaban sinkron pada audit di atas 0,1–1,2 detik.
+- Kalau webhook atau klik admin masuk di antara query job dan `checkTransactionStatus`, panggilan job itu ditolak pagar, tercatat sebagai `errors` pada run tersebut, lalu dicek normal pada run berikutnya.
+- Transaksi RESERVED yang lewat 85 hari tidak punya jalur penyelesaian di aplikasi — harus diselesaikan manual dengan mencocokkan dashboard Digiflazz. Jumlahnya hari ini 0.
+- Jalur `executeTransaction` yang diulang tidak diuji otomatis (butuh PIN dan harga live Digiflazz); diverifikasi lewat pembacaan kode karena memakai `evaluateProviderRecheck` yang sama dengan jalur yang diuji.
+
+**Verifikasi:**
+
+*Lokal — database dev, tanpa satu pun panggilan ke Digiflazz, 17/17 lulus:*
+- [x] Job hanya memilih transaksi yang kontak terakhirnya 5 menit lalu, dan melewati: yang baru disubmit, yang dijawab Pending 20 detik lalu walau umurnya 10 menit, yang berumur 8 hari, dan yang berumur 86 hari.
+- [x] Perhitungan waktu tepat (20,0 detik; 300,0 / 600,0 detik), termasuk transaksi yang belum punya event sama sekali.
+- [x] `checkTransactionStatus` menolak transaksi yang baru disubmit ("Coba lagi dalam 60 detik") dan yang dijawab 20 detik lalu ("40 detik") — tanpa menulis event dan tanpa mengubah status, bukti tidak ada panggilan ke Digiflazz.
+- [x] Menolak transaksi berumur 86 hari; batas umur didahulukan dari jeda (transaksi 86 hari yang baru diklik 10 detik lalu tetap mendapat pesan 85 hari).
+- [x] `tsc --noEmit` lulus (exit 0). Proyek ini tidak memakai eslint — tidak ada skrip `lint` maupun berkas konfigurasinya.
+
+*Produksi:*
+- [ ] Setelah deploy: kueri audit yang sama atas `transaction_events` tidak lagi menemukan pasangan jawaban `ref_id` sama berjarak < 60 detik untuk transaksi baru.
+
+---
+
 ## 6. Yang Aman Disentuh (murni presentasi, bukan logika)
 
 - Ikon, warna, teks/copy pada layar hasil (SUCCESS/FAILED/PENDING) — selama tidak mengubah kapan status itu ditampilkan.
@@ -240,7 +293,7 @@ Komisi belum diamati secara langsung pada kejadian #2 (tergantung apakah pembeli
 
 ## 7. Isu yang Sudah Diketahui, Sengaja Belum Diperbaiki (dicatat, bukan diabaikan)
 
-- **Job reconciliation tidak punya batas umur transaksi.** Dokumentasi resmi Digiflazz: cek status transaksi yang sudah lewat 90 hari berisiko dianggap pembelian baru. `listByStatus("RESERVED", ...)` saat ini tidak memfilter umur — risiko laten kalau ada transaksi macet lebih dari 90 hari. Belum ada mitigasi.
+- ~~**Job reconciliation tidak punya batas umur transaksi.**~~ **Ditutup oleh Bagian 5e (2026-09-11).** Job kini hanya mengecek transaksi berumur di bawah 7 hari, dan semua jalur menolak cek status di atas 85 hari. Amandemen yang sama juga menutup masalah yang tidak pernah tercatat di sini: job dan tombol admin mengirim ulang `ref_id` yang sama kurang dari 60 detik (7 kali di produksi, tanpa kerugian).
 - **Tidak ada throttle eksplisit pada batch 50 transaksi per siklus job** — berisiko kena rc 85 (rate limit) kalau backlog RESERVED membesar drastis. Belum jadi masalah nyata (volume saat ini rendah).
 - **Webhook untuk event "Cek Nama" (verifikasi nama, bukan pembelian) selalu dijawab 404** karena SKU cek-nama tidak pernah punya baris `transactions` (ref_id sengaja ephemeral). Ini harmless by design, dibiarkan atas persetujuan eksplisit pemilik produk.
 - **Endpoint resmi `POST /v1/inquiry-pln`** (validasi ID PLN gratis, terstruktur) belum diimplementasikan — fitur "Cek Nama Token PLN" saat ini masih memakai SKU berbayar lewat `/v1/transaction`. Dianalisis, belum dieksekusi.
@@ -271,6 +324,7 @@ Kalau ke depan dibangun kategori PPOB baru, atau integrasi provider selain Digif
 - **Bagian 5a (SKU cadangan otomatis)**: `src/repositories/product.repository.ts` (`findBackupProductCandidates`), `src/repositories/transaction.repository.ts` (`lockTransactionForUpdate`, `swapTransactionProductForBackup`), `src/services/commission.service.ts` (`awardCommissionForTransaction`'s profit cap), `src/features/transaction/components/transaction-detail.tsx` (catatan pergantian SKU di Super Admin), migrasi `041_transaction_backup_sku.sql`
 - **Bagian 5b (perbaikan idempotency)**: `src/repositories/transaction.repository.ts` (`createTransaction`)
 - **Bagian 5d (pemindahan saldo toko)**: `src/services/store.service.ts` (`settleStoreBalance`), `src/app/api/stores/settle/route.ts`, `src/repositories/store.repository.ts` (`createStoreSettlement`), migrasi `050_store_settlement.sql`. Bagian 5c (`payWith`) sudah ditarik — tidak ada berkas yang tersisa untuknya.
+- **Bagian 5e (jeda & batas umur cek status)**: `src/services/transaction.service.ts` (`evaluateProviderRecheck`, `PROVIDER_RECHECK_COOLDOWN_SECONDS`, `AUTO_STATUS_CHECK_MAX_AGE_DAYS`), `src/repositories/transaction.repository.ts` (`getProviderContactTiming`, `listReservedDueForStatusCheck` — menggantikan `listByStatus`), `src/jobs/pending-transaction-check.ts`, `src/app/dashboard/super-admin/transaksi-tertahan/page.tsx` (teks batas 7 hari). Tanpa migrasi.
 
 **Flutter (`digides_mitra`):**
 - `lib/features/purchase/purchase_screen.dart` — `_submitPurchase`, `_startPolling`, `_pollOnce`

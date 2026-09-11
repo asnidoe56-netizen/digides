@@ -194,15 +194,61 @@ export async function recordTransactionEvent(
   return result.rows[0];
 }
 
-// Used by the pending-transaction-check job.
-export async function listByStatus(
-  status: TransactionStatus,
-  limit = 100,
+// "Kontak terakhir dengan Digiflazz" untuk satu transaksi, dihitung dari
+// data yang memang sudah tercatat — tanpa kolom baru. Baris RESERVE +
+// event pertamanya ditulis tepat sebelum submit pertama, dan setiap jawaban
+// Pending maupun gagal koneksi sesudahnya juga menulis event. Jadi event
+// terbaru adalah batas bawah yang jujur untuk kapan terakhir kali kita
+// berbicara dengan Digiflazz tentang ref_id ini.
+//
+// Detik dihitung di SQL dengan now() milik basis data — jam yang sama yang
+// menulis created_at — bukan dengan jam proses Node.
+// Lihat FLOW_KERJA_DAN_BATASAN_KERJA_TRANSAKSI.md §5e.
+export interface ProviderContactTiming {
+  seconds_since_last_contact: number;
+  age_seconds: number;
+}
+
+export async function getProviderContactTiming(
+  transactionId: string,
+  db: Queryable = pool,
+): Promise<ProviderContactTiming | null> {
+  const result = await db.query<ProviderContactTiming>(
+    `SELECT EXTRACT(EPOCH FROM now() - GREATEST(t.created_at, COALESCE(MAX(e.created_at), t.created_at)))::float8
+              AS seconds_since_last_contact,
+            EXTRACT(EPOCH FROM now() - t.created_at)::float8 AS age_seconds
+     FROM transactions t
+     LEFT JOIN transaction_events e ON e.transaction_id = t.id
+     WHERE t.id = $1
+     GROUP BY t.id`,
+    [transactionId],
+  );
+  return result.rows[0] ?? null;
+}
+
+// Dipakai job pending-transaction-check. Hanya transaksi RESERVED yang
+// (1) kontak terakhirnya dengan Digiflazz sudah lewat `minSecondsSinceLastContact`
+// — Digiflazz meminta panggilan untuk transaksi yang sama tidak diulang dalam
+// < 1 menit — dan (2) umurnya belum lewat `maxAgeDays`, supaya transaksi yang
+// macet tidak dicek setiap 3 menit selamanya, sampai melewati batas 90 hari
+// yang membuat cek status prabayar menjadi pembelian BARU. Tertua lebih dulu.
+// Lihat §5e.
+export async function listReservedDueForStatusCheck(
+  limit: number,
+  options: { minSecondsSinceLastContact: number; maxAgeDays: number },
   db: Queryable = pool,
 ): Promise<Transaction[]> {
   const result = await db.query<Transaction>(
-    `SELECT * FROM transactions WHERE status = $1 ORDER BY created_at ASC LIMIT $2`,
-    [status, limit],
+    `SELECT t.* FROM transactions t
+     WHERE t.status = 'RESERVED'
+       AND t.created_at > now() - make_interval(days => $2::int)
+       AND GREATEST(
+             t.created_at,
+             COALESCE((SELECT MAX(e.created_at) FROM transaction_events e WHERE e.transaction_id = t.id), t.created_at)
+           ) <= now() - make_interval(secs => $3::float8)
+     ORDER BY t.created_at ASC
+     LIMIT $1`,
+    [limit, options.maxAgeDays, options.minSecondsSinceLastContact],
   );
   return result.rows;
 }

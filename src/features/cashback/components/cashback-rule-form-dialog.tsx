@@ -27,6 +27,11 @@ const SCOPE_LABEL: Record<CashbackScopeType, string> = {
 
 const inputClass = "w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-primary";
 
+/** Batas daftar saat BELUM memilih kategori — hanya berlaku untuk hasil
+ *  pencarian lintas kategori. Setelah kategori dipilih, semua produknya
+ *  tampil tanpa batas. */
+const UNFILTERED_LIMIT = 80;
+
 // Formulir aturan cashback, dengan peringatan PRD §6.2 yang hidup.
 //
 // Yang paling penting di sini bukan kolomnya, melainkan kotak di bawahnya:
@@ -40,6 +45,7 @@ export function CashbackRuleFormDialog({ products, categories, brands }: Cashbac
 
   const [scopeType, setScopeType] = useState<CashbackScopeType>("PRODUCT");
   const [targetId, setTargetId] = useState("");
+  const [productCategoryId, setProductCategoryId] = useState("");
   const [productSearch, setProductSearch] = useState("");
   const [cashbackType, setCashbackType] = useState<CashbackType>("NOMINAL");
   const [cashbackValue, setCashbackValue] = useState("");
@@ -52,17 +58,63 @@ export function CashbackRuleFormDialog({ products, categories, brands }: Cashbac
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Jumlah produk per kategori, dari daftar produk yang memang bisa dibeli.
+  // Dipakai untuk dua hal: menyembunyikan kategori kosong (di produksi ada
+  // kategori "Isi Pulsa" lama tanpa produk yang tampil kembar dengan "Pulsa"),
+  // dan memberi tahu admin berapa produk yang akan ia lihat.
+  const productCountByCategory = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const product of products) {
+      if (!product.category_id) continue;
+      counts.set(product.category_id, (counts.get(product.category_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [products]);
+
+  const categoriesWithProducts = useMemo(
+    () => categories.filter((category) => (productCountByCategory.get(category.id) ?? 0) > 0),
+    [categories, productCountByCategory],
+  );
+
+  // Kategori dipilih DULU, baru produknya.
+  //
+  // Versi pertama formulir ini menampilkan 60 produk pertama tanpa pilihan
+  // kategori, dan pencariannya hanya mencocokkan nama produk dan brand.
+  // Hasilnya Pulsa tidak bisa ditemukan sama sekali: produk Pulsa pertama
+  // ada di urutan ke-74, dan tidak satu pun dari 71 produk Pulsa yang
+  // namanya mengandung kata "pulsa" — namanya "Telkomsel 5.000". Mengetik
+  // "pulsa" menghasilkan daftar kosong.
+  //
+  // Sekarang: pilih kategori, lalu SEMUA produknya tampil. Pencarian juga
+  // mencocokkan nama kategori, supaya "pulsa" tetap berhasil walau kategori
+  // belum dipilih.
   const filteredProducts = useMemo(() => {
     const needle = productSearch.trim().toLowerCase();
-    if (!needle) return products.slice(0, 60);
-    return products
-      .filter(
-        (product) =>
-          product.product_name.toLowerCase().includes(needle) ||
-          (product.brand_name ?? "").toLowerCase().includes(needle),
-      )
-      .slice(0, 60);
-  }, [products, productSearch]);
+    const inCategory = productCategoryId
+      ? products.filter((product) => product.category_id === productCategoryId)
+      : products;
+    const matched = needle
+      ? inCategory.filter(
+          (product) =>
+            product.product_name.toLowerCase().includes(needle) ||
+            (product.brand_name ?? "").toLowerCase().includes(needle) ||
+            (product.category_name ?? "").toLowerCase().includes(needle),
+        )
+      : inCategory;
+    return productCategoryId ? matched : matched.slice(0, UNFILTERED_LIMIT);
+  }, [products, productCategoryId, productSearch]);
+
+  const unfilteredTotal = useMemo(() => {
+    if (productCategoryId) return filteredProducts.length;
+    const needle = productSearch.trim().toLowerCase();
+    if (!needle) return products.length;
+    return products.filter(
+      (product) =>
+        product.product_name.toLowerCase().includes(needle) ||
+        (product.brand_name ?? "").toLowerCase().includes(needle) ||
+        (product.category_name ?? "").toLowerCase().includes(needle),
+    ).length;
+  }, [products, productCategoryId, productSearch, filteredProducts.length]);
 
   const valueNumber = Number(cashbackValue);
   const maxNumber = maxCashback.trim() === "" ? null : Number(maxCashback);
@@ -103,6 +155,7 @@ export function CashbackRuleFormDialog({ products, categories, brands }: Cashbac
   function reset() {
     setScopeType("PRODUCT");
     setTargetId("");
+    setProductCategoryId("");
     setProductSearch("");
     setCashbackType("NOMINAL");
     setCashbackValue("");
@@ -112,6 +165,8 @@ export function CashbackRuleFormDialog({ products, categories, brands }: Cashbac
     setPreview(null);
     setError(null);
   }
+
+  const selectedProduct = scopeType === "PRODUCT" ? products.find((product) => product.id === targetId) : undefined;
 
   const canSubmit =
     Number.isFinite(valueNumber) &&
@@ -195,7 +250,27 @@ export function CashbackRuleFormDialog({ products, categories, brands }: Cashbac
 
             {scopeType === "PRODUCT" ? (
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="cb-product-search" className="text-sm font-medium">
+                <label htmlFor="cb-product-category" className="text-sm font-medium">
+                  Kategori produk
+                </label>
+                <select
+                  id="cb-product-category"
+                  value={productCategoryId}
+                  onChange={(event) => {
+                    setProductCategoryId(event.target.value);
+                    setTargetId("");
+                  }}
+                  className={inputClass}
+                >
+                  <option value="">Semua kategori</option>
+                  {categoriesWithProducts.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name} ({productCountByCategory.get(category.id)} produk)
+                    </option>
+                  ))}
+                </select>
+
+                <label htmlFor="cb-product-search" className="mt-2 text-sm font-medium">
                   Produk
                 </label>
                 <input
@@ -203,22 +278,39 @@ export function CashbackRuleFormDialog({ products, categories, brands }: Cashbac
                   type="text"
                   value={productSearch}
                   onChange={(event) => setProductSearch(event.target.value)}
-                  placeholder="Cari nama produk atau brand…"
+                  placeholder="Cari nama produk, brand, atau kategori…"
                   className={inputClass}
                 />
                 <select
                   value={targetId}
                   onChange={(event) => setTargetId(event.target.value)}
-                  size={6}
+                  size={8}
                   className={inputClass}
                 >
                   {filteredProducts.map((product) => (
                     <option key={product.id} value={product.id}>
-                      {product.product_name} — {product.brand_name ?? "tanpa brand"} (modal{" "}
-                      {formatMoney(product.base_price)})
+                      {product.product_name}
+                      {productCategoryId ? "" : ` · ${product.category_name ?? "tanpa kategori"}`} — modal{" "}
+                      {formatMoney(product.base_price)}
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-muted-foreground">
+                  {filteredProducts.length === 0
+                    ? "Tidak ada produk yang cocok."
+                    : productCategoryId
+                      ? `${filteredProducts.length} produk ditampilkan.`
+                      : unfilteredTotal > filteredProducts.length
+                        ? `Menampilkan ${filteredProducts.length} dari ${unfilteredTotal} produk — pilih kategori untuk melihat semuanya.`
+                        : `${filteredProducts.length} produk ditampilkan.`}
+                </p>
+                {selectedProduct ? (
+                  <p className="rounded-md bg-muted px-3 py-2 text-xs">
+                    Dipilih: <span className="font-medium">{selectedProduct.product_name}</span>
+                    {" · "}
+                    {selectedProduct.category_name ?? "tanpa kategori"}
+                  </p>
+                ) : null}
               </div>
             ) : null}
 
@@ -234,11 +326,17 @@ export function CashbackRuleFormDialog({ products, categories, brands }: Cashbac
                   className={inputClass}
                 >
                   <option value="">Pilih…</option>
-                  {(scopeType === "BRAND" ? brands : categories).map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
+                  {scopeType === "BRAND"
+                    ? brands.map((brand) => (
+                        <option key={brand.id} value={brand.id}>
+                          {brand.name}
+                        </option>
+                      ))
+                    : categoriesWithProducts.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name} ({productCountByCategory.get(category.id)} produk)
+                        </option>
+                      ))}
                 </select>
               </div>
             ) : null}

@@ -244,6 +244,9 @@ export interface CashbackProductOption {
   id: string;
   product_name: string;
   base_price: string;
+  /** Dipakai untuk mengelompokkan per kategori. Nama tampilan saja tidak
+   *  cukup: di produksi ada dua kategori yang sama-sama tampil "Isi Pulsa". */
+  category_id: string | null;
   category_name: string | null;
   brand_name: string | null;
 }
@@ -254,7 +257,7 @@ export interface CashbackProductOption {
 // adalah pemilih yang tidak dipakai.
 export async function listCashbackProductOptions(db: Queryable = pool): Promise<CashbackProductOption[]> {
   const result = await db.query<CashbackProductOption>(
-    `SELECT p.id, p.product_name, p.base_price::text AS base_price,
+    `SELECT p.id, p.product_name, p.base_price::text AS base_price, p.category_id,
             COALESCE(c.display_name, c.name) AS category_name, b.name AS brand_name
      FROM products p
      LEFT JOIN categories c ON c.id = p.category_id

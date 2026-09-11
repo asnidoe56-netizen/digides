@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Clipboard, ShieldCheck } from "lucide-react";
+import { ArrowLeft, BadgePercent, Clipboard, ShieldCheck } from "lucide-react";
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { ApiError } from "@/lib/api/client";
 import { formatMoney } from "@/lib/formatting/money";
@@ -59,6 +59,10 @@ export interface CategoryPurchaseFlowProps {
    *  one flat value per category: two products in the same category can
    *  have different markups if either has its own PRODUCT/BRAND override. */
   productMarkups: Record<string, string>;
+  /** product_id -> perkiraan cashback (PRD Cashback §6.5). Hanya lencana —
+   *  tidak pernah mengubah harga yang dibayar. Kosong/tidak diisi berarti
+   *  tidak ada produk bercashback, dan tidak ada lencana yang tampil. */
+  productCashbacks?: Record<string, number>;
   /** brand_id -> its "Cek Nama Pengguna" product_id, for the Verifikasi
    *  Pengguna card — see catalog.service.ts's getCategoryPurchaseCatalog.
    *  Omitted/empty means this category has no verification SKUs at all
@@ -134,6 +138,7 @@ export function CategoryPurchaseFlow({
   brands,
   products,
   productMarkups,
+  productCashbacks = {},
   verificationProductByBrandId = {},
   availableBalance,
   customerIdField = DEFAULT_CUSTOMER_ID_FIELD,
@@ -166,6 +171,8 @@ export function CategoryPurchaseFlow({
     providerTransactionId?: string | null;
     note?: string;
     timedOut?: boolean;
+    /** undefined = belum dibaca; null = tidak ada cashback. */
+    cashbackAmount?: number | null;
   } | null>(null);
   // Filled in only once a live, single-SKU Digiflazz check succeeds (see
   // handleProceedToConfirm) — null means "still showing the page-load
@@ -222,6 +229,7 @@ export function CategoryPurchaseFlow({
     ? Number(selectedProduct.base_price) + Number(productMarkups[selectedProduct.id] ?? "0")
     : 0;
   const sellingPrice = livePrice ?? estimatedSellingPrice;
+  const estimatedCashback = selectedProduct ? productCashbacks[selectedProduct.id] : undefined;
 
   // A fresh purchase intent gets a fresh idempotency key; retrying a wrong
   // PIN for the *same* intent reuses it, so a flaky retry can never
@@ -447,6 +455,48 @@ export function CategoryPurchaseFlow({
     };
   }, [phase, result?.status, result?.transactionId]);
 
+  // Cashback yang benar-benar diterima, dibaca dari server sekali setelah
+  // SUCCESS — bukan disalin dari perkiraan lencana (PRD Cashback §6.7).
+  //
+  // Paling banyak dua kali baca. Cashback diberikan tepat SESUDAH status
+  // SUCCESS ditulis, dalam permintaan yang sama; jalur webhook bisa membuat
+  // polling melihat SUCCESS sepersekian detik sebelum baris cashbacknya
+  // ada. Kalau produk ini memang punya perkiraan cashback tapi bacaan
+  // pertama kosong, baca sekali lagi dua detik kemudian — lalu berhenti.
+  // Tidak pernah menjadi polling tanpa batas.
+  useEffect(() => {
+    if (phase !== "result" || result?.status !== "SUCCESS" || !result.transactionId) return;
+    if (result.cashbackAmount !== undefined) return;
+    const transactionId = result.transactionId;
+    const expectsCashback = typeof estimatedCashback === "number" && estimatedCashback > 0;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function read(attempt: number) {
+      try {
+        const detail = await getTransaction(transactionId);
+        if (cancelled) return;
+        const amount = detail.cashback_amount == null ? null : Number(detail.cashback_amount);
+        if (amount === null && expectsCashback && attempt === 1) {
+          timer = setTimeout(() => read(2), 2000);
+          return;
+        }
+        setResult((prev) => (prev && prev.transactionId === transactionId ? { ...prev, cashbackAmount: amount } : prev));
+      } catch {
+        if (!cancelled) {
+          setResult((prev) => (prev && prev.transactionId === transactionId ? { ...prev, cashbackAmount: null } : prev));
+        }
+      }
+    }
+
+    read(1);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [phase, result?.status, result?.transactionId, result?.cashbackAmount, estimatedCashback]);
+
   if (phase === "result" && result) {
     return (
       <PurchaseResultScreen
@@ -464,6 +514,7 @@ export function CategoryPurchaseFlow({
         historiHref={homeHref.replace(/\/dashboard$/, "/histori")}
         providerTransactionId={result.providerTransactionId}
         timedOut={result.timedOut}
+        cashbackAmount={result.cashbackAmount}
       />
     );
   }
@@ -493,6 +544,7 @@ export function CategoryPurchaseFlow({
         verifiedTariffPower={verifiedTariffPower}
         nominalLabel={extractNominalLabel(selectedProduct.product_name, categoryName, selectedBrand.name)}
         price={sellingPrice}
+        estimatedCashback={estimatedCashback}
         availableBalance={availableBalance}
         referenceId={idempotencyKey}
         onBack={() => {
@@ -696,6 +748,19 @@ export function CategoryPurchaseFlow({
                     )}
                   >
                     {extractNominalLabel(product.product_name, categoryName, selectedBrand?.name)}
+                    {/* Lencana di kartu nominal, SEBELUM dipilih — cashback yang
+                        hanya muncul sesudah membeli tidak pernah mengubah
+                        pilihan siapa pun (PRD §6.5). */}
+                    {productCashbacks[product.id] ? (
+                      <span
+                        className={cn(
+                          "mt-1 block text-[10px] font-semibold",
+                          product.id === selectedProductId ? "text-white/90" : "text-emerald-700",
+                        )}
+                      >
+                        Cashback {formatMoney(productCashbacks[product.id])}
+                      </span>
+                    ) : null}
                   </button>
                 ))}
               </div>
@@ -724,6 +789,15 @@ export function CategoryPurchaseFlow({
             <span className="text-muted-foreground">Harga</span>
             <span className="font-semibold">{formatMoney(sellingPrice)}</span>
           </div>
+          {estimatedCashback ? (
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-1.5 text-emerald-700">
+                <BadgePercent className="size-4" />
+                Cashback setelah berhasil
+              </span>
+              <span className="font-semibold text-emerald-700">{formatMoney(estimatedCashback)}</span>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Saldo Tersedia</span>
             <span className="font-semibold">{formatMoney(availableBalance)}</span>

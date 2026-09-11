@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, Check, Copy } from "lucide-react";
+import { ArrowLeft, BadgePercent, Check, Copy } from "lucide-react";
 import { formatMoney } from "@/lib/formatting/money";
 
 export interface PurchaseConfirmationScreenProps {
@@ -26,6 +26,10 @@ export interface PurchaseConfirmationScreenProps {
   verifiedTariffPower?: string | null;
   nominalLabel: string;
   price: number;
+  /** Perkiraan cashback dari katalog (PRD Cashback §6.5), atau undefined
+   *  kalau produk ini tidak punya cashback. Ditampilkan SEBELUM PIN
+   *  dimasukkan — tapi tidak pernah mengurangi Harga maupun Total Bayar. */
+  estimatedCashback?: number;
   availableBalance: string;
   /** The transaction's own idempotency key, generated as soon as a
    *  product was picked (category-purchase-flow.tsx) — genuinely becomes
@@ -66,6 +70,7 @@ export function PurchaseConfirmationScreen({
   verifiedTariffPower,
   nominalLabel,
   price,
+  estimatedCashback,
   availableBalance,
   referenceId,
   onBack,
@@ -85,10 +90,16 @@ export function PurchaseConfirmationScreen({
   }
 
   const availableBalanceNumber = Number(availableBalance);
+  // Estimasi saldo sesudah SENGAJA tidak menambahkan cashback. Yang terjadi
+  // saat "Bayar Sekarang" ditekan adalah saldo berkurang sebesar harga
+  // penuh; cashback baru masuk setelah transaksinya sukses. Menjumlahkannya
+  // di sini akan membuat angka ini salah persis pada saat mitra paling
+  // mungkin mencocokkannya dengan saldonya.
   const estimatedBalanceAfter = Number.isFinite(availableBalanceNumber) ? availableBalanceNumber - price : null;
   const transactionTime = new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeStyle: "short" }).format(
     new Date(),
   );
+  const hasCashback = typeof estimatedCashback === "number" && estimatedCashback > 0;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -150,6 +161,22 @@ export function PurchaseConfirmationScreen({
           <DetailRow label="Harga" value={formatMoney(price)} />
           <DetailRow label="Total Bayar" value={formatMoney(price)} bold />
         </SectionCard>
+
+        {/* Di BAWAH Total Bayar, dan sebagai kotak terpisah — bukan baris
+            pengurang di dalam rincian pembayaran. Harga coret atau baris
+            "− Rp200" akan membuat mitra mengira ia membayar lebih sedikit
+            di muka, lalu bingung ketika saldonya berkurang harga penuh. */}
+        {hasCashback ? (
+          <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+            <BadgePercent className="mt-0.5 size-5 shrink-0 text-emerald-700" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-emerald-800">Cashback {formatMoney(estimatedCashback)}</p>
+              <p className="text-xs text-emerald-800/80">
+                Masuk ke saldo Anda begitu transaksi berhasil. Anda tetap membayar {formatMoney(price)} sekarang.
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         <SectionCard title="Rincian Transaksi">
           <DetailRow label="No. Referensi" value={referenceId} />

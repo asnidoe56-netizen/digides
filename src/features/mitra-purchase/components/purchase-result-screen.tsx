@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { CheckCircle2, Clock, Copy, Loader2, XCircle } from "lucide-react";
+import { BadgePercent, CheckCircle2, Clock, Copy, Loader2, XCircle } from "lucide-react";
 import { formatMoney } from "@/lib/formatting/money";
 import { parsePlnToken } from "@/lib/formatting/pln-token";
 
@@ -35,6 +35,10 @@ export interface PurchaseResultScreenProps {
    *  attempts while still PENDING — still not a failure, just tells the
    *  mitra to check Histori instead of continuing to wait on this screen. */
   timedOut?: boolean;
+  /** Cashback yang BENAR-BENAR diterima untuk transaksi ini, dari
+   *  cashback_ledger — bukan perkiraan lencana katalog (PRD Cashback §6.7).
+   *  undefined = belum diketahui, null = tidak ada cashback. */
+  cashbackAmount?: number | null;
 }
 
 function CopyTokenButton({ value }: { value: string }) {
@@ -86,6 +90,7 @@ export function PurchaseResultScreen({
   note,
   providerTransactionId,
   timedOut,
+  cashbackAmount,
 }: PurchaseResultScreenProps) {
   const { icon: Icon, color, title } = STATUS_CONFIG[status];
   // Bagian 8's bounded poll is still actively watching (hasn't timed out)
@@ -107,6 +112,8 @@ export function PurchaseResultScreen({
   const parsedToken =
     status === "SUCCESS" && providerTransactionId && isPln ? parsePlnToken(providerTransactionId) : null;
 
+  const receivedCashback = status === "SUCCESS" && typeof cashbackAmount === "number" && cashbackAmount > 0;
+
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 p-6 text-center">
       <DisplayIcon className={`size-16 ${color} ${isPendingActive ? "animate-spin" : ""}`} />
@@ -122,6 +129,20 @@ export function PurchaseResultScreen({
               : `${categoryName} gagal dikirim. Saldo yang tertahan sudah dikembalikan ke wallet Anda.`}
         </p>
       </div>
+
+      {/* Angka yang benar-benar masuk, bukan yang dijanjikan lencana. Kalau
+          SKU cadangan menipiskan margin dan cashbacknya mengecil, yang
+          tampil di sini adalah angka kecil itu — layar ini tidak boleh
+          mengulang janji yang tidak ditepati. */}
+      {receivedCashback ? (
+        <div className="flex w-full max-w-xs items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-left">
+          <BadgePercent className="size-6 shrink-0 text-emerald-700" />
+          <div>
+            <p className="text-sm font-semibold text-emerald-800">Anda dapat cashback {formatMoney(cashbackAmount)}</p>
+            <p className="text-xs text-emerald-800/80">Sudah masuk ke saldo Anda.</p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="w-full max-w-xs divide-y rounded-xl border px-4 text-left">
         <div className="flex justify-between py-2 text-sm">
@@ -160,6 +181,12 @@ export function PurchaseResultScreen({
           <span className="text-muted-foreground">Total Bayar</span>
           <span className="font-semibold">{formatMoney(price)}</span>
         </div>
+        {receivedCashback ? (
+          <div className="flex justify-between py-2 text-sm">
+            <span className="text-muted-foreground">Cashback</span>
+            <span className="font-semibold text-emerald-700">+ {formatMoney(cashbackAmount)}</span>
+          </div>
+        ) : null}
       </div>
 
       {status === "SUCCESS" && providerTransactionId && isPln ? (

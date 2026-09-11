@@ -1,6 +1,19 @@
 # PRD Cashback Produk
 
-**Versi 1.0** · 10 September 2026 · **Belum dikerjakan**
+**Versi 1.1** · 11 September 2026 · **Tahap 1–4 selesai dikerjakan**
+
+> **Status implementasi.** Mesin (migrasi 055–056, `cashback.service.ts`),
+> panel Super Admin (menu Cashback, dengan pratinjau "yang benar-benar
+> terbayar"), lencana di katalog + layar konfirmasi + layar hasil (web &
+> Flutter), dan baris "Cashback Dibayar" di Keuntungan.
+>
+> Dua kesalahan yang ditemukan saat pengujian dan sudah diperbaiki:
+> (1) `postLedgerEntry` tidak mengenal tipe `CASHBACK`, sehingga baris
+> cashback akan tercatat tanpa saldo benar-benar bertambah — uji pertama
+> lolos karena tidak melewati jalur itu; uji ujung-ke-ujung kini memeriksa
+> SALDO dompet. (2) `ON DELETE SET NULL` di 055 bertentangan dengan trigger
+> append-only; 056 menggantinya dengan `RESTRICT` — aturan yang sudah pernah
+> membayar tidak bisa dihapus, hanya dinonaktifkan.
 Lanjutan dari mesin transaksi yang terkunci (`FLOW_KERJA_DAN_BATASAN_KERJA_TRANSAKSI.md`)
 Migrasi berikutnya: **055**
 

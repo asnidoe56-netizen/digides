@@ -329,6 +329,7 @@ export async function postLedgerEntry(
       case "TRANSFER_IN":
       case "SALE_IN":
       case "STORE_SETTLEMENT_IN":
+      case "CASHBACK":
         availableDelta = amount;
         break;
       case "PAYOUT":
@@ -459,7 +460,7 @@ export async function verifyLedgerConsistency(
     `SELECT SUM(
        CASE
          WHEN type IN ('RESERVE', 'PAYOUT', 'TRANSFER_OUT', 'SALE_OUT', 'STORE_SETTLEMENT_OUT') THEN -amount
-         WHEN type IN ('RELEASE', 'REFUND', 'TOPUP', 'COMMISSION', 'TRANSFER_IN', 'SALE_IN', 'STORE_SETTLEMENT_IN') THEN amount
+         WHEN type IN ('RELEASE', 'REFUND', 'TOPUP', 'COMMISSION', 'TRANSFER_IN', 'SALE_IN', 'STORE_SETTLEMENT_IN', 'CASHBACK') THEN amount
          WHEN type = 'ADJUSTMENT' THEN amount
          ELSE 0
        END
@@ -790,6 +791,7 @@ export async function sumLedgerAmountsByType(
     SALE_IN: "0",
     STORE_SETTLEMENT_OUT: "0",
     STORE_SETTLEMENT_IN: "0",
+    CASHBACK: "0",
   };
   for (const row of result.rows) {
     totals[row.type] = row.total;

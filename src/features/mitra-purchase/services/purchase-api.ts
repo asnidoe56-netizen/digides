@@ -58,7 +58,9 @@ export function getLiveProductPrice(productId: string) {
 // the mitra-scoped read-only counterpart to the SUPER_ADMIN-only
 // check-status route. Never calls Digiflazz, never writes anything.
 export function getTransaction(transactionId: string) {
-  return apiFetch<{ transaction: Transaction }>(`/api/transactions/${transactionId}`);
+  // cashback_amount: yang benar-benar diterima, dari cashback_ledger (PRD
+  // Cashback §6.7). null bila transaksi ini tidak mendapat cashback.
+  return apiFetch<{ transaction: Transaction; cashback_amount?: string | null }>(`/api/transactions/${transactionId}`);
 }
 
 export interface VerifyCustomerNameResult {

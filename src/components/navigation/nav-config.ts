@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeftRight,
   ClipboardList,
+  BadgePercent,
   Coins,
   FileBarChart2,
   Handshake,
@@ -49,6 +50,7 @@ export const NAV_ITEMS: Record<RoleCode, NavItem[]> = {
     { label: "Transaksi Tertahan", href: "/dashboard/super-admin/transaksi-tertahan", icon: Hourglass },
     { label: "Referral", href: "/dashboard/super-admin/referrals", icon: Share2 },
     { label: "Komisi", href: "/dashboard/super-admin/commissions", icon: Coins },
+    { label: "Cashback", href: "/dashboard/super-admin/cashback", icon: BadgePercent },
     { label: "Laporan", href: "/dashboard/super-admin/reports", icon: FileBarChart2 },
     { label: "Keuntungan", href: "/dashboard/super-admin/keuntungan", icon: TrendingUp },
     { label: "Rekonsiliasi", href: "/dashboard/super-admin/reconciliation", icon: Scale },

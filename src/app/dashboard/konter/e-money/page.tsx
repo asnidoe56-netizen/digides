@@ -24,6 +24,7 @@ export default async function KonterEMoneyPage() {
       brands={catalog.brands}
       products={catalog.products}
       productMarkups={catalog.productMarkups}
+      productCashbacks={catalog.productCashbacks}
       verificationProductByBrandId={catalog.verificationProductByBrandId}
       availableBalance={wallet?.available_balance ?? "0"}
       showMerchandisingTabs={false}

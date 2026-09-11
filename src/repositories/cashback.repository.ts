@@ -205,3 +205,62 @@ export async function sumCashbackPaid(
   );
   return result.rows[0];
 }
+
+// --- panel admin -----------------------------------------------------------
+
+export interface CashbackRuleWithTarget extends CashbackRule {
+  /** Nama yang dibaca manusia untuk cakupannya — nama produk, brand, atau
+   *  kategori. Null untuk GLOBAL. Admin memikirkan "Telkomsel 5.000",
+   *  bukan sebuah uuid. */
+  target_name: string | null;
+  /** Hanya untuk cakupan PRODUK: harga modal saat ini, supaya daftar bisa
+   *  langsung menunjukkan apakah cashback-nya masuk akal terhadap
+   *  harganya. */
+  product_base_price: string | null;
+  /** Berapa kali aturan ini sudah benar-benar membayar, dan totalnya. */
+  paid_count: string;
+  paid_total: string;
+}
+
+export async function listCashbackRulesWithTargets(db: Queryable = pool): Promise<CashbackRuleWithTarget[]> {
+  const result = await db.query<CashbackRuleWithTarget>(
+    `SELECT r.*,
+            COALESCE(p.product_name, b.name, COALESCE(c.display_name, c.name)) AS target_name,
+            p.base_price::text AS product_base_price,
+            COUNT(l.id)::text AS paid_count,
+            COALESCE(SUM(l.amount), 0)::text AS paid_total
+     FROM cashback_rules r
+     LEFT JOIN products p ON p.id = r.product_id
+     LEFT JOIN brands b ON b.id = r.brand_id
+     LEFT JOIN categories c ON c.id = r.category_id
+     LEFT JOIN cashback_ledger l ON l.cashback_rule_id = r.id
+     GROUP BY r.id, p.product_name, p.base_price, b.name, c.display_name, c.name
+     ORDER BY r.is_active DESC, r.created_at DESC`,
+  );
+  return result.rows;
+}
+
+export interface CashbackProductOption {
+  id: string;
+  product_name: string;
+  base_price: string;
+  category_name: string | null;
+  brand_name: string | null;
+}
+
+// Semua produk yang bisa dibeli, untuk pemilih produk di formulir. Tanpa
+// paginasi dengan sengaja: katalognya ratusan baris, bukan ribuan, dan
+// pemilih yang harus berpindah halaman untuk menemukan "Telkomsel 5.000"
+// adalah pemilih yang tidak dipakai.
+export async function listCashbackProductOptions(db: Queryable = pool): Promise<CashbackProductOption[]> {
+  const result = await db.query<CashbackProductOption>(
+    `SELECT p.id, p.product_name, p.base_price::text AS base_price,
+            COALESCE(c.display_name, c.name) AS category_name, b.name AS brand_name
+     FROM products p
+     LEFT JOIN categories c ON c.id = p.category_id
+     LEFT JOIN brands b ON b.id = p.brand_id
+     WHERE p.admin_disabled = false
+     ORDER BY COALESCE(c.display_name, c.name) NULLS LAST, b.name NULLS LAST, p.base_price ASC`,
+  );
+  return result.rows;
+}

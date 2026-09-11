@@ -387,6 +387,11 @@ export interface TransactionProfitSummary {
   total_selling: string;
   /** total_selling - total_base — the platform's margin on these transactions. */
   total_profit: string;
+  /** Cashback actually paid back to buyers on these same transactions (PRD
+   *  Cashback). Reported next to total_profit rather than silently
+   *  subtracted from it, so "Keuntungan" keeps meaning exactly what it
+   *  always meant and the cost of cashback stays visible as its own line. */
+  total_cashback: string;
 }
 
 // The Keuntungan menu's headline metric: base_price is what Digiflazz
@@ -406,13 +411,21 @@ export async function sumTransactionProfit(
     total_base: string | null;
     total_selling: string | null;
     total_profit: string | null;
+    total_cashback: string | null;
   }>(
+    // cashback_ledger.transaction_id is UNIQUE (migration 055), so this
+    // LEFT JOIN adds at most one row per transaction — COUNT and the three
+    // price sums above are unaffected by it, which is what makes it safe to
+    // fold into the same query instead of a second round trip that could
+    // drift from these filters.
     `SELECT COUNT(*) AS count,
             COALESCE(SUM(t.base_price), 0) AS total_base,
             COALESCE(SUM(t.selling_price), 0) AS total_selling,
-            COALESCE(SUM(t.selling_price - t.base_price), 0) AS total_profit
+            COALESCE(SUM(t.selling_price - t.base_price), 0) AS total_profit,
+            COALESCE(SUM(cb.amount), 0) AS total_cashback
      FROM transactions t
      ${OWNER_JOIN}
+     LEFT JOIN cashback_ledger cb ON cb.transaction_id = t.id
      ${where}`,
     params,
   );
@@ -422,6 +435,7 @@ export async function sumTransactionProfit(
     total_base: row.total_base ?? "0",
     total_selling: row.total_selling ?? "0",
     total_profit: row.total_profit ?? "0",
+    total_cashback: row.total_cashback ?? "0",
   };
 }
 

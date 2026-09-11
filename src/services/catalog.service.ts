@@ -1,4 +1,5 @@
 import { listBrands, listCategories, listCheapestActiveProducts } from "@/repositories/product.repository";
+import { estimateCashbackForProducts } from "@/services/cashback.service";
 import { getEffectiveMarkupsByProductId } from "@/services/pricing.service";
 import type { Brand, Category, Product } from "@/types/product";
 
@@ -42,6 +43,12 @@ export interface CategoryPurchaseCatalog {
    *  transaction.service.ts's executeTransaction charges with, so the
    *  price shown here always matches what a purchase actually costs. */
   productMarkups: Record<string, string>;
+  /** product_id -> perkiraan cashback dalam rupiah, hanya untuk produk yang
+   *  punya cashback (PRD Cashback §6.5). Konservatif: dihitung dengan
+   *  komisi terbesar yang mungkin, jadi lencananya tidak pernah menjanjikan
+   *  lebih dari yang pasti terbayar. TIDAK PERNAH mengubah harga — harga
+   *  tetap productMarkups di atas, lencana cashback tampil di sebelahnya. */
+  productCashbacks: Record<string, number>;
   /** brand_id -> the product_id of that brand's "Cek Nama Pengguna" SKU,
    *  for brands that have one. The Verifikasi Pengguna card (mitra-
    *  purchase's CategoryPurchaseFlow) looks up the selected brand here to
@@ -57,7 +64,14 @@ export async function getCategoryPurchaseCatalog(categoryName: string): Promise<
   const category = categories.find((item) => item.name === categoryName) ?? null;
 
   if (!category || category.status !== "ACTIVE") {
-    return { category: null, brands: [], products: [], productMarkups: {}, verificationProductByBrandId: {} };
+    return {
+      category: null,
+      brands: [],
+      products: [],
+      productMarkups: {},
+      productCashbacks: {},
+      verificationProductByBrandId: {},
+    };
   }
 
   const [allProducts, allBrands] = await Promise.all([
@@ -76,8 +90,17 @@ export async function getCategoryPurchaseCatalog(categoryName: string): Promise<
 
   const productMarkups = await getEffectiveMarkupsByProductId(products.map((product) => product.id));
 
+  // Lencana cashback tidak boleh bisa menjatuhkan katalog. Kalau
+  // perhitungannya gagal karena apa pun, katalog tetap tampil dan tetap bisa
+  // dibeli — hanya tanpa lencana. Cashback yang benar-benar dibayar dihitung
+  // terpisah saat transaksi sukses, jadi tidak ada uang yang ikut hilang.
+  const productCashbacks = await estimateCashbackForProducts(products, productMarkups).catch((error) => {
+    console.error("Cashback estimate failed for catalog:", error);
+    return {};
+  });
+
   const brandIdsWithProducts = new Set(products.map((product) => product.brand_id));
   const brands = allBrands.filter((brand) => brand.status === "ACTIVE" && brandIdsWithProducts.has(brand.id));
 
-  return { category, brands, products, productMarkups, verificationProductByBrandId };
+  return { category, brands, products, productMarkups, productCashbacks, verificationProductByBrandId };
 }

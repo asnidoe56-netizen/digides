@@ -417,3 +417,64 @@ export async function previewCashback(input: {
     calculation,
   };
 }
+
+// --- katalog mitra (PRD Cashback §6.5) -----------------------------------
+
+// Perkiraan cashback per produk, untuk lencana di katalog — SEBELUM
+// membeli. Cashback yang hanya muncul setelah transaksi adalah kejutan
+// sekali lalu tidak mengubah apa-apa; yang membuatnya bekerja adalah mitra
+// MEMILIH produk karena ada cashbacknya.
+//
+// Sengaja KONSERVATIF: dihitung dengan komisi TERBESAR yang mungkin
+// terpakai, bukan komisi rata-rata. Komisi sebenarnya bergantung pada tier
+// upline masing-masing mitra, yang tidak diketahui di sini. Lencana yang
+// menjanjikan Rp200 lalu membayar Rp50 terasa seperti tipuan (§6.7);
+// lencana yang menjanjikan Rp50 lalu membayar Rp200 terasa seperti bonus.
+// Jadi lencana tidak pernah menjanjikan lebih dari yang pasti terbayar.
+//
+// Satu kali baca aturan untuk seluruh katalog, bukan per produk — katalog
+// memuat sampai 200 produk, dan 200 kueri untuk menggambar satu halaman
+// adalah cara membuat katalog terasa lambat justru di warung bersinyal
+// lemah.
+export async function estimateCashbackForProducts(
+  products: Array<{ id: string; category_id: string | null; brand_id: string | null; base_price: string | number }>,
+  markups: Record<string, string>,
+): Promise<Record<string, number>> {
+  const [cashbackRules, commissionRules] = await Promise.all([
+    listActiveCashbackRules(),
+    listActiveCommissionRules(),
+  ]);
+  if (cashbackRules.length === 0) return {};
+
+  const estimates: Record<string, number> = {};
+  for (const product of products) {
+    const rule = pickCashbackRule(cashbackRules, product);
+    if (!rule) continue;
+
+    const basePrice = Number(product.base_price);
+    const sellingPrice = basePrice + Number(markups[product.id] ?? 0);
+    const minTransaction = Number(rule.min_transaction ?? 0);
+    if (minTransaction > 0 && sellingPrice < minTransaction) continue;
+
+    const margin = Math.max(sellingPrice - basePrice, 0);
+    const worstCaseCommission = commissionRules
+      .filter((commission) => commission.eligible_category_id === null || commission.eligible_category_id === product.category_id)
+      .reduce((largest, commission) => {
+        const amount =
+          commission.commission_type === "FLAT"
+            ? Number(commission.flat_amount ?? 0)
+            : (margin * Number(commission.percentage ?? 0)) / 100;
+        const capped = Number(commission.max_commission ?? 0) > 0 ? Math.min(amount, Number(commission.max_commission)) : amount;
+        return Math.max(largest, Math.min(capped, margin));
+      }, 0);
+
+    const { payable } = calculateCashback({
+      rule,
+      sellingPrice,
+      basePrice,
+      commissionAlreadyAwarded: Math.round(worstCaseCommission),
+    });
+    if (payable > 0) estimates[product.id] = payable;
+  }
+  return estimates;
+}

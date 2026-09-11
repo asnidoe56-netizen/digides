@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
+import { getCashbackForTransaction } from "@/services/cashback.service";
 import { getTransactionDetail } from "@/services/transaction.service";
 import { listReadableWalletIds } from "@/services/wallet.service";
 
@@ -34,5 +35,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Transaksi tidak ditemukan" }, { status: 404 });
   }
 
-  return NextResponse.json({ transaction, balance_summary: balanceSummary });
+  // Cashback yang BENAR-BENAR diterima, dari cashback_ledger — bukan
+  // perkiraan lencana katalog. Layar hasil menampilkan angka ini, supaya
+  // yang dilihat mitra selalu sama dengan yang masuk ke saldonya (PRD
+  // Cashback §6.7), termasuk saat SKU cadangan menipiskan marginnya.
+  const cashback = await getCashbackForTransaction(transaction.id);
+
+  return NextResponse.json({
+    transaction,
+    balance_summary: balanceSummary,
+    cashback_amount: cashback ? cashback.amount : null,
+  });
 }

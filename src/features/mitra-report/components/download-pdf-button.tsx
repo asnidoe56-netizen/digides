@@ -31,6 +31,7 @@ const LEDGER_TYPE_LABEL: Record<string, string> = {
   SALE_IN: "Penjualan Toko",
   STORE_SETTLEMENT_OUT: "Pindah ke Saldo Utama",
   STORE_SETTLEMENT_IN: "Dari Saldo Toko",
+  CASHBACK: "Cashback",
 };
 
 interface BaseProps {

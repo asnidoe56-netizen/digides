@@ -50,6 +50,7 @@ const LEDGER_TYPE_LABEL: Record<string, string> = {
   SALE_IN: "Penjualan Toko",
   STORE_SETTLEMENT_OUT: "Pindah ke Saldo Utama",
   STORE_SETTLEMENT_IN: "Dari Saldo Toko",
+  CASHBACK: "Cashback",
 };
 
 const displayDateFormatter = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric" });
@@ -137,7 +138,7 @@ export default async function KonterLaporanPage({ searchParams }: LaporanPagePro
       sumTransactionVolume({ walletId, dateFrom: from, dateTo: to }),
     ]);
     const totalMasuk =
-      Number(typeSums.TOPUP) + Number(typeSums.REFUND) + Number(typeSums.COMMISSION) + Number(typeSums.TRANSFER_IN) + Number(typeSums.RELEASE) + Number(typeSums.SALE_IN) + Number(typeSums.STORE_SETTLEMENT_IN);
+      Number(typeSums.TOPUP) + Number(typeSums.REFUND) + Number(typeSums.COMMISSION) + Number(typeSums.TRANSFER_IN) + Number(typeSums.RELEASE) + Number(typeSums.SALE_IN) + Number(typeSums.STORE_SETTLEMENT_IN) + Number(typeSums.CASHBACK ?? 0);
     const totalKeluar = Number(typeSums.DEBIT) + Number(typeSums.RESERVE) + Number(typeSums.TRANSFER_OUT) + Number(typeSums.SALE_OUT) + Number(typeSums.STORE_SETTLEMENT_OUT);
     const breakdown = Object.entries(typeSums)
       .filter(([, amount]) => Number(amount) !== 0)

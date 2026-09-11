@@ -24,6 +24,7 @@ const LEDGER_TYPE_LABEL: Record<string, string> = {
   SALE_IN: "Penjualan Toko",
   STORE_SETTLEMENT_OUT: "Pindah ke Saldo Utama",
   STORE_SETTLEMENT_IN: "Dari Saldo Toko",
+  CASHBACK: "Cashback",
 };
 
 // Server Component — reads straight from wallet.service, no client fetch.

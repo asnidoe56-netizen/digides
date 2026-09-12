@@ -643,6 +643,15 @@
   grid-template-columns: repeat(4, 1fr);
   gap: 20px;
   margin-top: 30px;
+  /* Tiap kartu berhenti tepat setelah teksnya, tidak diregangkan setinggi
+     kartu tertinggi.
+     *
+     * Tinggi gambar sekarang mengikuti bentuk fotonya, jadi satu foto yang
+     * lebih tegak akan membuat kartunya lebih tinggi. Kalau kartu lain ikut
+     * diregangkan setinggi itu, yang muncul adalah ruang kosong lebar di
+     * bawah teks mereka — dan ruang kosong itu jauh lebih mengganggu
+     * daripada dasar kartu yang tidak rata. */
+  align-items: start;
 }
 .lp .kartu {
   background: #fff;
@@ -686,7 +695,10 @@
   height: 3px;
   border-radius: 2px;
   background: var(--merah);
-  margin-top: auto;
+  /* Mengikuti teks, bukan didorong ke dasar kartu. Sejak kartu berhenti
+     tepat setelah teksnya, mendorongnya ke dasar tidak lagi merapikan apa
+     pun — ia hanya menyisakan jarak yang berbeda-beda tiap kartu. */
+  margin-top: 14px;
 }
 
 /* ── Pergeseran cara pandang ────────────────────────────────────────────── */

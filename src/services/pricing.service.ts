@@ -14,7 +14,7 @@ import {
   upsertProductMarkup,
   type ListProductsFilter,
 } from "@/repositories/product.repository";
-import type { ProductStatus } from "@/types/product";
+import type { ProductStatus, ProductType } from "@/types/product";
 
 export async function getCategoryMarkups() {
   return listCategoryMarkups();
@@ -58,15 +58,21 @@ export async function setCategoryMarkup(input: SetCategoryMarkupInput) {
 // category's flat markup. Used by both the buyer-facing catalog (what
 // price is shown while browsing) and the transaction engine (what's
 // actually charged), so the two can never disagree.
+//
+// `product_type` ikut dikirim karena aturan GLOBAL sengaja tidak berlaku
+// untuk pascabayar: markup global yang dirancang untuk pulsa Rp5.000 tidak
+// boleh diam-diam menempel ke tagihan Rp300.000 (PRD Pascabayar §7.10).
 export async function getEffectiveMarkupValue(product: {
   id: string;
   category_id: string | null;
   brand_id: string | null;
+  product_type: ProductType;
 }): Promise<string> {
   const rules = await listApplicableMarkupRules({
     productId: product.id,
     categoryId: product.category_id,
     brandId: product.brand_id,
+    productType: product.product_type,
   });
   return rules[0]?.markup_value ?? "0";
 }

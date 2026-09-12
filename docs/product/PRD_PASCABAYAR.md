@@ -542,9 +542,12 @@ formulir biaya layanan pascabayar hanya menawarkan NOMINAL.
 
 - Fungsi sinkron sendiri dengan `cmd: "pasca"`, bukan cabang di dalam
   sinkron prabayar — kegagalan salah satunya tidak menghentikan yang lain.
-- Jadwal: sekali per jam. Biaya admin dan komisi tagihan jarang berubah,
-  dan price-list Digiflazz dibatasi sekali per 5 menit per akun — sinkron
-  pascabayar tidak boleh memakan jatah sinkron prabayar.
+- **Dipicu manual** dari halaman Produk lewat tombol "Sinkronkan Pascabayar",
+  sama seperti sinkron prabayar — yang ternyata juga tidak terjadwal.
+  Jendela tunggu 5 menit Digiflazz sengaja dibagi dengan sinkron prabayar,
+  karena batas itu berlaku per akun, bukan per jenis daftar harga.
+  Penjadwalan otomatis bisa ditambahkan nanti kalau katalognya mulai sering
+  berubah; hari ini isinya hanya 7 produk.
 - Tercatat di `catalog_sync_logs` yang sama, dengan penanda jenis.
 - Status produk mengikuti `buyer_product_status` per item, sama seperti
   prabayar. Catatan: sinkron prabayar hari ini **tidak** menandai produk
@@ -765,11 +768,31 @@ pendanaan dari saldo utama (§5d), dan tidak ada state machine baru (§8.1).
 
 Hasil Tahap 0 dicatat sebagai revisi dokumen ini **sebelum** Tahap 1.
 
-### Tahap 1 — Pemisahan katalog (tidak terlihat mitra)
+### Tahap 1 — Pemisahan katalog (tidak terlihat mitra) — ✅ **selesai 12 September 2026, belum dideploy**
 
-Migrasi 057 bagian 6.1, inventarisasi seluruh pencarian kategori/brand
-berdasarkan nama, sinkron pascabayar, pengecualian GLOBAL di markup. Selesai
-= kriteria **Katalog** lulus, dan halaman prabayar tidak berubah sama sekali.
+Migrasi 057 (kolom `product_type` di produk/kategori/brand, keunikan nama per
+jenis, kolom `admin_fee` dan `provider_commission`), sinkron pascabayar
+terpisah, dan pengecualian markup GLOBAL.
+
+Keputusan pelaksanaan yang berbeda dari rencana awal: penyaring jenis
+dipasang **satu kali** di `buildProductFilterConditions`, sehingga setiap
+kueri produk yang tidak menyebut jenis hanya melihat prabayar — bukan
+ditambahkan satu per satu di tiap pemanggil, pola yang dulu membuat tipe
+ledger `CASHBACK` terlewat di satu titik. `upsertCategory`, `upsertBrand`,
+dan `upsertProduct` mewajibkan jenis disebut, jadi pemeriksa tipe yang
+menunjuk pemanggil yang belum menyesuaikan.
+
+Diuji di database lokal tanpa satu pun panggilan Digiflazz — **12/12 lulus**:
+katalog mitra dan daftar bawaan tidak memuat produk pascabayar sementara
+daftar "semua jenis" memuatnya (bukti penyaringnya yang bekerja, bukan
+datanya kosong), markup GLOBAL tidak menempel ke pascabayar tapi tetap
+berlaku untuk prabayar, SKU cadangan tidak pernah memilih produk
+pascabayar, produk yang hilang dari daftar dinonaktifkan, dan jumlah produk
+prabayar tidak berubah sama sekali. `tsc --noEmit` bersih.
+
+Uji itu juga menangkap satu bug nyata sebelum sampai ke produksi: kueri
+markup sudah memakai parameter jenis tapi daftar parameternya belum — hal
+yang tidak bisa dilihat pemeriksa tipe, hanya oleh database saat dijalankan.
 
 ### Tahap 2 — Cek tagihan (tanpa uang)
 

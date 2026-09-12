@@ -12,14 +12,22 @@ import type {
   MerchandisingTag,
   Product,
   ProductStatus,
+  ProductType,
 } from "@/types/product";
 
-export async function upsertCategory(name: string, db: Queryable = pool): Promise<Category> {
+// `productType` wajib disebut pemanggilnya: sejak migrasi 057 keunikan nama
+// kategori berlaku PER JENIS, jadi kategori pascabayar tidak pernah
+// diam-diam menempel ke kategori prabayar bernama sama (PRD Pascabayar §7.9).
+export async function upsertCategory(
+  name: string,
+  productType: ProductType,
+  db: Queryable = pool,
+): Promise<Category> {
   const result = await db.query<Category>(
-    `INSERT INTO categories (name) VALUES ($1)
-     ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+    `INSERT INTO categories (name, product_type) VALUES ($1, $2)
+     ON CONFLICT (name, product_type) DO UPDATE SET name = EXCLUDED.name
      RETURNING *`,
-    [name],
+    [name, productType],
   );
   return result.rows[0];
 }
@@ -81,12 +89,17 @@ export async function listCategoriesWithProductCount(db: Queryable = pool): Prom
   return result.rows;
 }
 
-export async function upsertBrand(name: string, db: Queryable = pool): Promise<Brand> {
+// Sama seperti upsertCategory: jenisnya wajib, keunikan nama per jenis.
+export async function upsertBrand(
+  name: string,
+  productType: ProductType,
+  db: Queryable = pool,
+): Promise<Brand> {
   const result = await db.query<Brand>(
-    `INSERT INTO brands (name) VALUES ($1)
-     ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+    `INSERT INTO brands (name, product_type) VALUES ($1, $2)
+     ON CONFLICT (name, product_type) DO UPDATE SET name = EXCLUDED.name
      RETURNING *`,
-    [name],
+    [name, productType],
   );
   return result.rows[0];
 }
@@ -156,10 +169,19 @@ export interface UpsertProductInput {
   product_name: string;
   category_id: string | null;
   brand_id: string | null;
+  /** Wajib, bukan opsional dengan nilai bawaan: pemeriksa tipe harus
+   *  menunjuk setiap pemanggil yang belum menyesuaikan, bukan diam-diam
+   *  menganggapnya prabayar. */
+  product_type: ProductType;
+  /** Pascabayar selalu 0 — nominalnya baru ada setelah cek tagihan. */
   base_price: string | number;
   status: ProductStatus;
   provider?: string;
   provider_type?: string | null;
+  /** Pascabayar saja, dari price-list: biaya admin ke pelanggan dan komisi
+   *  Digiflazz (keuntungan Digides per transaksi). NULL untuk prabayar. */
+  admin_fee?: string | number | null;
+  provider_commission?: string | number | null;
 }
 
 // Used by the catalog-sync job: one row per SKU from the provider
@@ -171,15 +193,18 @@ export interface UpsertProductInput {
 // reset them back to whatever Digiflazz's last state happened to be.
 export async function upsertProduct(input: UpsertProductInput, db: Queryable = pool): Promise<Product> {
   const result = await db.query<Product>(
-    `INSERT INTO products (sku, product_name, category_id, brand_id, base_price, status, provider, provider_type, last_synced_at)
-     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'digiflazz'), $8, now())
+    `INSERT INTO products (sku, product_name, category_id, brand_id, product_type, base_price, status, provider, provider_type, admin_fee, provider_commission, last_synced_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 'digiflazz'), $9, $10, $11, now())
      ON CONFLICT (sku) DO UPDATE SET
        product_name = EXCLUDED.product_name,
        category_id = EXCLUDED.category_id,
        brand_id = EXCLUDED.brand_id,
+       product_type = EXCLUDED.product_type,
        base_price = EXCLUDED.base_price,
        status = EXCLUDED.status,
        provider_type = EXCLUDED.provider_type,
+       admin_fee = EXCLUDED.admin_fee,
+       provider_commission = EXCLUDED.provider_commission,
        last_synced_at = now()
      RETURNING *`,
     [
@@ -187,13 +212,40 @@ export async function upsertProduct(input: UpsertProductInput, db: Queryable = p
       input.product_name,
       input.category_id,
       input.brand_id,
+      input.product_type,
       input.base_price,
       input.status,
       input.provider ?? null,
       input.provider_type ?? null,
+      input.admin_fee ?? null,
+      input.provider_commission ?? null,
     ],
   );
   return result.rows[0];
+}
+
+// Produk yang hilang sama sekali dari price-list terbaru dinonaktifkan —
+// tidak pernah dihapus, karena transaksi lama tetap menunjuk ke barisnya.
+//
+// Hanya dipakai sinkron PASCABAYAR. Katalog prabayar sengaja tidak
+// diperlakukan begitu: daftarnya ratusan SKU, dan satu sinkron yang terpotong
+// di tengah bisa mematikan katalog yang sebenarnya sehat. Untuk pascabayar
+// risikonya terbalik — produk hantu yang tertinggal tetap bisa dicek
+// tagihannya oleh mitra (PRD Pascabayar §7.11).
+export async function disableProductsMissingFromSync(
+  productType: ProductType,
+  keepSkus: string[],
+  db: Queryable = pool,
+): Promise<number> {
+  const result = await db.query(
+    `UPDATE products
+     SET status = 'DISABLED'
+     WHERE product_type = $1
+       AND status <> 'DISABLED'
+       AND NOT (sku = ANY($2::text[]))`,
+    [productType, keepSkus],
+  );
+  return result.rowCount ?? 0;
 }
 
 export async function findProductBySku(sku: string, db: Queryable = pool): Promise<Product | null> {
@@ -240,6 +292,10 @@ export interface ListProductsFilter {
   status?: ProductStatus;
   categoryId?: string;
   brandId?: string;
+  /** Jenis produk; bawaannya "PREPAID" kalau tidak disebut, dan "ALL" untuk
+   *  halaman yang memang ingin melihat keduanya (mis. Produk di Super
+   *  Admin). Lihat buildProductFilterConditions dan PRD Pascabayar §7.9. */
+  productType?: ProductType | "ALL";
   /** Matches against product_name or sku, case-insensitive. */
   search?: string;
   /** The buyer-facing catalog's own gate — admin_disabled = true must
@@ -261,6 +317,17 @@ function buildProductFilterConditions(
 ): { where: string; params: unknown[] } {
   const conditions: string[] = [];
   const params: unknown[] = [];
+
+  // Aman secara bawaan: kueri produk yang tidak menyebut jenis hanya melihat
+  // katalog prabayar. Penyaringnya sengaja dipasang SEKALI di sini, di jalur
+  // yang dilewati listProducts, countProducts, dan listCheapestActiveProducts
+  // — bukan ditambahkan satu per satu di tiap pemanggil, pola yang dulu
+  // membuat tipe ledger CASHBACK terlewat di satu titik dan membayar
+  // cashback tanpa saldo bertambah.
+  if (filter.productType !== "ALL") {
+    params.push(filter.productType ?? "PREPAID");
+    conditions.push(`${alias}product_type = $${params.length}`);
+  }
 
   if (filter.status) {
     params.push(filter.status);
@@ -386,6 +453,11 @@ export async function findBackupProductCandidates(
      WHERE category_id = $1
        AND brand_id = $2
        AND product_name = $3
+       -- Mekanisme SKU cadangan (dokumen terkunci §5a) tidak berlaku untuk
+       -- pascabayar: tagihan terikat ke ref_id cek tagihan, dan produk
+       -- pascabayar ber-base_price 0 tidak boleh pernah lolos sebagai
+       -- kandidat pengganti pembelian prabayar (PRD Pascabayar §7.5).
+       AND product_type = 'PREPAID'
        AND status = 'ACTIVE'
        AND admin_disabled = false
        AND base_price < $4
@@ -424,13 +496,35 @@ export async function getLastCatalogSyncStartedAt(db: Queryable = pool): Promise
   return result.rows[0]?.started_at ?? null;
 }
 
-export async function listCategories(db: Queryable = pool): Promise<Category[]> {
-  const result = await db.query<Category>(`SELECT * FROM categories ORDER BY name ASC`);
+// Bawaannya prabayar, sama seperti kueri produk. Halaman yang memang ingin
+// melihat keduanya menyebut "ALL" secara sadar.
+export async function listCategories(
+  productType: ProductType | "ALL" = "PREPAID",
+  db: Queryable = pool,
+): Promise<Category[]> {
+  if (productType === "ALL") {
+    const semua = await db.query<Category>(`SELECT * FROM categories ORDER BY name ASC`);
+    return semua.rows;
+  }
+  const result = await db.query<Category>(
+    `SELECT * FROM categories WHERE product_type = $1 ORDER BY name ASC`,
+    [productType],
+  );
   return result.rows;
 }
 
-export async function listBrands(db: Queryable = pool): Promise<Brand[]> {
-  const result = await db.query<Brand>(`SELECT * FROM brands ORDER BY name ASC`);
+export async function listBrands(
+  productType: ProductType | "ALL" = "PREPAID",
+  db: Queryable = pool,
+): Promise<Brand[]> {
+  if (productType === "ALL") {
+    const semua = await db.query<Brand>(`SELECT * FROM brands ORDER BY name ASC`);
+    return semua.rows;
+  }
+  const result = await db.query<Brand>(
+    `SELECT * FROM brands WHERE product_type = $1 ORDER BY name ASC`,
+    [productType],
+  );
   return result.rows;
 }
 
@@ -654,7 +748,7 @@ export async function upsertCategoryMarkup(
 // most specific scope first (PRODUCT > BRAND > CATEGORY > GLOBAL) — the
 // pricing engine walks this list and applies each rule in order.
 export async function listApplicableMarkupRules(
-  params: { productId: string; categoryId: string | null; brandId: string | null },
+  params: { productId: string; categoryId: string | null; brandId: string | null; productType: ProductType },
   db: Queryable = pool,
 ): Promise<MarkupRule[]> {
   const result = await db.query<MarkupRule>(
@@ -666,7 +760,11 @@ export async function listApplicableMarkupRules(
          (scope_type = 'PRODUCT' AND product_id = $1) OR
          (scope_type = 'BRAND' AND brand_id = $2) OR
          (scope_type = 'CATEGORY' AND category_id = $3) OR
-         (scope_type = 'GLOBAL')
+         -- Aturan GLOBAL sengaja TIDAK berlaku untuk pascabayar: markup
+         -- global yang dirancang untuk pulsa Rp5.000 tidak boleh diam-diam
+         -- menempel ke tagihan Rp300.000. Biaya layanan tagihan harus
+         -- keputusan sadar per kategori/brand/produk (PRD Pascabayar §7.10).
+         (scope_type = 'GLOBAL' AND $4 = 'PREPAID')
        )
      ORDER BY
        CASE scope_type
@@ -676,7 +774,7 @@ export async function listApplicableMarkupRules(
          ELSE 3
        END,
        priority DESC`,
-    [params.productId, params.brandId, params.categoryId],
+    [params.productId, params.brandId, params.categoryId, params.productType],
   );
   return result.rows;
 }
@@ -699,7 +797,11 @@ export async function listEffectiveMarkupsByProductId(
      LEFT JOIN markup_rules pm ON pm.product_id = p.id AND pm.scope_type = 'PRODUCT' AND pm.owner_type = 'MASTER' AND pm.is_active = true
      LEFT JOIN markup_rules bm ON bm.brand_id = p.brand_id AND bm.scope_type = 'BRAND' AND bm.owner_type = 'MASTER' AND bm.is_active = true
      LEFT JOIN markup_rules cm ON cm.category_id = p.category_id AND cm.scope_type = 'CATEGORY' AND cm.owner_type = 'MASTER' AND cm.is_active = true
+     -- Aturan GLOBAL hanya menempel pada produk prabayar; untuk pascabayar
+     -- biaya layanan harus disetel sadar per kategori/brand/produk (PRD
+     -- Pascabayar §7.10). Penjaga yang sama ada di listApplicableMarkupRules.
      LEFT JOIN markup_rules gm ON gm.scope_type = 'GLOBAL' AND gm.owner_type = 'MASTER' AND gm.is_active = true
+       AND p.product_type = 'PREPAID'
      WHERE p.id = ANY($1)`,
     [productIds],
   );

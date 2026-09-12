@@ -373,6 +373,7 @@ export async function previewCashback(input: {
       id: product.id,
       category_id: product.category_id,
       brand_id: product.brand_id,
+      product_type: product.product_type,
     }),
   );
   const basePrice = Number(product.base_price);

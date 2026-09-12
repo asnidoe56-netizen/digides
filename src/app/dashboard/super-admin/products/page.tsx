@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/page-header";
 import { PaginationControls } from "@/components/pagination-controls";
-import { ProductFilters, ProductList, SyncCatalogButton } from "@/features/products";
+import { ProductFilters, ProductList, SyncCatalogButton, SyncPascaCatalogButton } from "@/features/products";
 import {
   countProducts,
   listBrands,
@@ -36,6 +36,11 @@ export default async function SuperAdminProductsPage({ searchParams }: SuperAdmi
     categoryId: params.category || undefined,
     brandId: params.brand || undefined,
     status: (params.status as ProductStatus | undefined) || undefined,
+    // Satu-satunya halaman yang memang harus melihat kedua jenis: admin
+    // perlu memastikan hasil sinkronisasi pascabayar benar-benar masuk.
+    // Seluruh jalur lain (katalog mitra, SKU cadangan, pemilih cashback)
+    // sengaja hanya melihat prabayar — lihat buildProductFilterConditions.
+    productType: "ALL" as const,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   };
@@ -45,8 +50,8 @@ export default async function SuperAdminProductsPage({ searchParams }: SuperAdmi
   const [products, total, categories, brands, categoryBrandPairs] = await Promise.all([
     listProducts(filter),
     countProducts(filter),
-    listCategories(),
-    listBrands(),
+    listCategories("ALL"),
+    listBrands("ALL"),
     listCategoryBrandPairs(),
   ]);
 
@@ -74,7 +79,10 @@ export default async function SuperAdminProductsPage({ searchParams }: SuperAdmi
     <div className="flex flex-col gap-6">
       <PageHeader title="Produk" description={`${total} produk dari katalog Digiflazz`} />
 
-      <SyncCatalogButton />
+      <div className="flex flex-wrap items-start gap-3">
+        <SyncCatalogButton />
+        <SyncPascaCatalogButton />
+      </div>
       <ProductFilters categories={categories} brands={brands} categoryBrandPairs={categoryBrandPairs} />
       <ProductList
         products={products}

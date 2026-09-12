@@ -263,6 +263,10 @@ export async function listCashbackProductOptions(db: Queryable = pool): Promise<
      LEFT JOIN categories c ON c.id = p.category_id
      LEFT JOIN brands b ON b.id = p.brand_id
      WHERE p.admin_disabled = false
+       -- Produk pascabayar belum bisa dibeli mitra, dan harganya 0 di
+       -- katalog — memunculkannya di pemilih produk hanya membingungkan
+       -- admin. Dibuka lagi saat pembayaran tagihan benar-benar jalan.
+       AND p.product_type = 'PREPAID'
      ORDER BY COALESCE(c.display_name, c.name) NULLS LAST, b.name NULLS LAST, p.base_price ASC`,
   );
   return result.rows;

@@ -2,9 +2,16 @@ export type CatalogStatus = "ACTIVE" | "DISABLED";
 export type ProductStatus = "ACTIVE" | "DISABLED" | "GANGGUAN";
 export type MerchandisingTag = "SUPER_MURAH" | "PROMO" | "TERLARIS";
 
+/** Prabayar (pulsa, token, voucher — harga tetap, dibeli sekali jadi) vs
+ *  pascabayar (tagihan — nominalnya baru diketahui setelah cek tagihan).
+ *  Keduanya hidup di tabel yang sama tapi tidak boleh pernah bercampur di
+ *  layar mitra; lihat PRD Pascabayar §7.9 dan migrasi 057. */
+export type ProductType = "PREPAID" | "POSTPAID";
+
 export interface Category {
   id: string;
   name: string;
+  product_type: ProductType;
   // Admin-facing label shown to end users instead of `name` (e.g. "Isi
   // Pulsa" for the "Pulsa" category) — null means no custom label is set
   // yet, so callers should fall back to `name`. Kept separate from `name`
@@ -17,6 +24,7 @@ export interface Category {
 export interface Brand {
   id: string;
   name: string;
+  product_type: ProductType;
   status: CatalogStatus;
 }
 
@@ -26,7 +34,16 @@ export interface Product {
   product_name: string;
   category_id: string | null;
   brand_id: string | null;
+  product_type: ProductType;
+  /** Prabayar: harga modal dari Digiflazz. Pascabayar: selalu 0 — nominalnya
+   *  baru diketahui saat cek tagihan (PRD Pascabayar §6.1). */
   base_price: string;
+  /** Pascabayar saja: biaya admin yang ditagihkan ke pelanggan, dari
+   *  price-list Digiflazz. NULL untuk prabayar. */
+  admin_fee: string | null;
+  /** Pascabayar saja: komisi Digiflazz, yaitu keuntungan Digides per
+   *  transaksi sebelum biaya layanan tambahan. NULL untuk prabayar. */
+  provider_commission: string | null;
   status: ProductStatus;
   /** Super Admin's own on/off switch, independent of `status` (which
    *  Digiflazz's catalog sync owns and can overwrite at any time). Lets an

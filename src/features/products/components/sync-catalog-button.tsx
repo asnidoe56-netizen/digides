@@ -6,12 +6,25 @@ import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
-import { syncCatalog } from "../services/products-api";
+import type { CatalogSyncSummary, PascaCatalogSyncSummary } from "@/jobs/catalog-sync";
+import { syncCatalog, syncPascaCatalog } from "../services/products-api";
 
-// Pulls the latest prepaid price-list from Digiflazz into the local
-// products table (see src/jobs/catalog-sync.ts), then refreshes the page
-// so the new/updated products show up immediately.
-export function SyncCatalogButton() {
+// Satu bentuk tombol, dua katalog. Prabayar dan pascabayar memanggil rute
+// yang berbeda (PRD Pascabayar §7.11), tapi perilaku tombolnya sama persis —
+// jadi bentuknya dibagi di sini alih-alih disalin dua kali.
+function SyncButton<T extends CatalogSyncSummary>({
+  label,
+  labelSibuk,
+  variant = "default",
+  jalankan,
+  ringkasan,
+}: {
+  label: string;
+  labelSibuk: string;
+  variant?: "default" | "outline";
+  jalankan: () => Promise<T>;
+  ringkasan: (summary: T) => string;
+}) {
   const router = useRouter();
   const [isSyncing, setIsSyncing] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -20,11 +33,8 @@ export function SyncCatalogButton() {
     setIsSyncing(true);
     setResult(null);
     try {
-      const summary = await syncCatalog();
-      setResult({
-        success: true,
-        message: `Sinkron selesai: ${summary.received} produk diterima, ${summary.inserted} baru, ${summary.updated} diperbarui${summary.errors > 0 ? `, ${summary.errors} gagal` : ""}.`,
-      });
+      const summary = await jalankan();
+      setResult({ success: true, message: ringkasan(summary) });
       router.refresh();
     } catch (error) {
       setResult({
@@ -38,9 +48,9 @@ export function SyncCatalogButton() {
 
   return (
     <div className="flex flex-col gap-2">
-      <Button onClick={handleSync} disabled={isSyncing} className="h-11 w-fit gap-2">
+      <Button onClick={handleSync} disabled={isSyncing} variant={variant} className="h-11 w-fit gap-2">
         <RefreshCw className={cn("size-4", isSyncing && "animate-spin")} />
-        {isSyncing ? "Menyinkronkan..." : "Sinkronkan Sekarang"}
+        {isSyncing ? labelSibuk : label}
       </Button>
       {result ? (
         <p
@@ -55,5 +65,36 @@ export function SyncCatalogButton() {
         </p>
       ) : null}
     </div>
+  );
+}
+
+// Menarik price-list prabayar terbaru dari Digiflazz ke tabel produk lokal
+// (src/jobs/catalog-sync.ts), lalu menyegarkan halaman.
+export function SyncCatalogButton() {
+  return (
+    <SyncButton
+      label="Sinkronkan Sekarang"
+      labelSibuk="Menyinkronkan..."
+      jalankan={syncCatalog}
+      ringkasan={(s) =>
+        `Sinkron selesai: ${s.received} produk diterima, ${s.inserted} baru, ${s.updated} diperbarui${s.errors > 0 ? `, ${s.errors} gagal` : ""}.`
+      }
+    />
+  );
+}
+
+// Katalog pascabayar: tanpa harga, hanya biaya admin dan komisi. Produk yang
+// hilang dari daftar ikut dinonaktifkan, jadi jumlahnya disebut terpisah.
+export function SyncPascaCatalogButton() {
+  return (
+    <SyncButton<PascaCatalogSyncSummary>
+      label="Sinkronkan Pascabayar"
+      labelSibuk="Menyinkronkan..."
+      variant="outline"
+      jalankan={syncPascaCatalog}
+      ringkasan={(s) =>
+        `Sinkron pascabayar selesai: ${s.received} produk diterima, ${s.inserted} baru, ${s.updated} diperbarui${s.missing > 0 ? `, ${s.missing} hilang dari daftar dan dinonaktifkan` : ""}${s.errors > 0 ? `, ${s.errors} gagal` : ""}.`
+      }
+    />
   );
 }

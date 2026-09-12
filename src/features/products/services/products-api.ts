@@ -1,5 +1,5 @@
 import { apiFetch } from "@/lib/api/client";
-import type { CatalogSyncSummary } from "@/jobs/catalog-sync";
+import type { CatalogSyncSummary, PascaCatalogSyncSummary } from "@/jobs/catalog-sync";
 import type { MerchandisingTag } from "@/types/product";
 
 export function syncCatalog(): Promise<CatalogSyncSummary> {
@@ -18,4 +18,9 @@ export function setProductTag(productId: string, tag: MerchandisingTag | null) {
     method: "PATCH",
     body: JSON.stringify({ tag }),
   });
+}
+
+// Katalog pascabayar disinkronkan lewat rute sendiri (PRD Pascabayar §7.11).
+export function syncPascaCatalog(): Promise<PascaCatalogSyncSummary> {
+  return apiFetch<PascaCatalogSyncSummary>("/api/catalog/sync/pasca", { method: "POST" });
 }

@@ -324,17 +324,27 @@ Diinstruksikan eksplisit oleh pemilik produk pada 2026-09-11.
 3. **`bill_inquiries` append-only**, seperti tabel keuangan lain: ia bukti apa yang dilihat mitra sebelum membayar.
 4. **`buyer_sku_code` dan `customer_no` dipakai ulang dari `bill_inquiries`**, bukan dibaca ulang dari katalog atau input, supaya `status-pasca` selalu memakai kode yang sama dengan `pay-pasca`.
 
-**Verifikasi — belum selesai, diisi saat tiap bagian terbukti:**
-- [ ] Cek tagihan tidak menulis satu baris pun di `transactions` maupun `wallet_ledger`.
+**Verifikasi — sudah terbukti (uji lokal 2026-09-12, tanpa satu pun panggilan Digiflazz, 15/15 lulus):**
+- [x] Cek tagihan kedaluwarsa, milik mitra lain, atau yang gagal: ditolak **sebelum** PIN diminta, jadi tidak pernah sampai ke RESERVE.
+- [x] Satu hasil cek tagihan tidak bisa menghasilkan dua transaksi — ditolak database (`transactions_bill_inquiry_id_key`), bukan hanya oleh kode.
+- [x] Hasil cek tagihan berstatus SUKSES tanpa nominal ditolak database (`bill_inquiries_sukses_wajib_berangka`): tidak akan ada RESERVE tanpa dasar angka.
+- [x] Baris hasil cek tagihan tidak bisa diubah maupun dihapus (trigger append-only).
+- [x] Masa berlaku benar, termasuk kasus jelang tengah malam: tidak pernah melewati akhir hari WIB.
+- [x] Nomor pelanggan berkoma ditolak; PBB/SAMSAT wajib dua bagian lengkap.
+- [x] Cek ulang produk + nomor yang sama dalam 60 detik memakai hasil sebelumnya, tanpa memanggil Digiflazz lagi.
+- [x] Migrasi 057 & 058 terpasang di produksi dan skemanya diperiksa langsung; katalog prabayar tidak berubah (12 kategori, 204 produk aktif).
+- [x] Keempat endpoint pascabayar hidup di produksi (403 tanpa sesi, bukan 404).
+- [x] `executeTransaction` menolak produk `POSTPAID` — **diverifikasi lewat pembacaan kode**, bukan uji otomatis: jalur itu memverifikasi PIN lebih dulu, dan uji otomatisnya butuh PIN mitra yang sah.
+
+**Verifikasi — menunggu pengujian di mode development Digiflazz** (pemilik produk memilih jalur itu, supaya tidak ada tagihan sungguhan yang terbayar saat menguji):
+- [ ] Cek tagihan sungguhan tidak menulis satu baris pun di `transactions` maupun `wallet_ledger`.
 - [ ] Sukses: saldo berkurang tepat `total_amount`, sekali; satu RESERVE dan satu DEBIT.
 - [ ] Gagal: saldo kembali utuh; tidak ada percobaan SKU cadangan.
-- [ ] PIN dua kali / dua permintaan bersamaan untuk satu hasil cek tagihan: satu transaksi, satu `pay-pasca`.
-- [ ] Cek tagihan kedaluwarsa, milik mitra lain, atau sudah dibayar: ditolak sebelum RESERVE.
-- [ ] `executeTransaction` menolak produk `POSTPAID`.
 - [ ] Pending lalu Sukses lewat `status-pasca`, dengan pagar jeda 60 detik terbukti menahan.
 - [ ] "Data belum ada" tidak melepas saldo.
+- [ ] Arti `price` vs `selling_price` terkonfirmasi dari jawaban sungguhan (PRD Pascabayar Bagian 1).
 - [ ] `verifyLedgerConsistency` bersih setelah semua skenario di atas.
-- [ ] Terlihat benar di aplikasi Flutter: rincian tagihan, layar hasil, dan struk.
+- [ ] Terlihat benar di aplikasi Flutter: rincian tagihan, layar hasil, dan nomor referensi.
 
 ---
 

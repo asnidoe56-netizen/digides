@@ -794,6 +794,13 @@ Uji itu juga menangkap satu bug nyata sebelum sampai ke produksi: kueri
 markup sudah memakai parameter jenis tapi daftar parameternya belum — hal
 yang tidak bisa dilihat pemeriksa tipe, hanya oleh database saat dijalankan.
 
+> **Status pengerjaan 12 September 2026.** Tahap 1 selesai dan sudah
+> dideploy. Tahap 2, 3, dan 5 **kodenya selesai, terpasang di produksi, dan
+> menunggu pengujian di mode development Digiflazz** — amandemen §5f sudah
+> ditulis atas izin eksplisit pemilik produk. Tahap 4 (layar web) belum
+> dikerjakan: aplikasi mitra memakai API yang sama, jadi ia tidak
+> menghalangi pengujian.
+
 ### Tahap 2 — Cek tagihan (tanpa uang)
 
 `bill_inquiries`, `inquirePostpaidBill`, API cek tagihan, penyusun format

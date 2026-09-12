@@ -313,10 +313,16 @@
   background: linear-gradient(140deg, #f3eae7 0%, #eadfdb 45%, #f6efec 100%);
   border: 1px solid var(--garis);
 }
+/* Bingkainya mengikuti gambar, bukan sebaliknya.
+ *
+ * Sebelumnya gambar dipaksa setinggi bingkainya lalu dipotong oleh
+ * object-fit: cover — foto tegak kehilangan atas dan bawahnya, dan foto
+ * lebar kehilangan sisinya. Yang sebenarnya ingin ditunjukkan adalah
+ * fotonya, jadi lebarnya yang ditentukan bingkai dan tingginya dihitung
+ * dari perbandingan gambar itu sendiri. */
 .lp .gambar-bingkai img {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
 }
 
 /* Tempat foto yang belum diisi. Dibiarkan terbuka dan diberi keterangan,
@@ -651,10 +657,13 @@
   border-radius: 0;
   border: 0;
   border-bottom: 1px solid var(--garis);
-  height: 150px;
 }
+/* Tempat foto yang belum diisi memakai perbandingan 3:2 — bentuk foto
+   mendatar yang paling lazim — supaya tinggi kartu sebelum dan sesudah
+   fotonya masuk tidak berubah drastis. */
 .lp .kartu .foto-kosong {
-  min-height: 150px;
+  aspect-ratio: 3 / 2;
+  min-height: 0;
 }
 .lp .kartu-teks {
   padding: 20px;

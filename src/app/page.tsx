@@ -144,11 +144,19 @@ function Gambar({
   catatan,
   gelap = false,
   prioritas = false,
+  sizes = "(max-width: 1024px) 100vw, 560px",
 }: {
   media: LandingMedia | null | undefined;
   catatan: string;
   gelap?: boolean;
   prioritas?: boolean;
+  /**
+   * Seberapa lebar gambar ini benar-benar tampil. Next.js memakainya untuk
+   * memilih ukuran berkas yang dikirim, jadi nilai yang terlalu besar
+   * berarti HP dengan sinyal desa mengunduh piksel yang tidak pernah
+   * terlihat — kartu masalah hanya selebar sekitar 270 piksel.
+   */
+  sizes?: string;
 }) {
   const url = urlGambar(media);
 
@@ -170,7 +178,7 @@ function Gambar({
         width={media.width ?? 1600}
         height={media.height ?? 1000}
         priority={prioritas}
-        sizes="(max-width: 1024px) 100vw, 560px"
+        sizes={sizes}
       />
     </div>
   );
@@ -329,7 +337,11 @@ function KartuMasalah({ bagian }: { bagian: LandingSectionFull | undefined }) {
         <div className="kartu-grid">
           {kartu.map((butir) => (
             <article className="kartu" key={butir.id}>
-              <Gambar media={butir.media} catatan="Foto pendukung kartu ini." />
+              <Gambar
+                media={butir.media}
+                catatan="Foto pendukung kartu ini."
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 280px"
+              />
               <div className="kartu-teks">
                 <h3>{butir.title}</h3>
                 <p>{butir.body}</p>

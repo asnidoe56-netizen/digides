@@ -30,3 +30,10 @@ next-env.d.ts
 # throwaway verification scripts (underscore-prefixed convention used during
 # development; always deleted after use, never meant to reach the repo)
 scripts/_*
+
+# berkas APK yang diunggah lewat Super Admin — 30 MB per berkas, tidak
+# pernah masuk git (di server letaknya diatur lewat APK_STORAGE_DIR)
+/storage/
+
+# catatan berjalan saat pengembangan, tidak pernah ikut commit
+dev.log

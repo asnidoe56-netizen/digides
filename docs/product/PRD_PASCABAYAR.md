@@ -1,6 +1,6 @@
 # PRD Pembayaran Tagihan (Pascabayar)
 
-**Versi 1.1 — draf** · 11 September 2026 · **Belum dikerjakan**
+**Versi 1.2 — draf** · 12 September 2026 · **Belum dikerjakan**
 
 > **Status.** Rancangan. Belum ada satu baris kode pascabayar pun di sistem
 > hari ini (lihat Bagian 2). Pembayaran tagihan menyentuh mesin transaksi
@@ -23,6 +23,15 @@
 >   lewat amandemen §5e dokumen terkunci (2026-09-11), setelah terbukti
 >   dilanggar 7 kali di produksi. Pascabayar mewarisinya tanpa kode jeda
 >   baru (7.17).
+
+> **Perubahan v1.2 — hasil Tahap 0 langkah 2 (12 September 2026).** Daftar
+> harga pascabayar diambil langsung dari Digiflazz (baca saja). Akun ini
+> hanya punya **7 produk**, semuanya aktif, dalam **satu kategori bernama
+> "Pascabayar"**: PLN Pascabayar, Telkomsel Omni, tiga internet (SPEEDY &
+> INDIHOME, BIZNET HOME, BNETFIT), dan dua PDAM (Aetra, Batam). **BPJS
+> Kesehatan tidak tersedia**, begitu juga Multifinance, TV, PBB, SAMSAT,
+> dan Gas. Ruang lingkup (Bagian 4) dan alasan pemisahan kategori
+> (Bagian 7.9) sudah disesuaikan dengan kenyataan ini.
 
 Lanjutan dari mesin transaksi yang terkunci, PRD Cashback, dan sistem komisi.
 Migrasi berikutnya: **057**
@@ -78,7 +87,8 @@ Sudah diperiksa langsung di kode dan basis data produksi:
 | Tipe price-list pascabayar | Ada (`DigiflazzPascaPriceListItem`, `src/lib/digiflazz/price-list.ts`), **tidak pernah dipakai** |
 | Sinkron katalog | Hanya prabayar — `const CMD = "prepaid"` di `src/jobs/catalog-sync.ts` |
 | Kirim transaksi | `submitDigiflazzTransaction` tidak punya parameter `commands`, jadi tidak bisa `inq-pasca` / `pay-pasca` / `status-pasca` |
-| Produk pascabayar di produksi | **0** |
+| Produk pascabayar di database produksi | **0** |
+| Produk pascabayar di akun Digiflazz | **7**, semuanya aktif, satu kategori `Pascabayar`, empat brand — diperiksa 12 Sep 2026 (Bagian 4) |
 | Menu "TAGIHAN" di aplikasi | Hanya berisi kategori `PLN` — itu **token prabayar**, bukan tagihan. Judulnya menyesatkan |
 | Tabel `categories` & `brands` | Unik berdasarkan `name` saja (`004_products.sql`) |
 | Halaman kategori | Mencari kategorinya lewat nama (`getCategoryPurchaseCatalog("PLN")`) |
@@ -115,31 +125,45 @@ pascabayar masuk (Bagian 7.9 dan 7.10).
 Pembagian gelombang di bawah adalah **usulan** berdasarkan apa yang paling
 sering dibayar di loket desa. Pemilik produk bebas menggesernya.
 
-### Gelombang 1 — MVP
+### Gelombang 1 — seluruh isi akun Digiflazz hari ini
 
-Satu nomor pelanggan, bentuk `desc` sederhana, paling banyak dipakai warga:
+Diambil langsung dari `price-list cmd: "pasca"` pada 12 September 2026.
+Ketujuhnya aktif, berada di satu kategori `Pascabayar`, dan semuanya memakai
+satu nomor pelanggan tanpa format khusus:
 
-- **PLN Pascabayar**
-- **PDAM**
-- **BPJS Kesehatan**
-- **Internet** (IndiHome dan sejenisnya)
+| Produk | `buyer_sku_code` | Brand | Admin | Komisi |
+|---|---|---|---|---|
+| Pln Pascabayar | `plnpscabayar1` | PLN PASCABAYAR | 2.500 | 550 |
+| SPEEDY & INDIHOME | `spd` | INTERNET PASCABAYAR | 2.500 | 1.175 |
+| BIZNET HOME | `post736197` | INTERNET PASCABAYAR | 3.000 | 700 |
+| BNETFIT | `post736198` | INTERNET PASCABAYAR | 5.000 | 2.440 |
+| Telkomsel Omni | `post736190` | Telkomsel Omni | 1.000 | 800 |
+| PDAM Aetra | `post739260` | PDAM | 3.500 | 1.240 |
+| PDAM Batam | `post739261` | PDAM | 2.500 | 975 |
 
-### Gelombang 2
+**Komisi itulah keuntungan Digides per transaksi** kalau mitra dibebani
+persis `selling_price` saran Digiflazz, sebelum biaya layanan tambahan
+(Bagian 7.10).
 
-Masih satu nomor pelanggan, tidak ada format khusus:
+**Yang paling berguna untuk desa**: PLN Pascabayar dan internet. PDAM hanya
+melayani Aetra (Jakarta) dan Batam — kemungkinan besar tidak terpakai di
+wilayah mitra; sebaiknya disembunyikan dulu daripada membingungkan.
 
-- HP Pascabayar
-- TV Pascabayar
-- Gas Negara (PGN)
-- Multifinance (cicilan kendaraan)
+### Gelombang 2 — hanya kalau Digiflazz membukanya
 
-### Gelombang 3 — butuh input khusus
+**BPJS Kesehatan tidak ada di akun ini**, padahal ia yang paling sering
+dibayar di loket desa. Begitu juga Multifinance, TV Pascabayar, Gas Negara,
+PBB, SAMSAT, BPJSTK, dan PLN Nontaglis. Langkah pertama bukan menulis kode,
+melainkan **meminta Digiflazz mengaktifkan produk-produk itu** untuk akun
+ini. Kalau dibuka, hampir semuanya mewarisi alur yang sama; yang butuh
+tambahan kerja hanya tampilan rincian per jenis (7.13).
+
+### Gelombang 3 — butuh input khusus (kalau produknya dibuka)
 
 - **PBB / Pajak Daerah** — `customer_no` = `"kode pembayaran,nomor identitas"`, `year` opsional
 - **SAMSAT** — `customer_no` = `"kode bayar,nomor identitas"`
 - **E-Money pascabayar** — `amount` wajib diisi
 - BPJS Ketenagakerjaan (BPJSTK) dan Bukan Penerima Upah (BPJSTKPU)
-- PLN Nontaglis (biaya pasang baru / tambah daya)
 
 ### Sengaja di luar semua gelombang
 
@@ -466,10 +490,22 @@ Ini temuan dari kode, bukan dugaan: sinkron katalog memanggil
 `upsertCategory(item.category)` dengan nama saja
 (`src/jobs/catalog-sync.ts:85`), dan `categories.name` unik global.
 
-Nama kategori Digiflazz untuk pascabayar hampir pasti bertabrakan dengan
-prabayar — "PLN", "E-Money", "TV" sudah ada sebagai kategori prabayar hari
-ini. Tanpa pemisahan, produk PLN pascabayar (`base_price = 0`) akan masuk
-ke kategori token PLN yang sama. Akibatnya:
+**Diperiksa 12 September 2026: hari ini belum ada tabrakan.** Seluruh produk
+pascabayar berada di kategori `Pascabayar`, dengan brand `PLN PASCABAYAR`,
+`INTERNET PASCABAYAR`, `PDAM`, dan `Telkomsel Omni` — tidak satu pun bentrok
+dengan 19 kategori dan 19 brand prabayar yang ada.
+
+Pemisahan tetap dikerjakan, dengan tiga alasan yang tidak bergantung pada
+nama:
+
+1. **Produk pascabayar tidak punya harga** (`base_price = 0`). Kalau ia ikut
+   terbaca jalur prabayar mana pun, mitra bisa melihat produk berharga nol.
+2. **Aturan markup GLOBAL** hari ini berlaku ke semua produk (7.10).
+3. **Nama itu milik Digiflazz, bukan milik kita.** Mereka bisa mengubah
+   `Pascabayar` menjadi `PLN` atau `TV` kapan saja, dan tabrakannya baru
+   ketahuan setelah produk bercampur di layar mitra.
+
+Kalau nanti tabrakan itu terjadi tanpa pemisahan, akibatnya:
 
 - produk itu muncul di grid token PLN mitra;
 - aturan markup/komisi/cashback kategori PLN prabayar ikut berlaku ke tagihan;
@@ -714,11 +750,15 @@ pendanaan dari saldo utama (§5d), dan tidak ada state machine baru (§8.1).
    - ⬜ Sisa respons `pay-pasca` BPJSTKPU.
    - ⬜ Daftar rc, termasuk rc untuk "Data belum ada".
    - ⬜ Test case pascabayar untuk mode development.
-2. Ambil price-list `cmd: "pasca"` sekali (baca saja), di luar jendela
-   sinkron prabayar: nama `category`/`brand` sebenarnya, besaran `admin` dan
-   `commission` untuk produk Gelombang 1.
-3. Satu cek tagihan sungguhan (mode `testing`) untuk memastikan arti `price`
-   vs `selling_price` (Bagian 1).
+2. ✅ **Selesai 12 September 2026.** Price-list `cmd: "pasca"` diambil dari
+   server (baca saja, di luar jendela sinkron prabayar — sinkron terakhir
+   9 September). Hasil: 7 produk aktif, satu kategori `Pascabayar`, empat
+   brand, admin 1.000–5.000, komisi 550–2.440. Rincian di Bagian 4.
+3. ⬜ Satu cek tagihan sungguhan (`inq-pasca`) untuk memastikan arti `price`
+   vs `selling_price` (Bagian 1). **Akun ini mode `production`, jadi flag
+   `testing` tidak berlaku** — perlu satu ID pelanggan PLN pascabayar yang
+   nyata dari pemilik produk. Cek tagihan tidak menarik uang; pembayaran
+   baru terjadi pada `pay-pasca`.
 4. Pastikan: zona waktu "tanggal yang sama", biaya cek tagihan, apakah
    webhook dikirim untuk pascabayar, dan jeda `inq-pasca` → `pay-pasca`
    (7.17 butir 4).
@@ -786,10 +826,18 @@ membawa form input khusus.
 
 ## 13. Pertanyaan untuk pemilik produk
 
-1. **Gelombang 1** — setuju PLN Pascabayar, PDAM, BPJS Kesehatan, Internet?
-2. **Biaya layanan** — berapa per kategori? Atau mulai dari Rp0 (hanya komisi
-   Digiflazz) dulu selama masa uji?
-3. **Masa berlaku 30 menit** — terlalu pendek untuk kebiasaan loket di desa?
-4. **Aturan komisi dan cashback GLOBAL** yang sudah aktif — boleh ikut
+1. **Isi Gelombang 1** — tampilkan keempat brand yang ada (PLN Pascabayar,
+   internet, Telkomsel Omni, PDAM), atau sembunyikan dulu PDAM yang hanya
+   melayani Aetra dan Batam?
+2. **Minta Digiflazz membuka produk lain?** BPJS Kesehatan yang paling sering
+   dibayar di loket desa tidak ada di akun ini. Perlu saya buatkan draf
+   permintaannya?
+3. **Nomor uji** — bisa kirim satu ID pelanggan PLN pascabayar yang nyata
+   (boleh milik Anda sendiri) untuk memastikan arti `price` dan
+   `selling_price`? Cek tagihan tidak menarik uang.
+4. **Biaya layanan** — mulai dari Rp0 (keuntungan hanya komisi Digiflazz,
+   Rp550–2.440 per transaksi) selama masa uji, atau langsung ditambah?
+5. **Masa berlaku 30 menit** — terlalu pendek untuk kebiasaan loket di desa?
+6. **Aturan komisi dan cashback GLOBAL** yang sudah aktif — boleh ikut
    berlaku ke tagihan, atau tagihan dikecualikan?
-5. **Menu TAGIHAN** — token PLN dipindah ke mana?
+7. **Menu TAGIHAN** — token PLN dipindah ke mana?

@@ -195,7 +195,7 @@ INSERT INTO landing_sections (key, kind, eyebrow, title, title_accent, body, set
      'label_rumah', 'Jumlah rumah',
      'label_hp', 'Pengguna HP Android',
      'label_persen', 'Berapa persen yang bisa Anda edukasi?',
-     'catatan', 'Ini perkiraan, bukan janji. Angka di atas hanya mengalikan apa yang Anda isi sendiri. Berapa warga yang benar-benar berpindah kebiasaan ditentukan oleh pendampingan dan waktu, bukan oleh rumus. Besar fee juga berbeda tiap produk dan mengikuti harga penyedia.',
+     'catatan', 'Angka di atas hanya mengalikan apa yang Anda isi sendiri. Berapa warga yang benar-benar berpindah kebiasaan ditentukan oleh pendampingan dan waktu, bukan oleh rumus. Besar fee juga berbeda tiap produk dan mengikuti harga penyedia.',
      'tombol', 'Mulai dari Angka Ini',
      'tombol_url', '/register'
    ),

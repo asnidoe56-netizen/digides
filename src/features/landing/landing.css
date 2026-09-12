@@ -1293,10 +1293,13 @@
   .lp .pergeseran-isi,
   .lp .solusi-isi,
   .lp .langkah-isi,
-  .lp .masa-depan-atas,
-  .lp .papan {
+  .lp .masa-depan-atas {
     grid-template-columns: 1fr;
   }
+  /* Aturan layar sempit untuk kalkulator TIDAK ditulis di sini, melainkan di
+     landing-kalkulator.css. Berkas itu dimuat sesudah berkas ini, dan media
+     query tidak menambah specificity — aturan dasarnya di sana akan selalu
+     menang atas aturan penumpuk di sini, apa pun lebar layarnya. */
   .lp .solusi-kanan {
     grid-template-columns: 1fr;
   }
@@ -1330,13 +1333,8 @@
   .lp .kartu-grid,
   .lp .langkah-grid,
   .lp .dapat-grid,
-  .lp .manfaat-grid,
-  .lp .isian-grid {
+  .lp .manfaat-grid {
     grid-template-columns: 1fr;
-  }
-  .lp .papan-kiri,
-  .lp .papan-kanan {
-    padding: 20px;
   }
   .lp .gelembung-daftar {
     position: static;

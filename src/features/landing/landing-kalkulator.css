@@ -459,7 +459,36 @@
   margin-top: 16px;
 }
 
+/* ── Layar sempit ───────────────────────────────────────────────────────────
+   Aturan di bawah ini WAJIB tinggal di berkas ini, bukan di landing.css.
+
+   Berkas ini dimuat sesudah landing.css, dan media query tidak menambah
+   specificity — jadi aturan dasar `.papan` dua kolom di atas akan selalu
+   mengalahkan aturan penumpuk yang ditulis di berkas sebelumnya, apa pun
+   lebar layarnya. Akibatnya panel isian dan panel hasil tetap berdampingan
+   di HP, terhimpit sampai tidak terbaca.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  /* Panel isian dan panel hasil menumpuk: hasilnya di bawah isiannya, dalam
+     urutan yang sama dengan cara orang mengerjakannya — isi dulu, lihat
+     hasilnya kemudian. */
+  .lp .papan {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 640px) {
+  .lp .hitung .bungkus {
+    padding-block: 52px;
+  }
+  /* Tiga kolom angka desa tidak muat di lebar HP. */
+  .lp .isian-grid {
+    grid-template-columns: 1fr;
+  }
+  .lp .papan-kiri,
+  .lp .papan-kanan {
+    padding: 20px;
+  }
   /* Label pertanyaannya memakan dua baris di lebar HP, dan angka persen
      yang berdiri di sebelahnya jadi tampak menyela kalimat. Ditumpuk. */
   .lp .geser-atas {

@@ -1,464 +1,447 @@
-import Link from "next/link";
+import Image from "next/image";
+import { Caveat, Plus_Jakarta_Sans } from "next/font/google";
+import { ArrowRight, BarChart3, Brain, Receipt, Smartphone, Store, Wallet, Zap } from "lucide-react";
 import {
-  ArrowRight,
-  BarChart3,
-  Building2,
-  CheckCircle2,
-  Fingerprint,
-  Handshake,
-  Receipt,
-  ShieldCheck,
-  Smartphone,
-  Store,
-  Timer,
-  Users,
-  Wallet,
-  Zap,
-} from "lucide-react";
-import { DownloadAppButton } from "@/features/landing/components/download-app-button";
-import { LogoDenganNama } from "@/features/landing/components/logo-digides";
+  ambilHalamanDepan,
+  angkaData,
+  butirKelompok,
+  pengaturan,
+  urlGambar,
+} from "@/services/landing.service";
+import type { LandingMedia, LandingSectionFull } from "@/types/landing";
+import { Ikon } from "@/features/landing/components/ikon";
+import { Kalkulator, type LayananHitung } from "@/features/landing/components/kalkulator";
+import { KepalaHalaman } from "@/features/landing/components/kepala-halaman";
+import "@/features/landing/landing.css";
+import "@/features/landing/landing-kalkulator.css";
 
-// Halaman depan tidak menyentuh basis data sama sekali.
-//
-// Ini bukan penghematan, tapi keputusan: alamat utama yang sudah diketik
-// orang dan dibagikan di grup desa tidak boleh ikut mati ketika basis data
-// sedang sibuk memproses transaksi. Nomor versi APK yang memang berubah
-// diambil belakangan oleh tombol unduhnya sendiri.
-export const dynamic = "force-static";
+/**
+ * Halaman depan disajikan dari cache dan disegarkan tiap sepuluh menit.
+ *
+ * Isinya datang dari basis data supaya bisa diubah tanpa membongkar kode,
+ * tapi alamat utama yang dibagikan di grup desa tidak boleh ikut melambat
+ * setiap kali seseorang membukanya. Perubahan dari halaman admin tidak
+ * menunggu sepuluh menit itu: tiap penyimpanan memanggil revalidatePath("/")
+ * sehingga halamannya disusun ulang saat itu juga.
+ */
+export const revalidate = 600;
 
-const LAYANAN = [
-  {
-    icon: Smartphone,
-    nama: "Pulsa & Paket Data",
-    catatan: "Semua operator, harga yang sama untuk seluruh mitra.",
-  },
-  {
-    icon: Zap,
-    nama: "Token Listrik",
-    catatan: "Nomor token muncul di layar dan tersimpan di riwayat.",
-  },
-  {
-    icon: Receipt,
-    nama: "Bayar Tagihan",
-    catatan: "PLN pascabayar, PDAM, BPJS, dan internet rumah.",
-  },
-  {
-    icon: Wallet,
-    nama: "Isi Saldo E-Wallet",
-    catatan: "Dana, GoPay, OVO, ShopeePay, dan LinkAja.",
-  },
-  {
-    icon: Store,
-    nama: "Kasir Toko",
-    catatan: "Catat penjualan barang warung di aplikasi yang sama.",
-  },
-  {
-    icon: BarChart3,
-    nama: "Laporan & Komisi",
-    catatan: "Rekap harian yang bisa dibuka kapan saja, bukan dicatat manual.",
-  },
-];
+// Huruf buatan Indonesia, dipesan untuk kota Jakarta. Dipakai di sini bukan
+// karena bentuknya kebetulan cocok, tapi karena halaman yang mengajak desa
+// Indonesia sebaiknya ditulis dengan huruf yang lahir di sini juga.
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
+});
 
-const MASALAH = [
-  "Modal desa sudah cair, tapi tidak berkembang",
-  "Unit usaha berdiri di atas kertas, tidak berjalan",
-  "Pengelolaan tidak tertata, pencatatan tercecer",
-  "Pendapatan asli desa tidak bertambah",
-  "Laporan sulit disusun saat musyawarah desa",
-  "Kepercayaan warga pelan-pelan menurun",
-];
+// Satu-satunya tugasnya memegang tulisan tangan di enam tempat.
+const caveat = Caveat({ subsets: ["latin"], weight: ["600", "700"], display: "swap" });
 
-const LANGKAH = [
-  {
-    judul: "Daftar",
-    isi: "Lengkapi data BUMDes atau konter Anda. Tidak ada biaya pendaftaran.",
-  },
-  {
-    judul: "Isi saldo",
-    isi: "Transfer ke rekening yang tertera di aplikasi. Saldo masuk otomatis setelah pembayaran terverifikasi.",
-  },
-  {
-    judul: "Mulai melayani warga",
-    isi: "Setiap transaksi tercatat, dan keuntungannya langsung menambah saldo Anda.",
-  },
-];
+const LOGO = "/logos/digidespay.jpg";
 
-const ALASAN = [
-  {
-    icon: BarChart3,
-    judul: "Tercatat rapi",
-    isi: "Setiap transaksi punya riwayat dan laporan yang bisa ditunjukkan ke musyawarah desa — tanpa menyalin ulang ke buku.",
-  },
-  {
-    icon: Fingerprint,
-    judul: "Uang aman",
-    isi: "Setiap pembelian dikunci PIN atau sidik jari. Kalau transaksi gagal, saldo yang ditahan kembali dengan sendirinya.",
-  },
-  {
-    icon: Timer,
-    judul: "Cepat",
-    isi: "Token listrik dan pulsa umumnya sampai dalam hitungan detik, bukan menit.",
-  },
-  {
-    icon: Handshake,
-    judul: "Tidak ditinggal sendiri",
-    isi: "Ada panduan langkah demi langkah di dalam aplikasi, dan admin yang bisa dihubungi lewat menu Bantuan.",
-  },
-];
+export async function generateMetadata() {
+  const { byKey } = await ambilHalamanDepan();
+  const situs = byKey.situs;
+  const judul = pengaturan(situs, "seo_title", "DIGIDES PAY");
+  const keterangan = pengaturan(situs, "seo_description", "");
 
-const UNTUK_SIAPA = [
-  {
-    icon: Building2,
-    judul: "BUMDes",
-    isi: "Unit usaha yang bisa jalan hari ini juga, tanpa gudang, tanpa stok, tanpa menambah pegawai.",
-  },
-  {
-    icon: Store,
-    judul: "Konter & agen",
-    isi: "Satu aplikasi untuk pulsa, token, tagihan, dan kasir — menggantikan tiga aplikasi yang berbeda.",
-  },
-  {
-    icon: Users,
-    judul: "Pengurus desa",
-    isi: "Angka yang bisa dipertanggungjawabkan saat ditanya warga, siap dicetak jadi laporan.",
-  },
-];
+  return {
+    title: { absolute: judul },
+    description: keterangan,
+    openGraph: {
+      title: judul,
+      description: keterangan,
+      type: "website" as const,
+      locale: "id_ID",
+      images: [{ url: LOGO, width: 1200, height: 630, alt: "DIGIDES PAY" }],
+    },
+    twitter: {
+      card: "summary_large_image" as const,
+      title: judul,
+      description: keterangan,
+      images: [LOGO],
+    },
+  };
+}
 
-const TANYA_JAWAB = [
-  {
-    tanya: "Berapa modal awalnya?",
-    jawab:
-      "Tidak ada biaya pendaftaran dan tidak ada setoran wajib. Modalnya adalah saldo yang Anda isi sendiri, dan besarnya Anda yang menentukan. Banyak mitra memulai dari jumlah kecil lalu menambah setelah melihat perputarannya.",
-  },
-  {
-    tanya: "Apakah ada biaya bulanan?",
-    jawab:
-      "Tidak ada. Digides mengambil bagian dari selisih harga pada setiap transaksi yang berhasil, bukan dari iuran. Kalau Anda tidak bertransaksi, Anda tidak membayar apa pun.",
-  },
-  {
-    tanya: "Bagaimana keuntungannya dihitung?",
-    jawab:
-      "Setiap produk punya harga modal dan harga jual. Selisihnya menjadi keuntungan Anda dan langsung menambah saldo begitu transaksi berhasil. Rinciannya per transaksi bisa dibuka di menu Laporan.",
-  },
-  {
-    tanya: "Bagaimana kalau transaksi gagal?",
-    jawab:
-      "Saldo yang ditahan saat pembelian dikembalikan otomatis. Setiap perubahan saldo punya catatannya sendiri di menu Histori, sehingga selisih sekecil apa pun bisa ditelusuri.",
-  },
-  {
-    tanya: "Apakah datanya aman?",
-    jawab:
-      "Setiap pembelian butuh PIN transaksi atau sidik jari, terpisah dari kata sandi masuk. Kata sandi dan PIN disimpan dalam bentuk teracak, dan tidak pernah ikut dalam salinan data yang diunduh admin.",
-  },
-  {
-    tanya: "Bagaimana cara menarik keuntungan ke rekening?",
-    jawab:
-      "Penarikan dana ke rekening bank masih dalam pengembangan dan belum bisa dipakai. Saat ini keuntungan tersimpan sebagai saldo dan dapat dipakai untuk transaksi berikutnya. Begitu fitur ini siap, pengumumannya akan muncul di dalam aplikasi.",
-  },
-];
+export default async function HomePage() {
+  const { byKey } = await ambilHalamanDepan();
+  const situs = byKey.situs;
 
-export default function HomePage() {
+  const namaLengkap = situs?.title ?? "DIGIDES PAY";
+  const [namaMerek, ...sisa] = namaLengkap.split(" ");
+  const aksenMerek = sisa.join(" ") || "PAY";
+
+  const menu = butirKelompok(byKey.navigasi).map((butir) => ({
+    id: butir.id,
+    label: butir.title ?? "",
+    url: butir.link_url ?? "#",
+  }));
+
+  const labelMasuk = pengaturan(situs, "tombol_masuk", "Masuk");
+  const urlMasuk = pengaturan(situs, "url_masuk", "/login");
+  const labelDaftar = pengaturan(situs, "tombol_daftar", "Daftar Jadi Mitra");
+  const urlDaftar = pengaturan(situs, "url_daftar", "/register");
+
   return (
-    <div className="bg-white text-neutral-900">
-      {/* ── Pembuka ─────────────────────────────────────────────────────── */}
-      <header className="relative overflow-hidden bg-neutral-950 text-white">
-        {/* Cahaya merah samar, sengaja tanpa gambar: halaman ini dibuka dari
-            HP dengan sinyal desa, dan setiap kilobita punya harganya. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -top-40 left-1/2 size-152 -translate-x-1/2 rounded-full bg-red-600/25 blur-3xl"
-        />
+    <div className={`lp ${jakarta.className}`}>
+      {/* Tulisan tangan dipakai di enam tempat yang tersebar di beberapa
+          komponen, jadi lebih ringkas mengikatnya sekali di sini daripada
+          menurunkan nama fontnya sebagai prop ke masing-masing. */}
+      <style>{`.lp .tangan{font-family:${caveat.style.fontFamily}}`}</style>
 
-        <div className="relative mx-auto max-w-6xl px-5 py-5">
-          <div className="flex items-center justify-between gap-4">
-            <LogoDenganNama size={40} priority />
-            <Link
-              href="/login"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-neutral-300 transition-colors hover:text-white"
+      <KepalaHalaman
+        namaMerek={namaMerek}
+        aksenMerek={aksenMerek}
+        tagline={situs?.body ?? ""}
+        logoUrl={LOGO}
+        menu={menu}
+        labelMasuk={labelMasuk}
+        urlMasuk={urlMasuk}
+        labelDaftar={labelDaftar}
+        urlDaftar={urlDaftar}
+      />
+
+      <Pembuka bagian={byKey.hero} />
+      <Realita bagian={byKey.realita} />
+      <KartuMasalah bagian={byKey.masalah} />
+      <Pergeseran bagian={byKey.pergeseran} />
+      <Solusi bagian={byKey.solusi} logoUrl={LOGO} />
+      <BagianKalkulator bagian={byKey.kalkulator} />
+      <Langkah bagian={byKey.langkah} />
+      <Profil bagian={byKey.profil} />
+      <MasaDepan bagian={byKey["masa-depan"]} />
+      <TanyaJawab bagian={byKey.faq} />
+
+      <KakiHalaman
+        bagian={byKey.kaki}
+        situs={situs}
+        menu={menu}
+        namaMerek={namaMerek}
+        aksenMerek={aksenMerek}
+        logoUrl={LOGO}
+        labelDaftar={labelDaftar}
+        urlDaftar={urlDaftar}
+        labelMasuk={labelMasuk}
+        urlMasuk={urlMasuk}
+      />
+    </div>
+  );
+}
+
+/**
+ * Gambar sebuah bagian, atau tempat kosong beserta keterangan kalau fotonya
+ * belum diisi.
+ *
+ * Tempat kosongnya sengaja dibiarkan terbuka dan diberi keterangan, bukan
+ * ditutup foto stok: foto gedung perkantoran yang jelas bukan desa Indonesia
+ * justru menurunkan kepercayaan yang sedang dibangun halaman ini. Pada saat
+ * yang sama, keterangannya menjadi daftar foto yang perlu disiapkan.
+ */
+function Gambar({
+  media,
+  catatan,
+  gelap = false,
+  prioritas = false,
+}: {
+  media: LandingMedia | null | undefined;
+  catatan: string;
+  gelap?: boolean;
+  prioritas?: boolean;
+}) {
+  const url = urlGambar(media);
+
+  if (!url || !media) {
+    return (
+      <div className={`gambar-bingkai ${gelap ? "gelap" : ""}`}>
+        <div className="foto-kosong">
+          <span>{catatan}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`gambar-bingkai ${gelap ? "gelap" : ""}`}>
+      <Image
+        src={url}
+        alt={media.alt_text}
+        width={media.width ?? 1600}
+        height={media.height ?? 1000}
+        priority={prioritas}
+        sizes="(max-width: 1024px) 100vw, 560px"
+      />
+    </div>
+  );
+}
+
+function Centang() {
+  return (
+    <span className="centang">
+      <svg
+        viewBox="0 0 24 24"
+        width={12}
+        height={12}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={3.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M4 12.5l5.5 5.5L20 7" />
+      </svg>
+    </span>
+  );
+}
+
+// ── Pembuka ────────────────────────────────────────────────────────────────
+function Pembuka({ bagian }: { bagian: LandingSectionFull | undefined }) {
+  if (!bagian?.is_visible) return null;
+
+  const kartuJudul = pengaturan(bagian, "kartu_judul", "");
+  const pita = pengaturan(bagian, "pita_tangan", "");
+
+  return (
+    <section className="pembuka" id="beranda">
+      <div className="bungkus pembuka-isi">
+        <div>
+          {bagian.eyebrow ? <p className="eyebrow">{bagian.eyebrow}</p> : null}
+
+          <h1>
+            {bagian.title}
+            {bagian.title_accent ? <span className="merah">{bagian.title_accent}</span> : null}
+          </h1>
+
+          {bagian.body ? <p className="sub">{bagian.body}</p> : null}
+
+          <div className="pembuka-tombol">
+            <a
+              className="tombol tombol-utama"
+              href={pengaturan(bagian, "tombol_utama_url", "/register")}
             >
-              Masuk
-            </Link>
+              {pengaturan(bagian, "tombol_utama", "Daftar Jadi Mitra")}
+              <ArrowRight size={17} strokeWidth={2.2} />
+            </a>
+            {pengaturan(bagian, "tombol_kedua", "") ? (
+              <a className="tombol tombol-putih" href={pengaturan(bagian, "tombol_kedua_url", "#")}>
+                {pengaturan(bagian, "tombol_kedua", "")}
+              </a>
+            ) : null}
           </div>
+
+          {bagian.items.length > 0 ? (
+            <ul className="centang-baris">
+              {butirKelompok(bagian).map((butir) => (
+                <li key={butir.id}>
+                  <Centang />
+                  {butir.title}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {bagian.script_text ? <p className="tangan">{bagian.script_text}</p> : null}
         </div>
 
-        <div className="relative mx-auto grid max-w-6xl gap-12 px-5 pb-20 pt-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:pb-28">
+        <div className="pembuka-gambar">
+          {pita ? <p className="pita-tangan tangan">{`“${pita}”`}</p> : null}
+
+          <Gambar
+            media={bagian.media}
+            prioritas
+            catatan="Foto utama: kepala desa berjabat tangan dengan warga di depan papan BUMDes, Merah Putih terlihat."
+          />
+
+          {kartuJudul ? (
+            <div className="kartu-melayang">
+              <span className="bulat">
+                <Ikon nama="handshake" size={18} />
+              </span>
+              <span>
+                <b>{kartuJudul}</b>
+                <em />
+              </span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Realita di lapangan ────────────────────────────────────────────────────
+function Realita({ bagian }: { bagian: LandingSectionFull | undefined }) {
+  if (!bagian?.is_visible) return null;
+
+  return (
+    <section className="gelap realita" id="tentang">
+      <div className="bungkus realita-isi">
+        <div>
+          {bagian.eyebrow ? <p className="eyebrow terang">{bagian.eyebrow}</p> : null}
+
+          <h2>
+            {bagian.title}
+            {bagian.title_accent ? <span className="merah">{bagian.title_accent}</span> : null}
+          </h2>
+
+          {bagian.body ? <p className="sub">{bagian.body}</p> : null}
+          {bagian.body_secondary ? <p className="sub-kecil">{bagian.body_secondary}</p> : null}
+          {bagian.quote ? <blockquote className="kutipan">{bagian.quote}</blockquote> : null}
+        </div>
+
+        <div className="gelembung-area">
+          <Gambar
+            media={bagian.media}
+            gelap
+            catatan="Foto pendukung: pengurus BUMDes termenung di meja kerja, tumpukan map Program, Anggaran, Rencana Usaha, Laporan."
+          />
+
+          {bagian.items.length > 0 ? (
+            <div className="gelembung-daftar">
+              {butirKelompok(bagian).map((butir) => (
+                <div className="gelembung" key={butir.id}>
+                  <i>
+                    <Ikon nama={butir.icon} size={14} />
+                  </i>
+                  {butir.title}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Kartu masalah ──────────────────────────────────────────────────────────
+function KartuMasalah({ bagian }: { bagian: LandingSectionFull | undefined }) {
+  if (!bagian?.is_visible) return null;
+  const kartu = butirKelompok(bagian);
+  if (kartu.length === 0) return null;
+
+  return (
+    <section className="masalah">
+      <div className="bungkus">
+        {bagian.eyebrow ? <p className="eyebrow">{bagian.eyebrow}</p> : null}
+
+        <div className="kartu-grid">
+          {kartu.map((butir) => (
+            <article className="kartu" key={butir.id}>
+              <Gambar media={butir.media} catatan="Foto pendukung kartu ini." />
+              <div className="kartu-teks">
+                <h3>{butir.title}</h3>
+                <p>{butir.body}</p>
+                <span className="garis" />
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Pergeseran cara pandang ────────────────────────────────────────────────
+function Pergeseran({ bagian }: { bagian: LandingSectionFull | undefined }) {
+  if (!bagian?.is_visible) return null;
+
+  return (
+    <section className="gelap pergeseran">
+      <div className="bungkus pergeseran-isi">
+        <div className="kepala-kecil">
+          <span className="otak">
+            <Brain size={22} strokeWidth={1.7} />
+          </span>
           <div>
-            {/* Garis emas tipis — satu-satunya emas di bagian ini. */}
-            <span className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 px-3 py-1 text-xs font-medium tracking-wide text-amber-300">
-              <span className="size-1.5 rounded-full bg-amber-400" />
-              Untuk BUMDes, konter, dan agen desa
-            </span>
-
-            <h1 className="mt-5 text-balance text-4xl font-extrabold leading-[1.1] sm:text-5xl lg:text-6xl">
-              Jadikan BUMDes sumber pendapatan desa.
-            </h1>
-
-            <p className="mt-5 max-w-xl text-lg leading-relaxed text-neutral-300">
-              Pulsa, token listrik, tagihan, dan isi saldo e-wallet — layanan yang dicari
-              warga setiap hari, dijual dari warung Anda sendiri. Satu aplikasi, satu saldo,
-              semuanya tercatat.
+            {bagian.body ? <p className="satu">{bagian.body}</p> : null}
+            <p className="dua">
+              {bagian.body_secondary}{" "}
+              <span className="emas">{pengaturan(bagian, "sorotan", "")}</span>
             </p>
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-start">
-              <Link
-                href="/register"
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-linear-to-b from-red-500 to-red-700 px-6 text-base font-semibold text-white shadow-lg shadow-red-900/40 transition-opacity hover:opacity-95"
-              >
-                Daftar Jadi Mitra
-                <ArrowRight className="size-5" />
-              </Link>
-              <DownloadAppButton />
-            </div>
-          </div>
-
-          <TampilanAplikasi />
-        </div>
-      </header>
-
-      {/* ── Masalah yang dikenali sendiri ────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-5 py-16 lg:py-20">
-        <h2 className="max-w-2xl text-balance text-2xl font-bold sm:text-3xl">
-          Kalau yang di bawah ini terasa seperti desa Anda, Anda tidak sendirian.
-        </h2>
-        <ul className="mt-8 grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-          {MASALAH.map((masalah) => (
-            <li
-              key={masalah}
-              className="flex items-start gap-3 border-l-2 border-neutral-200 py-1 pl-4 text-[15px] leading-relaxed text-neutral-700"
-            >
-              {masalah}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* ── Layanan ─────────────────────────────────────────────────────── */}
-      <section className="border-y border-neutral-200 bg-neutral-50">
-        <div className="mx-auto max-w-6xl px-5 py-16 lg:py-20">
-          <h2 className="text-balance text-2xl font-bold sm:text-3xl">
-            Yang bisa Anda jual mulai hari pertama
-          </h2>
-          <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-neutral-600">
-            Tidak ada stok yang harus dibeli dan tidak ada barang yang bisa kedaluwarsa.
-            Modalnya satu: saldo.
-          </p>
-
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {LAYANAN.map((layanan) => (
-              <div
-                key={layanan.nama}
-                className="rounded-2xl border border-neutral-200 bg-white p-5"
-              >
-                <span className="inline-flex size-11 items-center justify-center rounded-xl bg-red-50 text-red-600">
-                  <layanan.icon className="size-5" />
-                </span>
-                <h3 className="mt-4 font-semibold">{layanan.nama}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-neutral-600">
-                  {layanan.catatan}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Tiga langkah ────────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-5 py-16 lg:py-20">
-        <h2 className="text-balance text-2xl font-bold sm:text-3xl">Cara kerjanya</h2>
-
-        {/* Bernomor karena memang berurutan: isi saldo tidak bisa mendahului
-            pendaftaran, dan melayani warga tidak bisa mendahului saldo. */}
-        <ol className="mt-10 grid gap-8 md:grid-cols-3">
-          {LANGKAH.map((langkah, index) => (
-            <li key={langkah.judul}>
-              <div className="flex items-center gap-3">
-                <span className="inline-flex size-9 items-center justify-center rounded-full bg-neutral-950 text-sm font-bold text-white">
-                  {index + 1}
-                </span>
-                <h3 className="text-lg font-semibold">{langkah.judul}</h3>
-              </div>
-              <p className="mt-3 text-[15px] leading-relaxed text-neutral-600">{langkah.isi}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      {/* ── Kenapa Digides ──────────────────────────────────────────────── */}
-      <section className="border-y border-neutral-200 bg-neutral-50">
-        <div className="mx-auto max-w-6xl px-5 py-16 lg:py-20">
-          <h2 className="text-balance text-2xl font-bold sm:text-3xl">Kenapa Digides</h2>
-          <div className="mt-10 grid gap-6 sm:grid-cols-2">
-            {ALASAN.map((alasan) => (
-              <div key={alasan.judul} className="flex gap-4">
-                <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl bg-linear-to-b from-red-500 to-red-700 text-white">
-                  <alasan.icon className="size-5" />
-                </span>
-                <div>
-                  <h3 className="font-semibold">{alasan.judul}</h3>
-                  <p className="mt-1.5 text-[15px] leading-relaxed text-neutral-600">
-                    {alasan.isi}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Untuk siapa ─────────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-5 py-16 lg:py-20">
-        <h2 className="text-balance text-2xl font-bold sm:text-3xl">Cocok untuk</h2>
-        <div className="mt-10 grid gap-6 md:grid-cols-3">
-          {UNTUK_SIAPA.map((sasaran) => (
-            <div key={sasaran.judul} className="rounded-2xl border border-neutral-200 p-6">
-              <sasaran.icon className="size-6 text-red-600" />
-              <h3 className="mt-4 text-lg font-semibold">{sasaran.judul}</h3>
-              <p className="mt-2 text-[15px] leading-relaxed text-neutral-600">{sasaran.isi}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Cara memasang APK ───────────────────────────────────────────── */}
-      <section className="border-y border-neutral-200 bg-neutral-50">
-        <div className="mx-auto max-w-6xl px-5 py-16 lg:py-20">
-          <div className="grid gap-10 lg:grid-cols-[1fr_1fr] lg:items-center">
-            <div>
-              <h2 className="text-balance text-2xl font-bold sm:text-3xl">
-                Cara memasang aplikasinya
-              </h2>
-              {/* Ditulis apa adanya. Peringatan Android saat memasang berkas di
-                  luar Play Store membuat sebagian orang berhenti di tengah
-                  jalan dan mengira aplikasinya berbahaya. */}
-              <p className="mt-3 text-[15px] leading-relaxed text-neutral-600">
-                Aplikasi mitra dibagikan langsung sebagai berkas APK. Saat memasangnya,
-                Android akan menampilkan peringatan &ldquo;sumber tidak dikenal&rdquo; — itu
-                muncul untuk setiap aplikasi yang dipasang di luar Play Store, dan bukan
-                tanda ada yang salah.
-              </p>
-              <ol className="mt-6 space-y-3 text-[15px] text-neutral-700">
-                {[
-                  "Tekan Unduh Aplikasi, lalu tunggu unduhannya selesai.",
-                  "Buka berkasnya dari notifikasi atau folder Unduhan.",
-                  "Saat diminta, izinkan pemasangan dari sumber ini.",
-                  "Buka aplikasinya dan masuk dengan akun yang sudah didaftarkan.",
-                ].map((langkah, index) => (
-                  <li key={langkah} className="flex gap-3">
-                    <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-xs font-bold text-neutral-700">
-                      {index + 1}
-                    </span>
-                    {langkah}
-                  </li>
+            {bagian.items.length > 0 ? (
+              <div className="lencana">
+                {butirKelompok(bagian).map((butir) => (
+                  <span key={butir.id}>{butir.title}</span>
                 ))}
-              </ol>
-              <div className="mt-8">
-                <DownloadAppButton variant="gelap" />
               </div>
-            </div>
+            ) : null}
+          </div>
+        </div>
 
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6">
-              <ShieldCheck className="size-6 text-red-600" />
-              <h3 className="mt-4 font-semibold">Butuh HP seperti apa?</h3>
-              <ul className="mt-4 space-y-2.5 text-[15px] text-neutral-600">
-                {[
-                  "HP Android biasa, tidak perlu yang baru",
-                  "Ruang penyimpanan kosong sekitar 100 MB",
-                  "Jaringan internet saat bertransaksi",
-                  "Belum tersedia untuk iPhone",
-                ].map((syarat) => (
-                  <li key={syarat} className="flex items-start gap-2.5">
-                    <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-neutral-400" />
-                    {syarat}
+        {bagian.script_text ? <p className="tangan">{`“${bagian.script_text}”`}</p> : null}
+      </div>
+    </section>
+  );
+}
+
+// ── Solusi ─────────────────────────────────────────────────────────────────
+function Solusi({ bagian, logoUrl }: { bagian: LandingSectionFull | undefined; logoUrl: string }) {
+  if (!bagian?.is_visible) return null;
+
+  const centang = butirKelompok(bagian, "centang");
+  const manfaat = butirKelompok(bagian, "manfaat");
+
+  return (
+    <section className="solusi" id="manfaat">
+      <div className="bungkus">
+        {bagian.eyebrow ? <p className="eyebrow">{bagian.eyebrow}</p> : null}
+
+        <h2>
+          {bagian.title} <span className="merah">{bagian.title_accent}</span>
+        </h2>
+
+        <div className="solusi-isi">
+          <div className="solusi-kiri">
+            {bagian.body ? <p className="sub">{bagian.body}</p> : null}
+
+            {centang.length > 0 ? (
+              <ul className="centang-daftar">
+                {centang.map((butir) => (
+                  <li key={butir.id}>
+                    <Centang />
+                    {butir.title}
                   </li>
                 ))}
               </ul>
-            </div>
-          </div>
-        </div>
-      </section>
+            ) : null}
 
-      {/* ── Tanya jawab ─────────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-3xl px-5 py-16 lg:py-20">
-        <h2 className="text-balance text-2xl font-bold sm:text-3xl">
-          Pertanyaan yang sering ditanyakan
-        </h2>
-        {/* <details> asli, bukan akordeon buatan sendiri: tetap bisa dibuka
-            tanpa JavaScript, dan isinya terbaca oleh mesin pencari. */}
-        <div className="mt-8 divide-y divide-neutral-200 border-y border-neutral-200">
-          {TANYA_JAWAB.map((item) => (
-            <details key={item.tanya} className="group py-4">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] font-semibold marker:hidden">
-                {item.tanya}
-                <span
-                  aria-hidden
-                  className="text-xl leading-none text-neutral-400 transition-transform group-open:rotate-45"
-                >
-                  +
-                </span>
-              </summary>
-              <p className="mt-3 text-[15px] leading-relaxed text-neutral-600">{item.jawab}</p>
-            </details>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Penutup dan kaki halaman ────────────────────────────────────── */}
-      <footer className="relative overflow-hidden bg-neutral-950 text-white">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -bottom-48 left-1/2 size-136 -translate-x-1/2 rounded-full bg-red-600/20 blur-3xl"
-        />
-
-        <div className="relative mx-auto max-w-6xl px-5 py-16 lg:py-20">
-          <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-balance text-3xl font-extrabold sm:text-4xl">
-              Mulai dari satu transaksi hari ini.
-            </h2>
-            <p className="mt-4 text-[15px] leading-relaxed text-neutral-300">
-              Pendaftaran gratis. Saldo pertama boleh sekecil apa pun.
-            </p>
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:items-start">
-              <Link
-                href="/register"
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-linear-to-b from-red-500 to-red-700 px-6 text-base font-semibold text-white shadow-lg shadow-red-900/40 transition-opacity hover:opacity-95"
-              >
-                Daftar Jadi Mitra
-                <ArrowRight className="size-5" />
-              </Link>
-              <DownloadAppButton />
-            </div>
+            {bagian.script_text ? <p className="tangan">{bagian.script_text}</p> : null}
           </div>
 
-          <div className="mt-16 flex flex-col gap-6 border-t border-white/10 pt-8 sm:flex-row sm:items-center sm:justify-between">
-            <LogoDenganNama size={40} />
-            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-neutral-400">
-              <Link href="/login" className="transition-colors hover:text-white">
-                Masuk
-              </Link>
-              <Link href="/register" className="transition-colors hover:text-white">
-                Daftar
-              </Link>
-              <a href="/api/app/download" className="transition-colors hover:text-white">
-                Unduh Aplikasi
-              </a>
+          <div className="solusi-kanan">
+            <div>
+              <LayarAplikasi
+                logoUrl={logoUrl}
+                saldo={pengaturan(bagian, "saldo_contoh", "Rp 1.250.000")}
+              />
+              <p className="hp-catatan">
+                {pengaturan(bagian, "catatan_hp", "Contoh tampilan — angka bukan data nyata")}
+              </p>
             </div>
-          </div>
 
-          {/* Syarat & Ketentuan, Kebijakan Privasi, dan Kebijakan Refund sudah
-              ada isinya di dalam aplikasi. Menautkannya di sini sebelum
-              halaman webnya benar-benar ada hanya akan menghasilkan tautan
-              yang mati, jadi yang disebut adalah tempat yang benar-benar
-              memuatnya hari ini. */}
-          <p className="mt-8 text-xs leading-relaxed text-neutral-500">
-            Syarat &amp; Ketentuan, Kebijakan Privasi, dan Kebijakan Refund dapat dibaca di
-            dalam aplikasi melalui menu Akun.
-          </p>
-          <p className="mt-2 text-xs text-neutral-500">
-            © {new Date().getFullYear()} DIGIDESPAY. All rights reserved.
-          </p>
+            {manfaat.length > 0 ? (
+              <div className="dapat">
+                <h3>{pengaturan(bagian, "judul_manfaat", "Apa yang Anda Dapatkan?")}</h3>
+                <div className="dapat-grid">
+                  {manfaat.map((butir) => (
+                    <div className="dapat-kartu" key={butir.id}>
+                      <i>
+                        <Ikon nama={butir.icon} size={18} />
+                      </i>
+                      <h4>{butir.title}</h4>
+                      <p>{butir.body}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
-      </footer>
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -467,59 +450,333 @@ export default function HomePage() {
  *
  * Bukan tangkapan layar sungguhan, dan itu disengaja: tangkapan layar berisi
  * saldo dan nomor pelanggan mitra yang nyata, dan gambar seperti itu tidak
- * boleh terpasang di halaman yang dibaca publik. Angka di bawah ini contoh,
- * dan tertulis demikian.
+ * boleh terpasang di halaman yang dibaca publik.
  */
-function TampilanAplikasi() {
-  const ikon = [
-    { icon: Smartphone, nama: "Pulsa" },
-    { icon: Zap, nama: "Token" },
-    { icon: Receipt, nama: "Tagihan" },
-    { icon: Wallet, nama: "E-Wallet" },
-    { icon: Store, nama: "Toko" },
-    { icon: BarChart3, nama: "Laporan" },
+function LayarAplikasi({ logoUrl, saldo }: { logoUrl: string; saldo: string }) {
+  const menu = [
+    { ikon: <Smartphone size={15} strokeWidth={1.9} />, nama: "Pulsa" },
+    { ikon: <Zap size={15} strokeWidth={1.9} />, nama: "Token" },
+    { ikon: <Receipt size={15} strokeWidth={1.9} />, nama: "Tagihan" },
+    { ikon: <Wallet size={15} strokeWidth={1.9} />, nama: "E-Wallet" },
+    { ikon: <Store size={15} strokeWidth={1.9} />, nama: "Toko" },
+    { ikon: <BarChart3 size={15} strokeWidth={1.9} />, nama: "Laporan" },
   ];
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="w-65 rounded-4xl border-[6px] border-neutral-800 bg-white shadow-2xl shadow-black/50">
-        <div className="rounded-t-[1.6rem] bg-linear-to-b from-red-500 to-red-700 px-5 pb-8 pt-5 text-white">
-          <p className="text-[11px] text-white/70">Saldo Utama</p>
-          <p className="mt-1 text-2xl font-bold tabular-nums">Rp 1.250.000</p>
+    <div className="hp">
+      <div className="hp-atas">
+        <div className="merek-mini">
+          <span className="lambang">
+            <Image src={logoUrl} alt="" width={29} height={29} />
+          </span>
+          DIGIDES PAY
         </div>
-
-        <div className="-mt-5 px-4">
-          <div className="grid grid-cols-3 gap-2 rounded-xl border border-neutral-200 bg-white p-3 shadow-sm">
-            {ikon.map((item) => (
-              <div key={item.nama} className="flex flex-col items-center gap-1.5 py-1">
-                <span className="inline-flex size-8 items-center justify-center rounded-lg bg-red-50 text-red-600">
-                  <item.icon className="size-4" />
-                </span>
-                <span className="text-[9px] text-neutral-600">{item.nama}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="px-4 py-4">
-          <p className="text-[10px] font-semibold text-neutral-400">TRANSAKSI TERAKHIR</p>
-          <div className="mt-2 space-y-2">
-            {[
-              { nama: "Token Listrik 50.000", nilai: "−Rp 51.500" },
-              { nama: "Pulsa Telkomsel 25.000", nilai: "−Rp 25.800" },
-            ].map((baris) => (
-              <div key={baris.nama} className="flex items-center justify-between gap-2">
-                <span className="truncate text-[10px] text-neutral-700">{baris.nama}</span>
-                <span className="shrink-0 text-[10px] font-medium tabular-nums text-neutral-500">
-                  {baris.nilai}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <p className="hp-saldo-label">Saldo Utama</p>
+        <p className="hp-saldo">{saldo}</p>
       </div>
 
-      <p className="mt-3 text-xs text-neutral-500">Contoh tampilan — angka bukan data nyata</p>
+      <div className="hp-menu">
+        {menu.map((butir) => (
+          <div key={butir.nama}>
+            <i>{butir.ikon}</i>
+            <span>{butir.nama}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="hp-bawah">
+        <p className="judul">TRANSAKSI TERAKHIR</p>
+        <div className="hp-baris">
+          <span>Token Listrik 50.000</span>
+          <span>&minus;Rp 51.500</span>
+        </div>
+        <div className="hp-baris">
+          <span>Pulsa Telkomsel 25.000</span>
+          <span>&minus;Rp 25.800</span>
+        </div>
+        <div className="hp-baris">
+          <span>BPJS Kesehatan</span>
+          <span>&minus;Rp 105.000</span>
+        </div>
+      </div>
     </div>
+  );
+}
+
+// ── Kalkulator ─────────────────────────────────────────────────────────────
+function BagianKalkulator({ bagian }: { bagian: LandingSectionFull | undefined }) {
+  if (!bagian?.is_visible) return null;
+
+  const layanan: LayananHitung[] = butirKelompok(bagian).map((butir) => ({
+    id: butir.id,
+    nama: butir.title ?? "",
+    keterangan: butir.body ?? "",
+    ikon: butir.icon,
+    basis: butir.data?.basis === "hp" ? "hp" : "rumah",
+    satuan: String(butir.data?.satuan ?? (butir.data?.basis === "hp" ? "orang" : "rumah")),
+    warna: butir.data?.warna === "emas" ? "emas" : "merah",
+    feeAwal: angkaData(butir, "fee", 500),
+    frekuensiAwal: angkaData(butir, "frekuensi", 1),
+  }));
+
+  if (layanan.length === 0) return null;
+
+  return (
+    <Kalkulator
+      eyebrow={bagian.eyebrow ?? ""}
+      judul={bagian.title ?? ""}
+      judulAksen={bagian.title_accent ?? ""}
+      pengantar={bagian.body ?? ""}
+      labelPenduduk={pengaturan(bagian, "label_penduduk", "Jumlah penduduk")}
+      labelRumah={pengaturan(bagian, "label_rumah", "Jumlah rumah")}
+      labelHp={pengaturan(bagian, "label_hp", "Pengguna HP Android")}
+      labelPersen={pengaturan(bagian, "label_persen", "Berapa persen yang bisa Anda edukasi?")}
+      pendudukAwal={pengaturan(bagian, "penduduk", 1200)}
+      rumahAwal={pengaturan(bagian, "rumah", 300)}
+      hpAwal={pengaturan(bagian, "hp", 300)}
+      persenAwal={pengaturan(bagian, "persen", 30)}
+      catatan={pengaturan(bagian, "catatan", "")}
+      labelTombol={pengaturan(bagian, "tombol", "")}
+      urlTombol={pengaturan(bagian, "tombol_url", "/register")}
+      layanan={layanan}
+    />
+  );
+}
+
+// ── Langkah ────────────────────────────────────────────────────────────────
+function Langkah({ bagian }: { bagian: LandingSectionFull | undefined }) {
+  if (!bagian?.is_visible) return null;
+  const langkah = butirKelompok(bagian);
+
+  return (
+    <section className="langkah" id="cara-kerja">
+      <div className="bungkus">
+        <h2>{bagian.title}</h2>
+        {bagian.body ? <p className="sub">{bagian.body}</p> : null}
+
+        <div className="langkah-isi">
+          {/* Bernomor karena memang berurutan: isi saldo tidak bisa
+              mendahului pendaftaran, dan melayani warga tidak bisa
+              mendahului saldo. */}
+          <ol className="langkah-grid">
+            {langkah.map((butir, urut) => (
+              <li key={butir.id}>
+                <div className="langkah-nomor">{urut + 1}</div>
+                <h3>{butir.title}</h3>
+                <p>{butir.body}</p>
+              </li>
+            ))}
+          </ol>
+
+          {bagian.script_text ? <p className="tangan">{`“${bagian.script_text}”`}</p> : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Profil ─────────────────────────────────────────────────────────────────
+/**
+ * Kartu profil tidak tahu apa-apa tentang jabatan yang dipajangnya.
+ *
+ * Itu yang membuat menambah profil konsultan IT, komisaris, atau siapa pun
+ * nanti tidak menyentuh kode sama sekali: ia baris baru di basis data, dan
+ * digambar kartu yang sama persis seperti profil direktur.
+ */
+function Profil({ bagian }: { bagian: LandingSectionFull | undefined }) {
+  if (!bagian?.is_visible) return null;
+  const orang = butirKelompok(bagian);
+  if (orang.length === 0) return null;
+
+  return (
+    <section className="profil" id="profil">
+      <div className="bungkus">
+        {bagian.eyebrow ? <p className="eyebrow">{bagian.eyebrow}</p> : null}
+        <h2>
+          {bagian.title} <span className="merah">{bagian.title_accent}</span>
+        </h2>
+        {bagian.body ? <p className="sub">{bagian.body}</p> : null}
+
+        <div className="profil-grid">
+          {orang.map((butir) => (
+            <article className="profil-kartu" key={butir.id}>
+              <div className="profil-foto">
+                {butir.media ? (
+                  <Image
+                    src={urlGambar(butir.media) as string}
+                    alt={butir.media.alt_text || (butir.title ?? "")}
+                    width={butir.media.width ?? 800}
+                    height={butir.media.height ?? 1000}
+                    sizes="(max-width: 640px) 100vw, 280px"
+                  />
+                ) : (
+                  // Fotonya belum ada. Huruf awal namanya jauh lebih baik
+                  // daripada siluet orang abu-abu yang sama untuk semua.
+                  <span className="inisial">{(butir.title ?? "?").trim().charAt(0)}</span>
+                )}
+              </div>
+
+              <div className="profil-teks">
+                <b>{butir.title}</b>
+                {butir.subtitle ? <span className="profil-jabatan">{butir.subtitle}</span> : null}
+                {butir.body ? <p>{butir.body}</p> : null}
+                {butir.link_url && butir.link_label ? (
+                  <a className="profil-tautan" href={butir.link_url}>
+                    {butir.link_label}
+                    <ArrowRight size={14} strokeWidth={2.4} />
+                  </a>
+                ) : null}
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Masa depan desa ────────────────────────────────────────────────────────
+function MasaDepan({ bagian }: { bagian: LandingSectionFull | undefined }) {
+  if (!bagian?.is_visible) return null;
+  const manfaat = butirKelompok(bagian);
+
+  return (
+    <section className="masa-depan">
+      <div className="bungkus">
+        <div className="masa-depan-atas">
+          <div>
+            <h2>{bagian.title}</h2>
+            {bagian.body ? <p className="sub">{bagian.body}</p> : null}
+          </div>
+
+          {bagian.script_text ? <p className="tangan">{`“${bagian.script_text}”`}</p> : null}
+        </div>
+
+        {manfaat.length > 0 ? (
+          <ul className="manfaat-grid">
+            {manfaat.map((butir) => (
+              <li key={butir.id}>
+                <i>
+                  <Ikon nama={butir.icon} size={24} />
+                </i>
+                <b>{butir.title}</b>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+// ── Tanya jawab ────────────────────────────────────────────────────────────
+function TanyaJawab({ bagian }: { bagian: LandingSectionFull | undefined }) {
+  if (!bagian?.is_visible) return null;
+  const tanya = butirKelompok(bagian);
+  if (tanya.length === 0) return null;
+
+  return (
+    <section className="tanya" id="faq">
+      <div className="bungkus tanya-isi">
+        <h2>{bagian.title}</h2>
+        {bagian.body ? <p className="sub">{bagian.body}</p> : null}
+
+        {/* <details> asli, bukan akordeon buatan sendiri: tetap bisa dibuka
+            tanpa JavaScript, dan isinya terbaca oleh mesin pencari. */}
+        <div className="tanya-daftar">
+          {tanya.map((butir, urut) => (
+            <details key={butir.id} open={urut === 0}>
+              <summary>
+                {butir.title}
+                <span className="tanda" aria-hidden>
+                  +
+                </span>
+              </summary>
+              <p>{butir.body}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Kaki halaman ───────────────────────────────────────────────────────────
+function KakiHalaman({
+  bagian,
+  situs,
+  menu,
+  namaMerek,
+  aksenMerek,
+  logoUrl,
+  labelDaftar,
+  urlDaftar,
+  labelMasuk,
+  urlMasuk,
+}: {
+  bagian: LandingSectionFull | undefined;
+  situs: LandingSectionFull | undefined;
+  menu: { id: string; label: string; url: string }[];
+  namaMerek: string;
+  aksenMerek: string;
+  logoUrl: string;
+  labelDaftar: string;
+  urlDaftar: string;
+  labelMasuk: string;
+  urlMasuk: string;
+}) {
+  const tahun = new Date().getFullYear();
+
+  return (
+    <footer className="kaki">
+      <div className="bungkus">
+        {bagian?.is_visible ? (
+          <div className="kaki-ajakan">
+            <h2>{bagian.title}</h2>
+            {bagian.body ? <p>{bagian.body}</p> : null}
+            <div className="kaki-tombol">
+              <a className="tombol tombol-utama" href={urlDaftar}>
+                {labelDaftar}
+                <ArrowRight size={17} strokeWidth={2.2} />
+              </a>
+              <a className="tombol tombol-putih" href={urlMasuk}>
+                {labelMasuk}
+              </a>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="kaki-bawah">
+          <a className="merek" href="#beranda">
+            <span className="lambang">
+              <Image src={logoUrl} alt="" width={60} height={60} />
+            </span>
+            <span>
+              <span className="merek-nama" style={{ color: "#fff" }}>
+                {namaMerek} <span>{aksenMerek}</span>
+              </span>
+              <span className="merek-tag">{situs?.body}</span>
+            </span>
+          </a>
+
+          <nav className="nav" aria-label="Menu kaki halaman">
+            {menu.map((tautan) => (
+              <a key={tautan.id} href={tautan.url}>
+                {tautan.label}
+              </a>
+            ))}
+          </nav>
+        </div>
+
+        <div className="kaki-catatan">
+          <span>{pengaturan(bagian, "catatan_legal", "")}</span>
+          {situs?.script_text ? <span className="tangan">{situs.script_text}</span> : null}
+        </div>
+
+        <p className="kaki-catatan" style={{ marginTop: 10 }}>
+          © {tahun} {pengaturan(situs, "hak_cipta", "DIGIDES PAY. Semua hak dilindungi.")}
+        </p>
+      </div>
+    </footer>
   );
 }

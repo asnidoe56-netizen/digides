@@ -5,6 +5,7 @@ import {
   BadgePercent,
   Coins,
   FileBarChart2,
+  Globe,
   Handshake,
   Hourglass,
   LayoutDashboard,
@@ -60,6 +61,7 @@ export const NAV_ITEMS: Record<RoleCode, NavItem[]> = {
     { label: "Keamanan", href: "/dashboard/super-admin/security", icon: Shield },
     { label: "Cadangan Data", href: "/dashboard/super-admin/backup", icon: DatabaseBackup },
     { label: "Aplikasi Mitra", href: "/dashboard/super-admin/aplikasi", icon: Smartphone },
+    { label: "Halaman Depan", href: "/dashboard/super-admin/landing", icon: Globe },
     { label: "Pengaturan", href: "/dashboard/super-admin/settings", icon: Settings },
   ],
   // Populated when their dashboards are built (M03.5 continues per role).

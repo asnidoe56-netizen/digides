@@ -37,3 +37,8 @@ scripts/_*
 
 # catatan berjalan saat pengembangan, tidak pernah ikut commit
 dev.log
+
+# Skrip pemeriksaan sekali pakai di akar proyek. Pola scripts/_* di atas
+# tidak menjaga akar, dan satu skrip uji sempat lolos ke repo karenanya.
+/_*.mjs
+/_*.ts

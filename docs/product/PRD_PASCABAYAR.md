@@ -33,6 +33,21 @@
 > dan Gas. Ruang lingkup (Bagian 4) dan alasan pemisahan kategori
 > (Bagian 7.9) sudah disesuaikan dengan kenyataan ini.
 
+> **Perubahan v1.3 — katalog diambil ulang, 12 September 2026 siang.** API
+> kini mengembalikan **14 produk**, bukan 7. Dua koreksi atas v1.2:
+> **(1) BPJS Kesehatan ADA dan aktif** — sebelumnya saya tulis tidak tersedia;
+> saat itu API memang hanya mengembalikan 7 produk, dan sisanya baru muncul
+> setelah pemilik produk menambahkannya di panel Digiflazz. **(2) Biaya admin
+> PLN Pascabayar berubah** 2.500 → 4.000 dan komisinya 550 → 1.175, bukti
+> bahwa angka ini bergerak dan sinkronisasi harus diulang tiap kali panel
+> Digiflazz diubah.
+>
+> Temuan ketiga: **E-Money "Bebas Nominal"** (Dana, GoPay, OVO, LinkAja,
+> ShopeePay) dilayani lewat API **pascabayar**, padahal maknanya isi saldo.
+> Alasannya teknis — nominalnya bebas, jadi harus ditanyakan dulu dengan
+> mengirim `amount`. Di aplikasi ia ditempatkan di menu **DOMPET DIGITAL**
+> sebagai "Nominal Bebas", bukan di Bayar Tagihan (Bagian 4a).
+
 Lanjutan dari mesin transaksi yang terkunci, PRD Cashback, dan sistem komisi.
 Migrasi berikutnya: **057**
 
@@ -131,15 +146,22 @@ Diambil langsung dari `price-list cmd: "pasca"` pada 12 September 2026.
 Ketujuhnya aktif, berada di satu kategori `Pascabayar`, dan semuanya memakai
 satu nomor pelanggan tanpa format khusus:
 
-| Produk | `buyer_sku_code` | Brand | Admin | Komisi |
-|---|---|---|---|---|
-| Pln Pascabayar | `plnpscabayar1` | PLN PASCABAYAR | 2.500 | 550 |
-| SPEEDY & INDIHOME | `spd` | INTERNET PASCABAYAR | 2.500 | 1.175 |
-| BIZNET HOME | `post736197` | INTERNET PASCABAYAR | 3.000 | 700 |
-| BNETFIT | `post736198` | INTERNET PASCABAYAR | 5.000 | 2.440 |
-| Telkomsel Omni | `post736190` | Telkomsel Omni | 1.000 | 800 |
-| PDAM Aetra | `post739260` | PDAM | 3.500 | 1.240 |
-| PDAM Batam | `post739261` | PDAM | 2.500 | 975 |
+| Produk | `buyer_sku_code` | Brand | Admin | Komisi | Aktif |
+|---|---|---|---|---|---|
+| Bpjs Kesehatan | `BPJSKS` | BPJS KESEHATAN | 2.500 | 1.125 | ya |
+| Bpjs Ketenagakerjaan BPU | `BPJSKT` | BPJS KETENAGAKERJAAN | 2.500 | 975 | **tidak** |
+| Pln Pascabayar | `plnpscabayar1` | PLN PASCABAYAR | 4.000 | 1.175 | ya |
+| SPEEDY & INDIHOME | `spd` | INTERNET PASCABAYAR | 2.500 | 1.175 | ya |
+| BIZNET HOME | `post736197` | INTERNET PASCABAYAR | 3.000 | 700 | ya |
+| BNETFIT | `post736198` | INTERNET PASCABAYAR | 5.000 | 2.440 | ya |
+| Telkomsel Omni | `post736190` | Telkomsel Omni | 1.000 | 800 | ya |
+| PDAM Aetra | `post739260` | PDAM | 3.500 | 1.240 | ya |
+| PDAM Batam | `post739261` | PDAM | 2.500 | 975 | ya |
+| Dana Bebas Nominal | `post740905` | E-MONEY | 1.500 | 500 | ya |
+| Gopay Bebas Nominal | `post740904` | E-MONEY | 2.000 | 275 | ya |
+| Shopee Pay Bebas Nominal | `post740906` | E-MONEY | 1.500 | 175 | ya |
+| Ovo Bebas Nominal | `post740907` | E-MONEY | 0 | 275 | ya |
+| LinkAja Bebas Nominal | `post740908` | E-MONEY | 1.500 | 275 | ya |
 
 **Komisi itulah keuntungan Digides per transaksi** kalau mitra dibebani
 persis `selling_price` saran Digiflazz, sebelum biaya layanan tambahan
@@ -149,14 +171,41 @@ persis `selling_price` saran Digiflazz, sebelum biaya layanan tambahan
 melayani Aetra (Jakarta) dan Batam — kemungkinan besar tidak terpakai di
 wilayah mitra; sebaiknya disembunyikan dulu daripada membingungkan.
 
-### Gelombang 2 — hanya kalau Digiflazz membukanya
+### 4a. E-Money Bebas Nominal: isi saldo yang lewat pintu pascabayar
 
-**BPJS Kesehatan tidak ada di akun ini**, padahal ia yang paling sering
-dibayar di loket desa. Begitu juga Multifinance, TV Pascabayar, Gas Negara,
-PBB, SAMSAT, BPJSTK, dan PLN Nontaglis. Langkah pertama bukan menulis kode,
-melainkan **meminta Digiflazz mengaktifkan produk-produk itu** untuk akun
-ini. Kalau dibuka, hampir semuanya mewarisi alur yang sama; yang butuh
-tambahan kerja hanya tampilan rincian per jenis (7.13).
+Lima produk E-MONEY di tabel itu **bukan tagihan**. Ia isi saldo e-wallet
+dengan nominal bebas, tapi Digiflazz melayaninya lewat API pascabayar. Itu
+masuk akal secara teknis: karena nominalnya bebas, ia harus ditanyakan dulu —
+aplikasi mengirim `amount`, Digiflazz menjawab harga **berikut nama pemilik
+akun**, baru dibayar.
+
+Tiga konsekuensi:
+
+1. **`amount` wajib** untuk brand E-MONEY. Tanpa itu Digiflazz menolak, jadi
+   layar isi saldo punya kolom nominal dan pilihan cepat.
+2. **Tempatnya di menu DOMPET DIGITAL**, bukan Bayar Tagihan — bagi mitra ini
+   satu urusan dengan E-Money nominal tetap yang sudah ada. Layarnya sama
+   dengan Bayar Tagihan, hanya modenya berbeda: produk E-MONEY tidak pernah
+   muncul di daftar tagihan, dan sebaliknya.
+3. **Nama pemilik akun tampil sebelum saldo dikirim.** Ini keunggulan nyata
+   dibanding E-Money prabayar yang langsung kirim tanpa konfirmasi nama.
+
+Batas bawah nominal sengaja longgar di aplikasi (Rp1.000): tiap e-wallet
+punya minimum sendiri, dan yang berhak menolak adalah Digiflazz — pesannya
+diteruskan apa adanya, daripada aplikasi menebak lalu menghalangi isi saldo
+yang sebenarnya sah.
+
+### Gelombang 2 — menunggu diaktifkan di panel Digiflazz
+
+Yang belum ada di akun ini: Multifinance, TV Pascabayar, Gas Negara, PBB,
+SAMSAT, dan PLN Nontaglis. **BPJS Ketenagakerjaan sudah ada tapi masih
+nonaktif** (`buyer_product_status: false`), jadi sinkron menandainya DISABLED
+sampai diaktifkan.
+
+Pelajaran dari v1.2: langkah pertama bukan meminta Digiflazz membukanya,
+melainkan **menambahkan/mengaktifkannya sendiri di panel Buyer Digiflazz**.
+Begitu aktif, produk langsung muncul di daftar harga dan ikut tersinkron.
+Yang butuh tambahan kerja hanya tampilan rincian per jenis (7.13).
 
 ### Gelombang 3 — butuh input khusus (kalau produknya dibuka)
 

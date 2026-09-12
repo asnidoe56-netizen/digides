@@ -13,6 +13,10 @@ export interface CreateTransactionInput {
   provider?: string;
   /** See Transaction.customer_name's doc comment. */
   customer_name?: string | null;
+  /** Pascabayar saja: hasil cek tagihan yang sedang dibayar. UNIQUE di
+   *  database, jadi satu hasil cek tagihan paling banyak menghasilkan satu
+   *  transaksi — pagar kedua di samping idempotency_key (§5f aturan 2). */
+  bill_inquiry_id?: string | null;
 }
 
 export interface CreateTransactionResult {
@@ -50,8 +54,8 @@ export async function createTransaction(
   const result = await db.query<Transaction>(
     `INSERT INTO transactions (
        idempotency_key, wallet_id, product_id, customer_number, base_price, selling_price, provider, status,
-       original_product_id, tried_product_ids, customer_name
-     ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'digiflazz'), 'RESERVED', $3, ARRAY[$3]::uuid[], $8)
+       original_product_id, tried_product_ids, customer_name, bill_inquiry_id
+     ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'digiflazz'), 'RESERVED', $3, ARRAY[$3]::uuid[], $8, $9)
      ON CONFLICT (idempotency_key) DO NOTHING
      RETURNING *`,
     [
@@ -63,6 +67,7 @@ export async function createTransaction(
       input.selling_price,
       input.provider ?? null,
       input.customer_name ?? null,
+      input.bill_inquiry_id ?? null,
     ],
   );
   if (result.rows[0]) {
@@ -85,8 +90,40 @@ export async function findTransactionByIdempotencyKey(
   return result.rows[0] ?? null;
 }
 
+// "Hasil cek tagihan ini sudah pernah dibayar?" — dipakai sebelum menahan
+// saldo, supaya satu tagihan tidak dibayar dua kali walau mitra membuka dua
+// layar sekaligus. Pagar utamanya tetap UNIQUE di database; ini pemeriksaan
+// yang memberi pesan manusiawi sebelum sampai ke sana.
+export async function findTransactionByBillInquiryId(
+  billInquiryId: string,
+  db: Queryable = pool,
+): Promise<Transaction | null> {
+  const result = await db.query<Transaction>(`SELECT * FROM transactions WHERE bill_inquiry_id = $1`, [
+    billInquiryId,
+  ]);
+  return result.rows[0] ?? null;
+}
+
 export async function findTransactionById(id: string, db: Queryable = pool): Promise<Transaction | null> {
   const result = await db.query<Transaction>(`SELECT * FROM transactions WHERE id = $1`, [id]);
+  return result.rows[0] ?? null;
+}
+
+// Pascabayar saja (§5f aturan 6). pay-pasca tidak punya max_price, jadi tidak
+// ada pagar di sisi Digiflazz kalau yang dipotong ternyata lebih besar
+// daripada yang dijanjikan saat cek tagihan. Kalau itu terjadi, harga modal
+// transaksi disetel ke angka yang BENAR-BENAR dipotong sebelum komisi dan
+// cashback dihitung — supaya keduanya dibatasi margin yang nyata, bukan
+// margin di atas kertas. Harga jual ke mitra tidak pernah disentuh.
+export async function updateTransactionBasePrice(
+  id: string,
+  basePrice: string | number,
+  db: Queryable = pool,
+): Promise<Transaction | null> {
+  const result = await db.query<Transaction>(
+    `UPDATE transactions SET base_price = $2 WHERE id = $1 RETURNING *`,
+    [id, basePrice],
+  );
   return result.rows[0] ?? null;
 }
 

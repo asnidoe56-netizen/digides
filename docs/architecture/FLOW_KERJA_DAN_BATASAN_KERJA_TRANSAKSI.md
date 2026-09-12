@@ -11,6 +11,8 @@
 > Bagian 5d adalah aturan yang **berlaku sekarang**: pembelian selalu didanai saldo utama, dan saldo toko harus dipindahkan dulu ke saldo utama lewat jalur tersendiri. Diputuskan eksplisit oleh pemilik produk pada 2026-09-09 dengan alasan pembukuan — buku toko harus terbaca sebagai buku warung. Mesin transaksinya sendiri tetap tidak pernah disentuh, baik oleh 5c maupun 5d.
 >
 > Bagian 5e adalah amandemen sadar atas aturan #3 dan #7, diinstruksikan eksplisit oleh pemilik produk pada 2026-09-11: **jeda minimal 60 detik** sebelum `ref_id` yang sama dikirim lagi ke Digiflazz, dan **batas umur** cek status (job berhenti setelah 7 hari, semua jalur menolak di atas 85 hari). Keduanya berasal dari dokumentasi Cek Status resmi Digiflazz; aturan jeda terbukti sudah dilanggar 7 kali di produksi tanpa kerugian (lihat buktinya di Bagian 5e).
+>
+> Bagian 5f adalah amandemen sadar untuk **pembayaran tagihan (pascabayar)**, diinstruksikan eksplisit oleh pemilik produk pada 2026-09-12 (*"silakan amandemen dan kerjakan agar di Flutter benar-benar bekerja"*). Ia menambahkan satu jalur kedua ke Digiflazz — cek tagihan lalu bayar dengan `ref_id` yang sama — tanpa membuat state machine baru dan tanpa menyentuh jalur prabayar. Rancangan lengkapnya ada di `docs/product/PRD_PASCABAYAR.md`.
 
 ---
 
@@ -280,6 +282,59 @@ Diinstruksikan eksplisit oleh pemilik produk pada 2026-09-11.
 
 *Produksi:*
 - [ ] Setelah deploy: kueri audit yang sama atas `transaction_events` tidak lagi menemukan pasangan jawaban `ref_id` sama berjarak < 60 detik untuk transaksi baru.
+
+---
+
+## 5f. 🔒 Pembayaran Tagihan Pascabayar (Amandemen 2026-09-12)
+
+**Latar belakang**: sampai hari ini seluruh mesin ini hanya mengenal produk yang harganya sudah diketahui sebelum dibeli. Tagihan tidak begitu — nominalnya baru ada setelah ditanyakan ke Digiflazz, dan pembayarannya wajib memakai `ref_id` yang sama dengan pertanyaan itu, di tanggal yang sama. Diinstruksikan eksplisit oleh pemilik produk pada 2026-09-12. Rancangan dan alasan tiap keputusan ada di `docs/product/PRD_PASCABAYAR.md`; bagian ini hanya menetapkan batasannya.
+
+**Alur dua langkah:**
+
+```
+1. CEK TAGIHAN  inq-pasca(ref_id baru)  → bill_inquiries tersimpan
+                                          TIDAK ada transaksi, TIDAK ada RESERVE
+2. BAYAR        PIN → transactions(idempotency_key = ref_id) + RESERVE
+                pay-pasca(ref_id SAMA) → applyDigiflazzResult() yang sama
+3. PENDING      status-pasca(ref_id SAMA), lewat pagar §5e
+```
+
+**Yang berubah dari aturan sebelumnya:**
+
+1. **Aturan #2 (pengiriman ke Digiflazz)** — ditambah jalur kedua yang sejajar: `src/lib/digiflazz/postpaid.ts` dengan `commands` `inq-pasca` / `pay-pasca` / `status-pasca`. Formula signature tetap `md5(username + apiKey + ref_id)`, dan flag `testing` tetap hanya untuk mode development. `submitDigiflazzTransaction` (prabayar) **tidak disentuh sama sekali** — jalur pascabayar berdiri di sebelahnya, bukan menjadi cabang di dalamnya.
+2. **Aturan #3 (idempotency)** — untuk `POSTPAID`, `ref_id` lahir di `bill_inquiries` saat cek tagihan, bukan dari klien. Saat membayar, server memakai `bill_inquiries.ref_id` sebagai `transactions.idempotency_key`; `idempotencyKey` kiriman klien diabaikan. Tetap satu `ref_id` per niat bayar, dan tetap tidak pernah dibuat ulang. Pagar keduanya: `transactions.bill_inquiry_id` UNIQUE — satu hasil cek tagihan paling banyak menghasilkan satu transaksi.
+3. **Aturan #3 ("kirim ulang dengan ref_id sama = cek status")** — **tidak berlaku untuk `pay-pasca`.** Mengirim ulang perintah bayar bukan cek status, dan berisiko membayar tagihan dua kali. Cek status memakai perintah tersendiri `status-pasca`. `payPostpaidBill` hanya boleh punya satu pemanggil: pembayaran pertama.
+4. **Aturan #8 dan Bagian 5a (SKU cadangan)** — **tidak berlaku untuk `POSTPAID`.** `trySwapToBackupSku` mengembalikan "tidak ada cadangan" untuk tagihan: `ref_id` itu satu-satunya tautan ke hasil cek tagihan di sisi Digiflazz, seller lain tidak mengenalnya, dan nilai tagihannya belum tentu sama. Ganti SKU = cek tagihan baru = persetujuan mitra yang baru. Penjaga kedua sudah ada di SQL sejak migrasi 057 (`findBackupProductCandidates` menyaring `product_type = 'PREPAID'`).
+5. **`executeTransaction` menolak `POSTPAID` secara eksplisit.** Sebelum amandemen ini, permintaan buatan dengan id produk pascabayar ditolak hanya sebagai efek samping — pengecekan harga prabayar tidak menemukan SKU-nya, lalu produknya ikut ditandai nonaktif. Aman secara uang, tapi tidak pantas disebut penjaga. Sekarang jalur pembelian prabayar menolaknya di awal dengan pesan yang jelas.
+6. **Capture untuk `POSTPAID`** — kalau `price` pada jawaban `pay-pasca` lebih besar daripada `bill_inquiries.provider_price`, `transactions.base_price` diperbarui ke angka yang **sebenarnya dipotong** sebelum komisi dan cashback dihitung, dan selisihnya dicatat sebagai `transaction_events` (`POSTPAID_PRICE_MISMATCH`). Alasannya: `pay-pasca` tidak punya `max_price`, jadi tidak ada pagar di sisi Digiflazz. Mitra tetap membayar angka yang ia setujui; selisihnya menggerus margin Digides, dan kejadian itu harus terlihat, bukan tersembunyi.
+7. **"Data belum ada" tidak pernah melepas saldo.** Digiflazz menjawab begitu untuk cek status pascabayar yang lewat 90 hari — tapi jawaban yang sama sangat mungkin juga muncul kalau `pay-pasca` kita tidak pernah sampai ke mereka, dan dari sisi Digides kedua keadaan itu tidak bisa dibedakan. Kalau dianggap Gagal lalu saldo dilepas padahal tagihannya terbayar, Digides membayar tagihan orang dengan uangnya sendiri. Jadi transaksinya tetap RESERVED, jawabannya dicatat, dan ditandai untuk ditangani manual di Transaksi Tertahan.
+8. **Pesan penolakan 85 hari (§5e) dibedakan untuk `POSTPAID`** — untuk tagihan, cek status di atas 90 hari hanya dijawab "Data belum ada", bukan membuat pembelian baru seperti prabayar.
+
+**Yang sengaja TIDAK berubah:**
+
+- **Funnel tunggal.** Jawaban `pay-pasca` maupun `status-pasca` masuk ke `applyDigiflazzResult` yang sama persis dengan prabayar. Tidak ada jalur kedua untuk capture/release (aturan #4 dan #5 utuh).
+- **Tidak ada state machine baru** — `transactions` + `transaction_events` + compare-and-swap yang sama (Bagian 8.1).
+- Reservasi/pelepasan saldo lewat `postLedgerEntry` di dalam `withTransaction`, verifikasi signature webhook, polling klien 3 detik × 20, interval job 3 menit, pagar jeda 60 detik dan batas umur (§5e), pendanaan dari saldo utama (§5d), idempotency `ON CONFLICT` (§5b).
+- **Tidak ada tipe ledger baru.** Tagihan memakai RESERVE / DEBIT / RELEASE yang sudah ada, jadi 17 titik klasifikasi ledger tidak tersentuh.
+
+**Batasan tambahan khusus tagihan:**
+
+1. **Harga dikunci saat cek tagihan.** Yang di-RESERVE adalah `bill_inquiries.total_amount`, angka yang persis tampil di layar mitra. Tidak ada penghitungan ulang harga saat PIN ditekan.
+2. **Masa berlaku**: yang lebih dulu antara akhir tanggal yang sama (aturan Digiflazz) dan 30 menit setelah cek tagihan (keputusan Digides). Sesudah itu wajib cek ulang, dengan `ref_id` baru.
+3. **`bill_inquiries` append-only**, seperti tabel keuangan lain: ia bukti apa yang dilihat mitra sebelum membayar.
+4. **`buyer_sku_code` dan `customer_no` dipakai ulang dari `bill_inquiries`**, bukan dibaca ulang dari katalog atau input, supaya `status-pasca` selalu memakai kode yang sama dengan `pay-pasca`.
+
+**Verifikasi — belum selesai, diisi saat tiap bagian terbukti:**
+- [ ] Cek tagihan tidak menulis satu baris pun di `transactions` maupun `wallet_ledger`.
+- [ ] Sukses: saldo berkurang tepat `total_amount`, sekali; satu RESERVE dan satu DEBIT.
+- [ ] Gagal: saldo kembali utuh; tidak ada percobaan SKU cadangan.
+- [ ] PIN dua kali / dua permintaan bersamaan untuk satu hasil cek tagihan: satu transaksi, satu `pay-pasca`.
+- [ ] Cek tagihan kedaluwarsa, milik mitra lain, atau sudah dibayar: ditolak sebelum RESERVE.
+- [ ] `executeTransaction` menolak produk `POSTPAID`.
+- [ ] Pending lalu Sukses lewat `status-pasca`, dengan pagar jeda 60 detik terbukti menahan.
+- [ ] "Data belum ada" tidak melepas saldo.
+- [ ] `verifyLedgerConsistency` bersih setelah semua skenario di atas.
+- [ ] Terlihat benar di aplikasi Flutter: rincian tagihan, layar hasil, dan struk.
 
 ---
 

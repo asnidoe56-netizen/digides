@@ -32,8 +32,18 @@ import {
   sumTransactionProfit,
   swapTransactionProductForBackup,
   transitionTransactionStatus,
+  updateTransactionBasePrice,
   type ListTransactionsFilter,
 } from "@/repositories/transaction.repository";
+// Jalur pascabayar (§5f). Berdampingan dengan submitDigiflazzTransaction,
+// bukan menjadi cabang di dalamnya.
+import {
+  checkPostpaidStatus,
+  isDataBelumAda,
+  payPostpaidBill,
+} from "@/lib/digiflazz/postpaid";
+import { findBillInquiryById } from "@/repositories/bill-inquiry.repository";
+import type { BillInquiry } from "@/types/postpaid";
 import type { Transaction } from "@/types/transaction";
 import type { WalletChannel } from "@/types/wallet";
 
@@ -127,18 +137,35 @@ export interface ExecuteTransactionInput {
 // Has no UI caller yet — there is no buyer-facing checkout page in this
 // codebase (Konter/BUMDes/Affiliate dashboards aren't built) — but this is
 // the real, complete engine those future pages will call, not a stub.
-export async function executeTransaction(input: ExecuteTransactionInput): Promise<Transaction> {
-  if (input.auth.method === "PIN") {
-    await verifyTransactionPin(input.actorUserId, input.auth.pin);
-  } else if (input.auth.method === "BIOMETRIC") {
-    await verifyTransactionBiometric(input.actorUserId, input.auth.assertion);
+// Verifikasi PIN/biometrik, dipakai bersama oleh pembelian prabayar dan
+// pembayaran tagihan pascabayar. Satu tempat saja, supaya kedua jalur tidak
+// pernah punya syarat konfirmasi yang berbeda.
+export async function verifyTransactionAuth(actorUserId: string, auth: TransactionAuth): Promise<void> {
+  if (auth.method === "PIN") {
+    await verifyTransactionPin(actorUserId, auth.pin);
+  } else if (auth.method === "BIOMETRIC") {
+    await verifyTransactionBiometric(actorUserId, auth.assertion);
   } else {
-    await verifyMobileBiometricTransaction(input.actorUserId, input.auth.assertion);
+    await verifyMobileBiometricTransaction(actorUserId, auth.assertion);
   }
+}
+
+export async function executeTransaction(input: ExecuteTransactionInput): Promise<Transaction> {
+  await verifyTransactionAuth(input.actorUserId, input.auth);
 
   const product = await findProductById(input.productId);
   if (!product) {
     throw new Error("Produk tidak ditemukan");
+  }
+  // §5f aturan 5: tagihan pascabayar tidak pernah dibeli lewat jalur ini.
+  // Sebelum amandemen itu, permintaan buatan dengan id produk pascabayar
+  // ditolak hanya sebagai EFEK SAMPING — pengecekan harga prabayar tidak
+  // menemukan SKU-nya, lalu produknya ikut ditandai nonaktif. Aman secara
+  // uang, tapi tidak pantas disebut penjaga.
+  if (product.product_type !== "PREPAID") {
+    throw new Error(
+      "Produk ini adalah tagihan pascabayar. Bayar lewat menu Bayar Tagihan, setelah cek tagihan.",
+    );
   }
   // Super Admin's own override (Produk page's Aktifkan/Nonaktifkan) — a
   // purely local decision Digiflazz has no say in, so it's checked here as
@@ -285,8 +312,14 @@ export async function checkTransactionStatus(
   const recheck = await evaluateProviderRecheck(transaction.id);
   if (!recheck.allowed) {
     if (recheck.reason === "TOO_OLD") {
+      // §5f aturan 8: alasannya berbeda untuk tagihan. Prabayar yang dicek di
+      // atas 90 hari justru MEMBUAT pembelian baru; tagihan hanya dijawab
+      // "Data belum ada", jadi pesannya tidak boleh menakut-nakuti dengan
+      // sesuatu yang tidak akan terjadi.
       throw new Error(
-        `Transaksi ini sudah berumur lebih dari ${MAX_STATUS_CHECK_AGE_DAYS} hari. Cek status tidak dikirim ke Digiflazz, karena untuk transaksi di atas 90 hari Digiflazz justru membuat pembelian baru. Periksa langsung di dashboard Digiflazz.`,
+        transaction.bill_inquiry_id
+          ? `Tagihan ini sudah berumur lebih dari ${MAX_STATUS_CHECK_AGE_DAYS} hari. Digiflazz tidak lagi menyimpan datanya, jadi cek status tidak dikirim. Cocokkan langsung di dashboard Digiflazz.`
+          : `Transaksi ini sudah berumur lebih dari ${MAX_STATUS_CHECK_AGE_DAYS} hari. Cek status tidak dikirim ke Digiflazz, karena untuk transaksi di atas 90 hari Digiflazz justru membuat pembelian baru. Periksa langsung di dashboard Digiflazz.`,
       );
     }
     throw new Error(`Transaksi ini baru saja diperiksa ke Digiflazz. Coba lagi dalam ${recheck.waitSeconds} detik.`);
@@ -304,6 +337,11 @@ async function settleWithProvider(
   transaction: Transaction,
   buyerSkuCode: string,
   actorUserId: string | null,
+  // Hanya diisi true oleh pembayaran tagihan yang PERTAMA. Setiap panggilan
+  // lain untuk transaksi yang sama — job rekonsiliasi, tombol admin, atau
+  // permintaan bayar yang diulang — memakai status-pasca, karena mengirim
+  // ulang pay-pasca bukan cek status dan bisa membayar dua kali (§5f #3).
+  opts: { postpaidFirstPayment?: boolean } = {},
 ): Promise<Transaction> {
   const credentials = await getActiveDigiflazzCredentials();
   if (!credentials) {
@@ -312,6 +350,52 @@ async function settleWithProvider(
 
   let result: DigiflazzTransactionResult;
   try {
+    if (transaction.bill_inquiry_id) {
+      // Kode produk dan nomor pelanggan diambil dari SNAPSHOT hasil cek
+      // tagihan, bukan dari katalog: status-pasca wajib memakai kode yang
+      // sama dengan pay-pasca, dan katalog bisa berubah di antaranya
+      // (§5f batasan 4).
+      const inquiry = await findBillInquiryById(transaction.bill_inquiry_id);
+      if (!inquiry) {
+        throw new Error("Hasil cek tagihan untuk transaksi ini tidak ditemukan");
+      }
+
+      const pascaParams = {
+        baseUrl: credentials.baseUrl,
+        username: credentials.username,
+        apiKey: credentials.apiKey,
+        buyerSkuCode: inquiry.buyer_sku_code,
+        customerNo: inquiry.customer_no,
+        refId: transaction.idempotency_key,
+        testing: credentials.mode === "development",
+      };
+
+      const pasca = opts.postpaidFirstPayment
+        ? await payPostpaidBill(pascaParams)
+        : await checkPostpaidStatus(pascaParams);
+
+      // §5f aturan 7. "Data belum ada" bisa berarti transaksinya lewat 90
+      // hari, TAPI bisa juga berarti pay-pasca kita tidak pernah sampai ke
+      // Digiflazz — dan dari sisi sini keduanya tidak bisa dibedakan. Kalau
+      // dianggap Gagal lalu saldo dilepas padahal tagihannya terbayar,
+      // Digides membayar tagihan orang dengan uangnya sendiri. Jadi
+      // transaksinya tetap tertahan untuk ditangani manual.
+      if (pasca.status === "Gagal" && isDataBelumAda(pasca)) {
+        await recordTransactionEvent({
+          transaction_id: transaction.id,
+          from_status: "RESERVED",
+          to_status: "RESERVED",
+          provider_raw_response: { ...pasca, catatan: "DATA_BELUM_ADA_SALDO_TIDAK_DILEPAS" },
+        });
+        return transaction;
+      }
+
+      // Bentuk jawabannya sama dengan prabayar pada medan yang dipakai
+      // funnel: ref_id, status, rc, message, sn, price. Jadi ia masuk ke
+      // applyDigiflazzResult yang sama persis (§5f, funnel tunggal utuh).
+      return applyDigiflazzResult(transaction, pasca as DigiflazzTransactionResult, actorUserId);
+    }
+
     result = await submitDigiflazzTransaction({
       baseUrl: credentials.baseUrl,
       username: credentials.username,
@@ -358,7 +442,10 @@ async function applyDigiflazzResult(
   actorUserId: string | null,
 ): Promise<Transaction> {
   if (result.status === "Sukses") {
-    return captureTransaction(transaction, result, actorUserId);
+    // §5f aturan 6: untuk tagihan, harga modal disamakan dengan yang
+    // BENAR-BENAR dipotong Digiflazz sebelum komisi dan cashback dihitung.
+    const disamakan = await syncPostpaidBasePrice(transaction, result);
+    return captureTransaction(disamakan, result, actorUserId);
   }
   if (result.status === "Gagal") {
     const swapped = await trySwapToBackupSku(transaction, result, actorUserId);
@@ -375,6 +462,117 @@ async function applyDigiflazzResult(
     provider_raw_response: result,
   });
   return transaction;
+}
+
+// §5f aturan 6. pay-pasca tidak punya max_price, jadi tidak ada pagar di sisi
+// Digiflazz kalau yang dipotong ternyata lebih besar daripada yang dijanjikan
+// saat cek tagihan. Mitra tetap membayar angka yang ia setujui; selisihnya
+// menggerus margin Digides, dan itu harus terlihat.
+async function syncPostpaidBasePrice(
+  transaction: Transaction,
+  result: DigiflazzTransactionResult,
+): Promise<Transaction> {
+  if (!transaction.bill_inquiry_id) return transaction;
+
+  const dipotong = Number(result.price ?? 0);
+  const dijanjikan = Number(transaction.base_price);
+  if (!Number.isFinite(dipotong) || dipotong <= dijanjikan) return transaction;
+
+  const diperbarui = await updateTransactionBasePrice(transaction.id, dipotong);
+  await recordTransactionEvent({
+    transaction_id: transaction.id,
+    from_status: "RESERVED",
+    to_status: "RESERVED",
+    provider_raw_response: {
+      event: "POSTPAID_PRICE_MISMATCH",
+      base_price_saat_cek_tagihan: dijanjikan,
+      base_price_yang_dipotong: dipotong,
+      selisih: dipotong - dijanjikan,
+      selling_price_ke_mitra: transaction.selling_price,
+    },
+  });
+  return diperbarui ?? transaction;
+}
+
+export interface ExecutePostpaidPaymentInput {
+  inquiry: BillInquiry;
+  actorUserId: string;
+  channel: WalletChannel;
+}
+
+// Pembayaran tagihan. Bentuknya sengaja meniru executeTransaction sedekat
+// mungkin: reservasi saldo dan pembuatan baris transaksi dalam SATU transaksi
+// database, satu panggilan ke Digiflazz, lalu funnel hasil yang sama persis.
+// Yang berbeda hanya asal angkanya — semuanya dari hasil cek tagihan yang
+// sudah dilihat dan disetujui mitra, tidak dihitung ulang di sini (§5f #1).
+//
+// Verifikasi PIN/biometrik tidak dilakukan di sini, melainkan di
+// postpaid.service sebelum fungsi ini dipanggil.
+export async function executePostpaidPayment(input: ExecutePostpaidPaymentInput): Promise<Transaction> {
+  const { inquiry } = input;
+  const totalAmount = inquiry.total_amount;
+  const providerPrice = inquiry.provider_price;
+  if (!totalAmount || providerPrice === null) {
+    throw new Error("Hasil cek tagihan tidak memuat nominal. Silakan cek tagihan ulang.");
+  }
+
+  const product = await findProductById(inquiry.product_id);
+  if (!product) {
+    throw new Error("Produk tagihan ini tidak ditemukan");
+  }
+
+  const { transaction, alreadyExisted } = await withTransaction(async (client) => {
+    const created = await createTransaction(
+      {
+        // ref_id hasil cek tagihan menjadi kunci idempotensinya (§5f #2).
+        idempotency_key: inquiry.ref_id,
+        wallet_id: inquiry.wallet_id,
+        product_id: inquiry.product_id,
+        customer_number: inquiry.customer_no,
+        base_price: providerPrice,
+        selling_price: totalAmount,
+        customer_name: inquiry.customer_name,
+        bill_inquiry_id: inquiry.id,
+      },
+      client,
+    );
+
+    if (!created.alreadyExisted) {
+      await postLedgerEntry(client, {
+        walletId: inquiry.wallet_id,
+        type: "RESERVE",
+        amount: totalAmount,
+        channel: input.channel,
+        transactionId: created.transaction.id,
+        reference: created.transaction.idempotency_key,
+        createdBy: input.actorUserId,
+      });
+      await recordTransactionEvent(
+        { transaction_id: created.transaction.id, from_status: null, to_status: "RESERVED" },
+        client,
+      );
+    }
+
+    return created;
+  });
+
+  if (alreadyExisted && transaction.status !== "RESERVED") {
+    return transaction;
+  }
+
+  if (alreadyExisted) {
+    // Permintaan bayar yang diulang untuk tagihan yang SAMA. pay-pasca tidak
+    // pernah dikirim dua kali (§5f #3): kalau jeda 60 detik (§5e) belum lewat,
+    // baris RESERVED dikembalikan dan klien tinggal polling; kalau sudah
+    // lewat, yang dikirim adalah status-pasca.
+    const recheck = await evaluateProviderRecheck(transaction.id);
+    if (!recheck.allowed) {
+      return transaction;
+    }
+    return settleWithProvider(transaction, product.sku, input.actorUserId);
+  }
+
+  return settleWithProvider(transaction, product.sku, input.actorUserId, { postpaidFirstPayment: true });
 }
 
 // Automatic backup-SKU failover (docs/architecture/
@@ -398,6 +596,15 @@ async function trySwapToBackupSku(
   failedResult: DigiflazzTransactionResult,
   actorUserId: string | null,
 ): Promise<Transaction | null> {
+  // §5f aturan 4: tagihan tidak punya SKU cadangan. ref_id-nya adalah
+  // satu-satunya tautan ke hasil cek tagihan di sisi Digiflazz, seller lain
+  // tidak mengenalnya, dan nominal tagihannya belum tentu sama. Ganti SKU =
+  // cek tagihan baru = persetujuan mitra yang baru. Penjaga kedua ada di SQL
+  // (findBackupProductCandidates menyaring product_type = 'PREPAID').
+  if (transaction.bill_inquiry_id) {
+    return null;
+  }
+
   if (transaction.tried_product_ids.length > MAX_BACKUP_SKU_ATTEMPTS) {
     return null;
   }

@@ -12,6 +12,9 @@ export interface Transaction {
    *  for a purchase where the mitra skipped it. See
    *  042_transactions_customer_name.sql. */
   customer_name: string | null;
+  /** Pascabayar saja: hasil cek tagihan yang dibayar transaksi ini. UNIQUE,
+   *  jadi satu hasil cek tagihan tidak pernah dibayar dua kali (§5f). */
+  bill_inquiry_id: string | null;
   base_price: string;
   selling_price: string;
   status: TransactionStatus;

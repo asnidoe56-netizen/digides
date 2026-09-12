@@ -453,7 +453,7 @@
 .lp .pembuka-gambar {
   position: relative;
 }
-.lp .pembuka-gambar .gambar-bingkai {
+.lp .pembuka-gambar .foto-kosong {
   min-height: 380px;
 }
 .lp .kartu-melayang {
@@ -577,7 +577,7 @@
 .lp .gelembung-area {
   position: relative;
 }
-.lp .gelembung-area .gambar-bingkai {
+.lp .gelembung-area .foto-kosong {
   min-height: 360px;
 }
 .lp .gelembung-daftar {

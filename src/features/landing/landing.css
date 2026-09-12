@@ -1422,3 +1422,56 @@
     animation: none !important;
   }
 }
+
+/* ── Tombol WhatsApp mengambang ─────────────────────────────────────────────
+   Satu-satunya hijau di halaman ini. Merah adalah warna tindakan utama
+   (daftar, beli); tombol ini bukan itu — ia jalan keluar untuk orang yang
+   masih ragu, dan hijau WhatsApp langsung dikenali tanpa perlu dijelaskan.
+   ───────────────────────────────────────────────────────────────────────── */
+.lp .wa {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 60;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 52px;
+  padding: 0 20px 0 16px;
+  border-radius: 999px;
+
+  background: linear-gradient(180deg, #2ee06b, #128c7e);
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+
+  box-shadow: 0 6px 18px rgba(18, 140, 126, 0.4), 0 2px 6px rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.lp .wa:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px rgba(18, 140, 126, 0.48), 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+.lp .wa:focus-visible {
+  outline: 3px solid var(--emas);
+  outline-offset: 3px;
+}
+.lp .wa svg {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  /* Di HP tombol ini melayang di atas isi halaman sepanjang waktu, jadi ia
+     dirapatkan ke sudut dan dipendekkan — cukup dikenali, tanpa menutupi
+     apa yang sedang dibaca. */
+  .lp .wa {
+    right: 14px;
+    bottom: 14px;
+    height: 48px;
+    padding: 0 17px 0 14px;
+    font-size: 13.5px;
+  }
+}

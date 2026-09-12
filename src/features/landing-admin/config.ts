@@ -31,6 +31,9 @@ export const LADANG_BAGIAN: Record<LandingSectionKind, Ladang[]> = {
     { nama: "settings.url_masuk", label: "Alamat tombol Masuk", jenis: "teks" },
     { nama: "settings.tombol_daftar", label: "Label tombol Daftar", jenis: "teks" },
     { nama: "settings.url_daftar", label: "Alamat tombol Daftar", jenis: "teks" },
+    { nama: "settings.wa_nomor", label: "Nomor WhatsApp", jenis: "teks", petunjuk: "Contoh: 081234567890 atau 6281234567890. Kosongkan untuk menyembunyikan tombol WhatsApp." },
+    { nama: "settings.wa_label", label: "Tulisan di tombol WhatsApp", jenis: "teks" },
+    { nama: "settings.wa_pesan", label: "Pesan yang sudah terisi", jenis: "panjang", petunjuk: "Muncul otomatis di kolom ketik WhatsApp, supaya orang tidak bingung harus menulis apa." },
   ],
 
   navigasi: [],

@@ -12,6 +12,7 @@ import type { LandingMedia, LandingSectionFull } from "@/types/landing";
 import { Ikon } from "@/features/landing/components/ikon";
 import { Kalkulator, type LayananHitung } from "@/features/landing/components/kalkulator";
 import { KepalaHalaman } from "@/features/landing/components/kepala-halaman";
+import { TombolWhatsapp } from "@/features/landing/components/tombol-whatsapp";
 import "@/features/landing/landing.css";
 import "@/features/landing/landing-kalkulator.css";
 
@@ -125,6 +126,12 @@ export default async function HomePage() {
         urlDaftar={urlDaftar}
         labelMasuk={labelMasuk}
         urlMasuk={urlMasuk}
+      />
+
+      <TombolWhatsapp
+        nomor={pengaturan(situs, "wa_nomor", "")}
+        label={pengaturan(situs, "wa_label", "Hub Kami")}
+        pesan={pengaturan(situs, "wa_pesan", "")}
       />
     </div>
   );

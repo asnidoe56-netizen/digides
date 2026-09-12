@@ -318,3 +318,19 @@ INSERT INTO landing_sections (key, kind, title, body, settings, sort_order) VALU
    ),
    110)
 ON CONFLICT (key) DO NOTHING;
+
+-- ── Kontak WhatsApp ───────────────────────────────────────────────────────
+-- Ditambahkan sesudah baris 'situs' mungkin sudah ada, jadi tidak bisa lewat
+-- INSERT. Operator `||` dengan settings di sebelah KANAN berarti kunci yang
+-- sudah diisi admin menang, dan yang ditanam di sini hanya mengisi yang
+-- belum ada — sehingga seed ini tetap boleh dijalankan ulang kapan saja.
+--
+-- Nomornya sengaja kosong. Tombolnya tidak muncul sampai admin mengisinya:
+-- tombol yang menuju nomor karangan lebih buruk daripada tidak ada tombol.
+UPDATE landing_sections
+   SET settings = jsonb_build_object(
+         'wa_nomor', '',
+         'wa_label', 'Hub Kami',
+         'wa_pesan', 'Halo, saya ingin bertanya tentang kemitraan DIGIDES PAY untuk BUMDes.'
+       ) || settings
+ WHERE key = 'situs';
